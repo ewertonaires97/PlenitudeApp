@@ -46,6 +46,31 @@ const menuCategoryOptions = document.querySelector('#menu-category-options');
 const categoryPanel = document.querySelector('#category-panel');
 const categoryList = document.querySelector('#category-list');
 const categoryFeedback = document.querySelector('#category-feedback');
+const inventoryPanel = document.querySelector('#inventory-panel');
+const inventoryList = document.querySelector('#inventory-list');
+const inventorySearch = document.querySelector('#inventory-search');
+const inventoryLowOnly = document.querySelector('#inventory-low-only');
+const inventoryCategoryFilter = document.querySelector('#inventory-category-filter');
+const inventoryCategoryOptions = document.querySelector('#inventory-category-options');
+const inventoryImageInput = document.querySelector('#inventory-images');
+const inventoryImagePreviews = document.querySelector('#inventory-image-previews');
+const inventoryFeedback = document.querySelector('#inventory-feedback');
+const inventoryFormPanel = document.querySelector('#inventory-form-panel');
+const inventoryForm = document.querySelector('#inventory-form');
+const inventoryFormTitle = document.querySelector('#inventory-form-title');
+const inventoryFormFeedback = document.querySelector('#inventory-form-feedback');
+const movementFormPanel = document.querySelector('#movement-form-panel');
+const movementForm = document.querySelector('#movement-form');
+const movementItemName = document.querySelector('#movement-item-name');
+const movementFormFeedback = document.querySelector('#movement-form-feedback');
+const movementType = document.querySelector('#movement-type');
+const movementQuantityLabel = document.querySelector('#movement-quantity-label');
+const imageViewer = document.querySelector('#image-viewer');
+const imageViewerImage = document.querySelector('#image-viewer-image');
+const detailView = document.querySelector('#detail-view');
+const detailViewTitle = document.querySelector('#detail-view-title');
+const detailViewEyebrow = document.querySelector('#detail-view-eyebrow');
+const detailViewContent = document.querySelector('#detail-view-content');
 let clients = [];
 let services = [];
 let menus = [];
@@ -55,6 +80,12 @@ let menuCategories = [];
 let menuCategoryLinks = [];
 let pendingMenuImages = [];
 let removedMenuImageIds = [];
+let inventoryItems = [];
+let inventoryImages = [];
+let inventoryCategories = [];
+let inventoryCategoryLinks = [];
+let pendingInventoryImages = [];
+let removedInventoryImageIds = [];
 
 function setAuthenticated(isAuthenticated) {
   authScreen.hidden = isAuthenticated;
@@ -143,7 +174,7 @@ function renderClients() {
   }
 
   clientList.innerHTML = visibleClients.map((client) => `
-    <article class="client-row">
+    <article class="client-row detail-trigger" data-detail-type="client" data-detail-id="${client.id}">
       <span class="client-initial">${clientInitial(client.name)}</span>
       <div class="client-details">
         <strong>${escapeHTML(client.name)}</strong>
@@ -278,7 +309,7 @@ function renderServices() {
   }
 
   serviceList.innerHTML = visibleServices.map((service) => `
-    <article class="client-row service-row">
+    <article class="client-row service-row detail-trigger" data-detail-type="service" data-detail-id="${service.id}">
       <span class="client-initial">${escapeHTML(clientInitial(service.name))}</span>
       <div class="client-details">
         <strong>${escapeHTML(service.name)}</strong>
@@ -469,7 +500,7 @@ function renderCategories() {
   }
   categoryList.innerHTML = menuCategories.map((category) => {
     const menuCount = menuCategoryLinks.filter((link) => link.category_id === category.id).length;
-    return `<article class="client-row"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${menuCount} ${menuCount === 1 ? 'cardápio' : 'cardápios'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+    return `<article class="client-row detail-trigger" data-detail-type="category" data-detail-id="${category.id}"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${menuCount} ${menuCount === 1 ? 'cardápio' : 'cardápios'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
   }).join('');
   lucide.createIcons();
 }
@@ -495,10 +526,15 @@ function renderMenus() {
   }
   menuList.innerHTML = visibleMenus.map((menu) => {
     const serviceCount = menuServices.filter((link) => link.menu_id === menu.id).length;
-    return `<article class="client-row service-row">
-      <span class="client-initial">${escapeHTML(clientInitial(menu.name))}</span>
-      <div class="client-details"><strong>${escapeHTML(menu.name)}</strong><span>${escapeHTML(menu.description || 'Sem descrição')}</span><span class="service-price">${serviceCount} ${serviceCount === 1 ? 'serviço' : 'serviços'}</span><span class="service-status${menu.active ? '' : ' inactive'}">${menu.active ? 'Ativo' : 'Inativo'}</span></div>
-      <div class="client-actions"><button class="client-action" type="button" data-edit-menu="${menu.id}" aria-label="Editar ${escapeHTML(menu.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-menu="${menu.id}" aria-label="Excluir ${escapeHTML(menu.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div>
+    const images = menuImages.filter((image) => image.menu_id === menu.id).slice(0, 4);
+    const heroImage = images[0]?.public_url;
+    return `<article class="visual-card menu-card detail-trigger" data-detail-type="menu" data-detail-id="${menu.id}">
+      <button class="visual-card-hero${heroImage ? '' : ' visual-card-placeholder'}" type="button" ${heroImage ? `data-view-image="${escapeHTML(heroImage)}"` : ''} aria-label="${heroImage ? `Ver imagem de ${escapeHTML(menu.name)}` : 'Cardápio sem imagem'}">${heroImage ? `<img src="${escapeHTML(heroImage)}" alt="${escapeHTML(menu.name)}" />` : '<i data-lucide="book-open"></i><span>Sem imagem</span>'}</button>
+      <div class="visual-card-body"><div class="visual-card-heading"><div><strong>${escapeHTML(menu.name)}</strong><span>${escapeHTML(menu.description || 'Sem descrição')}</span></div><span class="service-status${menu.active ? '' : ' inactive'}">${menu.active ? 'Ativo' : 'Inativo'}</span></div>
+        <div class="visual-card-meta"><span class="service-price">${serviceCount} ${serviceCount === 1 ? 'serviço' : 'serviços'}</span>${images.length > 1 ? `<span>${images.length} imagens</span>` : ''}</div>
+        ${images.length > 1 ? `<div class="visual-card-thumbs">${images.slice(1).map((image) => `<button type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ver imagem do cardápio"><img src="${escapeHTML(image.public_url)}" alt="" /></button>`).join('')}</div>` : ''}
+        <div class="visual-card-actions"><button class="client-action" type="button" data-edit-menu="${menu.id}" aria-label="Editar ${escapeHTML(menu.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-menu="${menu.id}" aria-label="Excluir ${escapeHTML(menu.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div>
+      </div>
     </article>`;
   }).join('');
   lucide.createIcons();
@@ -660,8 +696,8 @@ function renderMenuCategoryOptions(selectedCategoryIds = []) {
 
 function renderMenuImagePreviews(menuId = null) {
   const existingImages = menuImages.filter((image) => image.menu_id === menuId && !removedMenuImageIds.includes(image.id));
-  const existingMarkup = existingImages.map((image) => `<div class="image-preview"><img src="${escapeHTML(image.public_url)}" alt="Imagem do cardápio" /><button type="button" data-remove-existing-image="${image.id}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
-  const pendingMarkup = pendingMenuImages.map((file, index) => `<div class="image-preview"><img src="${URL.createObjectURL(file)}" alt="Prévia de ${escapeHTML(file.name)}" /><button type="button" data-remove-pending-image="${index}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
+  const existingMarkup = existingImages.map((image) => `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ampliar imagem"><img src="${escapeHTML(image.public_url)}" alt="Imagem do cardápio" /></button><button class="image-preview-remove" type="button" data-remove-existing-image="${image.id}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
+  const pendingMarkup = pendingMenuImages.map((file, index) => { const previewUrl = URL.createObjectURL(file); return `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${previewUrl}" aria-label="Ampliar imagem"><img src="${previewUrl}" alt="Prévia de ${escapeHTML(file.name)}" /></button><button class="image-preview-remove" type="button" data-remove-pending-image="${index}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`; }).join('');
   menuImagePreviews.innerHTML = existingMarkup + pendingMarkup;
   lucide.createIcons();
 }
@@ -758,4 +794,359 @@ document.querySelectorAll('[data-nav]').forEach((button) => {
     button.classList.add('active');
     showToast(button.dataset.nav);
   });
+});
+
+function setInventoryFeedback(message, isError = false) {
+  inventoryFeedback.textContent = message;
+  inventoryFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+function inventoryIsLow(item) {
+  return Number(item.minimum_quantity) > 0 && Number(item.quantity) <= Number(item.minimum_quantity);
+}
+
+function renderInventory() {
+  const searchTerm = inventorySearch.value.trim().toLowerCase();
+  const selectedCategoryId = inventoryCategoryFilter.value;
+  const visibleItems = inventoryItems.filter((item) => {
+    const searchableContent = Object.values(item).map((value) => String(value ?? '')).join(' ').toLowerCase();
+    const matchesSearch = searchableContent.includes(searchTerm);
+    const matchesCategory = !selectedCategoryId || item.categoryIds.includes(selectedCategoryId);
+    return matchesSearch && matchesCategory && (!inventoryLowOnly.checked || inventoryIsLow(item));
+  });
+
+  if (!visibleItems.length) {
+    inventoryList.innerHTML = `<div class="empty-clients">${searchTerm || inventoryLowOnly.checked ? 'Nenhum item encontrado para esse filtro.' : 'Ainda não há itens cadastrados.'}</div>`;
+    return;
+  }
+
+  inventoryList.innerHTML = visibleItems.map((item) => `
+    <article class="visual-card inventory-card detail-trigger" data-detail-type="inventory" data-detail-id="${item.id}">
+      ${item.imageUrls.length ? `<button class="visual-card-hero" type="button" data-view-image="${escapeHTML(item.imageUrls[0])}" aria-label="Ver imagem de ${escapeHTML(item.name)}"><img src="${escapeHTML(item.imageUrls[0])}" alt="${escapeHTML(item.name)}" /></button>` : '<div class="visual-card-hero visual-card-placeholder"><i data-lucide="box"></i><span>Sem imagem</span></div>'}
+      <div class="visual-card-body"><div class="visual-card-heading"><div><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.description || item.unit)}</span></div><span class="service-status${item.active ? '' : ' inactive'}">${item.active ? 'Disponível' : 'Inativo'}</span></div>
+        ${item.categoryNames.length ? `<span class="service-menus">${escapeHTML(item.categoryNames.join(' · '))}</span>` : ''}
+        <span class="inventory-balance ${inventoryIsLow(item) ? 'low' : ''}">${item.quantity} ${escapeHTML(item.unit)}${inventoryIsLow(item) ? ' · estoque baixo' : ''}</span>
+        ${item.imageUrls.length > 1 ? `<div class="visual-card-thumbs">${item.imageUrls.slice(1, 4).map((url) => `<button type="button" data-view-image="${escapeHTML(url)}" aria-label="Ver imagem do item"><img src="${escapeHTML(url)}" alt="" /></button>`).join('')}</div>` : ''}
+      <div class="visual-card-actions">
+        <button class="client-action" type="button" data-move-inventory="${item.id}" aria-label="Movimentar ${escapeHTML(item.name)}" title="Movimentar"><i data-lucide="arrow-down-up"></i></button>
+        <button class="client-action" type="button" data-edit-inventory="${item.id}" aria-label="Editar ${escapeHTML(item.name)}" title="Editar"><i data-lucide="pencil"></i></button>
+        <button class="client-action" type="button" data-delete-inventory="${item.id}" aria-label="Excluir ${escapeHTML(item.name)}" title="Excluir"><i data-lucide="trash-2"></i></button>
+      </div></div>
+    </article>
+  `).join('');
+  lucide.createIcons();
+}
+
+async function loadInventory() {
+  setInventoryFeedback('Carregando estoque...');
+  const { data, error } = await supabaseClient.from('inventory_items').select('id, name, description, unit, quantity, minimum_quantity, active, created_at').order('name');
+  if (error) {
+    setInventoryFeedback('Não foi possível carregar o estoque. Verifique a autenticação.', true);
+    inventoryList.innerHTML = '';
+    return;
+  }
+  const [imagesResult, categoriesResult, linksResult] = await Promise.all([
+    supabaseClient.from('inventory_images').select('id, inventory_item_id, storage_path, public_url, sort_order').order('sort_order'),
+    supabaseClient.from('inventory_categories').select('id, name').order('name'),
+    supabaseClient.from('inventory_category_links').select('inventory_item_id, category_id')
+  ]);
+  inventoryImages = imagesResult.data || [];
+  inventoryCategories = categoriesResult.data || [];
+  inventoryCategoryLinks = linksResult.data || [];
+  renderInventoryCategoryFilter();
+  inventoryItems = (data || []).map((item) => {
+    const links = inventoryCategoryLinks.filter((link) => link.inventory_item_id === item.id);
+    return {
+      ...item,
+      categoryIds: links.map((link) => link.category_id),
+      categoryNames: links.map((link) => inventoryCategories.find((category) => category.id === link.category_id)?.name).filter(Boolean),
+      imageUrls: inventoryImages.filter((image) => image.inventory_item_id === item.id).map((image) => image.public_url)
+    };
+  });
+  const lowCount = inventoryItems.filter(inventoryIsLow).length;
+  setInventoryFeedback(`${inventoryItems.length} ${inventoryItems.length === 1 ? 'item cadastrado' : 'itens cadastrados'}${lowCount ? ` · ${lowCount} com estoque baixo` : ''}`);
+  renderInventory();
+}
+
+function openInventory() {
+  inventoryPanel.hidden = false;
+  inventorySearch.value = '';
+  inventoryLowOnly.checked = false;
+  loadInventory();
+}
+
+function openInventoryForm(item = null) {
+  inventoryForm.reset();
+  pendingInventoryImages = [];
+  removedInventoryImageIds = [];
+  const unitSelect = document.querySelector('#inventory-unit');
+  const knownUnit = [...unitSelect.options].some((option) => option.value === item?.unit);
+  if (item?.unit && !knownUnit) {
+    unitSelect.add(new Option(item.unit, item.unit));
+  }
+  document.querySelector('#inventory-id').value = item?.id || '';
+  document.querySelector('#inventory-name').value = item?.name || '';
+  document.querySelector('#inventory-unit').value = item?.unit || 'unidade';
+  document.querySelector('#inventory-quantity').value = item?.quantity ?? '';
+  document.querySelector('#inventory-minimum').value = item?.minimum_quantity ?? 0;
+  document.querySelector('#inventory-description').value = item?.description || '';
+  document.querySelector('#inventory-active').checked = item?.active ?? true;
+  inventoryFormTitle.textContent = item ? 'Editar item' : 'Novo item';
+  inventoryFormFeedback.textContent = '';
+  inventoryFormPanel.hidden = false;
+  renderInventoryCategoryOptions(item?.categoryIds || []);
+  renderInventoryImagePreviews(item?.id || null);
+  document.querySelector('#inventory-name').focus();
+}
+
+function openMovementForm(item) {
+  if (!item) return;
+  movementForm.reset();
+  document.querySelector('#movement-item-id').value = item.id;
+  movementItemName.textContent = `${item.name} · saldo atual: ${item.quantity} ${item.unit}`;
+  movementFormFeedback.textContent = '';
+  movementFormPanel.hidden = false;
+  document.querySelector('#movement-quantity').focus();
+}
+
+document.querySelector('[data-open-inventory]').addEventListener('click', openInventory);
+document.querySelector('[data-close-inventory]').addEventListener('click', () => { inventoryPanel.hidden = true; });
+document.querySelector('[data-new-inventory]').addEventListener('click', () => openInventoryForm());
+document.querySelector('[data-close-inventory-form]').addEventListener('click', () => { inventoryFormPanel.hidden = true; });
+document.querySelector('[data-close-movement-form]').addEventListener('click', () => { movementFormPanel.hidden = true; });
+inventorySearch.addEventListener('input', renderInventory);
+inventoryLowOnly.addEventListener('change', renderInventory);
+inventoryCategoryFilter.addEventListener('change', renderInventory);
+
+function renderInventoryCategoryFilter() {
+  const selectedValue = inventoryCategoryFilter.value;
+  inventoryCategoryFilter.innerHTML = '<option value="">Todas as categorias</option>' + inventoryCategories.map((category) => `<option value="${category.id}">${escapeHTML(category.name)}</option>`).join('');
+  inventoryCategoryFilter.value = inventoryCategories.some((category) => category.id === selectedValue) ? selectedValue : '';
+}
+
+function renderInventoryCategoryOptions(selectedCategoryIds = []) {
+  if (!inventoryCategories.length) {
+    inventoryCategoryOptions.innerHTML = '<span class="field-hint">Execute a migração 005 para carregar categorias.</span>';
+    return;
+  }
+  inventoryCategoryOptions.innerHTML = inventoryCategories.map((category) => `<label class="category-option" for="inventory-category-${category.id}"><input id="inventory-category-${category.id}" type="checkbox" value="${category.id}" ${selectedCategoryIds.includes(category.id) ? 'checked' : ''} /><span>${escapeHTML(category.name)}</span></label>`).join('');
+}
+
+function renderInventoryImagePreviews(itemId = null) {
+  const existingImages = inventoryImages.filter((image) => image.inventory_item_id === itemId && !removedInventoryImageIds.includes(image.id));
+  const existingMarkup = existingImages.map((image) => `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ampliar imagem"><img src="${escapeHTML(image.public_url)}" alt="Imagem do item" /></button><button class="image-preview-remove" type="button" data-remove-existing-inventory-image="${image.id}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
+  const pendingMarkup = pendingInventoryImages.map((file, index) => { const previewUrl = URL.createObjectURL(file); return `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${previewUrl}" aria-label="Ampliar imagem"><img src="${previewUrl}" alt="Prévia de ${escapeHTML(file.name)}" /></button><button class="image-preview-remove" type="button" data-remove-pending-inventory-image="${index}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`; }).join('');
+  inventoryImagePreviews.innerHTML = existingMarkup + pendingMarkup;
+  lucide.createIcons();
+}
+
+function openImageViewer(url) {
+  imageViewerImage.src = url;
+  imageViewer.hidden = false;
+}
+
+function closeImageViewer() {
+  imageViewer.hidden = true;
+  imageViewerImage.src = '';
+}
+
+function detailRow(label, value) {
+  return `<div class="detail-row"><span>${label}</span><strong>${escapeHTML(value || 'Não informado')}</strong></div>`;
+}
+
+function renderDetailImages(images, title) {
+  if (!images.length) return '';
+  return `<div class="detail-images">${images.map((url) => `<button type="button" data-view-image="${escapeHTML(url)}" aria-label="Ampliar imagem de ${escapeHTML(title)}"><img src="${escapeHTML(url)}" alt="${escapeHTML(title)}" /></button>`).join('')}</div>`;
+}
+
+function openDetail(type, id) {
+  let title = 'Detalhes';
+  let eyebrow = 'DETALHES';
+  let content = '';
+  if (type === 'client') {
+    const client = clients.find((item) => item.id === id);
+    if (!client) return;
+    title = client.name;
+    eyebrow = 'CLIENTE';
+    content = `<div class="detail-summary"><span class="detail-initial">${escapeHTML(clientInitial(client.name))}</span><div><strong>${escapeHTML(client.name)}</strong><span>Cadastro de cliente</span></div></div>${detailRow('WhatsApp', client.whatsapp)}${detailRow('E-mail', client.email)}${detailRow('Observações', client.notes)}`;
+  } else if (type === 'service') {
+    const service = services.find((item) => item.id === id);
+    if (!service) return;
+    title = service.name;
+    eyebrow = 'SERVIÇO';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="sparkles"></i></span><div><strong>${escapeHTML(service.name)}</strong><span>${service.active ? 'Serviço ativo' : 'Serviço inativo'}</span></div></div>${detailRow('Categoria', service.category)}${detailRow('Preço padrão', formatCurrency(service.default_price))}${detailRow('Cardápios', service.menuNames.join(' · '))}${detailRow('Descrição', service.description)}`;
+  } else if (type === 'menu') {
+    const menu = menus.find((item) => item.id === id);
+    if (!menu) return;
+    const images = menuImages.filter((image) => image.menu_id === id).map((image) => image.public_url);
+    const categories = menuCategoryLinks.filter((link) => link.menu_id === id).map((link) => menuCategories.find((category) => category.id === link.category_id)?.name).filter(Boolean);
+    title = menu.name;
+    eyebrow = 'CARDÁPIO';
+    content = renderDetailImages(images, menu.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="book-open"></i></span><div><strong>${escapeHTML(menu.name)}</strong><span>${menu.active ? 'Disponível' : 'Inativo'}</span></div></div>${detailRow('Categorias', categories.join(' · '))}${detailRow('Serviços', `${menuServices.filter((link) => link.menu_id === id).length}`)}${detailRow('Descrição', menu.description)}`;
+  } else if (type === 'inventory') {
+    const item = inventoryItems.find((entry) => entry.id === id);
+    if (!item) return;
+    title = item.name;
+    eyebrow = 'ITEM DE ESTOQUE';
+    content = renderDetailImages(item.imageUrls, item.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="box"></i></span><div><strong>${escapeHTML(item.name)}</strong><span>${item.active ? 'Disponível para uso' : 'Item inativo'}</span></div></div>${detailRow('Quantidade atual', `${item.quantity} ${item.unit}`)}${detailRow('Estoque mínimo', `${item.minimum_quantity} ${item.unit}`)}${detailRow('Categorias', item.categoryNames.join(' · '))}${detailRow('Descrição', item.description)}`;
+  } else if (type === 'category') {
+    const category = menuCategories.find((item) => item.id === id);
+    if (!category) return;
+    title = category.name;
+    eyebrow = 'CATEGORIA';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="tags"></i></span><div><strong>${escapeHTML(category.name)}</strong><span>Categoria de cardápios</span></div></div>${detailRow('Cardápios', `${menuCategoryLinks.filter((link) => link.category_id === id).length}`)}`;
+  }
+  detailViewTitle.textContent = title;
+  detailViewEyebrow.textContent = eyebrow;
+  detailViewContent.innerHTML = content;
+  detailView.hidden = false;
+  lucide.createIcons();
+}
+
+function closeDetail() {
+  detailView.hidden = true;
+  detailViewContent.innerHTML = '';
+}
+
+document.addEventListener('click', (event) => {
+  const imageButton = event.target.closest('[data-view-image]');
+  if (imageButton) {
+    openImageViewer(imageButton.dataset.viewImage);
+    return;
+  }
+  if (event.target.closest('button, a, input, select, textarea')) return;
+  const detailTrigger = event.target.closest('[data-detail-type]');
+  if (detailTrigger) openDetail(detailTrigger.dataset.detailType, detailTrigger.dataset.detailId);
+});
+document.querySelector('[data-close-image-viewer]').addEventListener('click', closeImageViewer);
+imageViewer.addEventListener('click', (event) => { if (event.target === imageViewer) closeImageViewer(); });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeImageViewer(); });
+document.querySelector('[data-close-detail]').addEventListener('click', closeDetail);
+detailView.addEventListener('click', (event) => { if (event.target === detailView) closeDetail(); });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDetail(); });
+
+inventoryImageInput.addEventListener('change', () => {
+  pendingInventoryImages = [...pendingInventoryImages, ...inventoryImageInput.files].filter((file) => file.type.startsWith('image/'));
+  inventoryImageInput.value = '';
+  renderInventoryImagePreviews(document.querySelector('#inventory-id').value || null);
+});
+
+inventoryImagePreviews.addEventListener('click', (event) => {
+  const existingButton = event.target.closest('[data-remove-existing-inventory-image]');
+  const pendingButton = event.target.closest('[data-remove-pending-inventory-image]');
+  if (existingButton) {
+    removedInventoryImageIds.push(existingButton.dataset.removeExistingInventoryImage);
+    renderInventoryImagePreviews(document.querySelector('#inventory-id').value || null);
+  }
+  if (pendingButton) {
+    pendingInventoryImages.splice(Number(pendingButton.dataset.removePendingInventoryImage), 1);
+    renderInventoryImagePreviews(document.querySelector('#inventory-id').value || null);
+  }
+});
+
+inventoryForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = inventoryForm.querySelector('button[type="submit"]');
+  const itemId = document.querySelector('#inventory-id').value;
+  const payload = {
+    name: document.querySelector('#inventory-name').value.trim(),
+    unit: document.querySelector('#inventory-unit').value.trim(),
+    quantity: Number(document.querySelector('#inventory-quantity').value),
+    minimum_quantity: Number(document.querySelector('#inventory-minimum').value),
+    description: document.querySelector('#inventory-description').value.trim() || null,
+    active: document.querySelector('#inventory-active').checked
+  };
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Salvando...';
+  inventoryFormFeedback.textContent = '';
+  const result = itemId
+    ? await supabaseClient.from('inventory_items').update(payload).eq('id', itemId)
+    : await supabaseClient.from('inventory_items').insert(payload).select('id').single();
+  if (result.error) {
+    inventoryFormFeedback.textContent = 'Não foi possível salvar o item. Confira os dados.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar item';
+    return;
+  }
+  const selectedCategoryIds = [...inventoryCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value);
+  const savedItemId = itemId || result.data?.id;
+  const { error: clearCategoriesError } = await supabaseClient.from('inventory_category_links').delete().eq('inventory_item_id', savedItemId);
+  if (clearCategoriesError || !savedItemId) {
+    inventoryFormFeedback.textContent = 'Item salvo, mas não foi possível atualizar suas categorias.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar item';
+    return;
+  }
+  if (selectedCategoryIds.length) await supabaseClient.from('inventory_category_links').insert(selectedCategoryIds.map((categoryId) => ({ inventory_item_id: savedItemId, category_id: categoryId })));
+  if (removedInventoryImageIds.length) {
+    const removedImages = inventoryImages.filter((image) => removedInventoryImageIds.includes(image.id));
+    await supabaseClient.storage.from('inventory-images').remove(removedImages.map((image) => image.storage_path));
+    await supabaseClient.from('inventory_images').delete().in('id', removedInventoryImageIds);
+  }
+  if (pendingInventoryImages.length) {
+    const uploadedImages = [];
+    for (const [index, file] of pendingInventoryImages.entries()) {
+      const extension = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const storagePath = `${savedItemId}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabaseClient.storage.from('inventory-images').upload(storagePath, file, { contentType: file.type, upsert: false });
+      if (uploadError) continue;
+      const { data: publicData } = supabaseClient.storage.from('inventory-images').getPublicUrl(storagePath);
+      uploadedImages.push({ inventory_item_id: savedItemId, storage_path: storagePath, public_url: publicData.publicUrl, sort_order: index });
+    }
+    if (uploadedImages.length) await supabaseClient.from('inventory_images').insert(uploadedImages);
+  }
+  inventoryFormPanel.hidden = true;
+  await loadInventory();
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Salvar item';
+  showToast(itemId ? 'Item atualizado' : 'Item cadastrado');
+});
+
+movementType.addEventListener('change', () => {
+  movementQuantityLabel.textContent = movementType.value === 'adjustment' ? 'Nova quantidade total' : 'Quantidade';
+});
+
+movementForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = movementForm.querySelector('button[type="submit"]');
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Registrando...';
+  movementFormFeedback.textContent = '';
+  const { error } = await supabaseClient.rpc('record_inventory_movement', {
+    target_item_id: document.querySelector('#movement-item-id').value,
+    movement_kind: movementType.value,
+    movement_quantity: Number(document.querySelector('#movement-quantity').value),
+    movement_notes: document.querySelector('#movement-notes').value.trim() || null
+  });
+  if (error) {
+    movementFormFeedback.textContent = error.message.includes('negativo') ? 'A saída não pode ser maior que o estoque atual.' : 'Não foi possível registrar a movimentação. Execute a migração 004 no Supabase.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Registrar movimentação';
+    return;
+  }
+  movementFormPanel.hidden = true;
+  await loadInventory();
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Registrar movimentação';
+  showToast('Movimentação registrada');
+});
+
+inventoryList.addEventListener('click', async (event) => {
+  const moveButton = event.target.closest('[data-move-inventory]');
+  const editButton = event.target.closest('[data-edit-inventory]');
+  const deleteButton = event.target.closest('[data-delete-inventory]');
+  const itemId = moveButton?.dataset.moveInventory || editButton?.dataset.editInventory || deleteButton?.dataset.deleteInventory;
+  const item = inventoryItems.find((entry) => entry.id === itemId);
+  if (moveButton) return openMovementForm(item);
+  if (editButton) return openInventoryForm(item);
+  if (deleteButton) {
+    if (!item || !window.confirm(`Excluir o item ${item.name}?`)) return;
+    const { error } = await supabaseClient.from('inventory_items').delete().eq('id', item.id);
+    if (error) {
+      setInventoryFeedback('Não foi possível excluir este item. Ele pode estar ligado a um serviço.', true);
+      return;
+    }
+    await loadInventory();
+    showToast('Item excluído');
+  }
 });

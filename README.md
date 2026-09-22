@@ -32,6 +32,12 @@ Para habilitar cardápios, execute também [supabase/migrations/002_menus.sql](s
 
 Para imagens e categorias, execute em seguida [supabase/migrations/003_menu_images_categories.sql](supabase/migrations/003_menu_images_categories.sql). Essa migração cria o bucket `menu-images`, aceita várias imagens por cardápio e cadastra categorias iniciais como Doces, Salgados, Bolos, Bebidas, Sobremesas e Frutas.
 
+### Estoque
+
+Para habilitar as movimentações de estoque, execute [supabase/migrations/004_inventory_stock.sql](supabase/migrations/004_inventory_stock.sql). O módulo permite cadastrar itens, definir estoque mínimo e registrar entradas, saídas e ajustes com histórico no banco.
+
+Para categorias e imagens dos itens, execute [supabase/migrations/005_inventory_categories_images.sql](supabase/migrations/005_inventory_categories_images.sql). As imagens ficam no bucket `inventory-images`, podem ser múltiplas e abrem em tela cheia ao toque. O mesmo visualizador é usado nas imagens dos cardápios.
+
 ### Instalar como PWA
 
 O app agora possui [manifest.webmanifest](manifest.webmanifest), [sw.js](sw.js) e ícones em [icons](icons). Depois do deploy no Netlify:

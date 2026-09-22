@@ -114,7 +114,7 @@
             <span class="module-text"><strong>Serviços</strong><small>Seu catálogo</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-estoque" type="button" data-action="Estoque">
+          <button class="module-card card-estoque" type="button" data-open-inventory>
             <span class="module-icon"><i data-lucide="boxes"></i></span>
             <span class="module-text"><strong>Estoque</strong><small>Itens e disponibilidade</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
@@ -157,6 +157,103 @@
         <p class="client-feedback" id="client-feedback" role="status"></p>
         <div class="client-list" id="client-list"></div>
       </div>
+    </section>
+    <section class="service-panel" id="inventory-panel" hidden aria-labelledby="inventory-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CONTROLE</p>
+            <h2 id="inventory-title">Estoque</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-inventory aria-label="Fechar estoque"><i data-lucide="x"></i></button>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="inventory-search">
+            <i data-lucide="search"></i>
+            <input id="inventory-search" type="search" placeholder="Buscar qualquer informação" />
+          </label>
+          <button class="add-client-button" type="button" data-new-inventory><i data-lucide="plus"></i><span>Novo item</span></button>
+        </div>
+        <div class="inventory-filter-row">
+          <select class="catalog-filter" id="inventory-category-filter" aria-label="Filtrar por categoria">
+            <option value="">Todas as categorias</option>
+          </select>
+          <label class="inventory-low-filter"><input id="inventory-low-only" type="checkbox" /> Mostrar estoque baixo</label>
+        </div>
+        <p class="client-feedback" id="inventory-feedback" role="status"></p>
+        <div class="client-list" id="inventory-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="inventory-form-panel" hidden aria-labelledby="inventory-form-title">
+      <form class="client-form-card" id="inventory-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CONTROLE</p>
+            <h2 id="inventory-form-title">Novo item</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-inventory-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="inventory-id" type="hidden" />
+        <label for="inventory-name">Nome do item</label>
+        <input id="inventory-name" type="text" placeholder="Ex.: Prato raso branco" required />
+        <label for="inventory-unit">Unidade de medida</label>
+        <select id="inventory-unit" class="movement-select" required>
+          <option value="unidade">Unidade</option>
+          <option value="caixa">Caixa</option>
+          <option value="kit">Kit</option>
+          <option value="par">Par</option>
+          <option value="pacote">Pacote</option>
+          <option value="fardo">Fardo</option>
+          <option value="metro">Metro</option>
+          <option value="litro">Litro</option>
+          <option value="quilo">Quilo</option>
+          <option value="grama">Grama</option>
+          <option value="unidade_m2">Metro quadrado</option>
+        </select>
+        <fieldset class="menu-checkboxes category-checkboxes">
+          <legend>Categorias do item</legend>
+          <div id="inventory-category-options"><span class="field-hint">Carregando categorias...</span></div>
+        </fieldset>
+        <label for="inventory-quantity">Quantidade atual</label>
+        <input id="inventory-quantity" type="number" min="0" step="0.01" placeholder="0" required />
+        <label for="inventory-minimum">Estoque mínimo</label>
+        <input id="inventory-minimum" type="number" min="0" step="0.01" placeholder="0" required />
+        <span class="field-hint inventory-minimum-hint">Limite de alerta: quando o saldo chegar neste número ou ficar abaixo, o item será marcado como estoque baixo. Use 0 para não gerar alerta.</span>
+        <label for="inventory-description">Descrição</label>
+        <textarea id="inventory-description" rows="3" placeholder="Detalhes, cor, tamanho ou localização"></textarea>
+        <label for="inventory-images">Imagens do item</label>
+        <input id="inventory-images" type="file" accept="image/*" multiple />
+        <span class="field-hint">Você pode selecionar várias imagens do item.</span>
+        <div class="image-preview-grid" id="inventory-image-previews"></div>
+        <label class="service-active-field" for="inventory-active"><input id="inventory-active" type="checkbox" checked /> Disponível para uso</label>
+        <p class="client-form-feedback" id="inventory-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar item</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="client-form-panel" id="movement-form-panel" hidden aria-labelledby="movement-form-title">
+      <form class="client-form-card" id="movement-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ESTOQUE</p>
+            <h2 id="movement-form-title">Movimentar item</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-movement-form aria-label="Fechar movimentação"><i data-lucide="x"></i></button>
+        </header>
+        <input id="movement-item-id" type="hidden" />
+        <p class="movement-item-name" id="movement-item-name"></p>
+        <label for="movement-type">Tipo de movimentação</label>
+        <select id="movement-type" class="movement-select">
+          <option value="in">Entrada</option>
+          <option value="out">Saída</option>
+          <option value="adjustment">Ajuste para quantidade</option>
+        </select>
+        <label for="movement-quantity" id="movement-quantity-label">Quantidade</label>
+        <input id="movement-quantity" type="number" min="0.01" step="0.01" placeholder="0" required />
+        <label for="movement-notes">Observação</label>
+        <textarea id="movement-notes" rows="2" placeholder="Ex.: reposição ou uso em evento"></textarea>
+        <p class="client-form-feedback" id="movement-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Registrar movimentação</span><i data-lucide="arrow-down-up"></i></button>
+      </form>
     </section>
     <section class="client-form-panel" id="client-form-panel" hidden aria-labelledby="client-form-title">
       <form class="client-form-card" id="client-form">
@@ -298,6 +395,19 @@
         <p class="client-form-feedback" id="service-form-feedback" role="alert"></p>
         <button class="login-button" type="submit"><span>Salvar serviço</span><i data-lucide="check"></i></button>
       </form>
+    </section>
+    <section class="image-viewer" id="image-viewer" hidden aria-label="Visualização da imagem">
+      <button class="image-viewer-close" type="button" data-close-image-viewer aria-label="Fechar imagem"><i data-lucide="x"></i></button>
+      <img id="image-viewer-image" src="" alt="Imagem ampliada" />
+    </section>
+    <section class="detail-view" id="detail-view" hidden aria-labelledby="detail-view-title">
+      <div class="detail-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow" id="detail-view-eyebrow">DETALHES</p><h2 id="detail-view-title">Detalhes</h2></div>
+          <button class="icon-button" type="button" data-close-detail aria-label="Fechar detalhes"><i data-lucide="x"></i></button>
+        </header>
+        <div id="detail-view-content"></div>
+      </div>
     </section>
     <div class="toast" role="status" aria-live="polite"></div>
 
