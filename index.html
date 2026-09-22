@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#31483b" />
+    <title>Plenitude Realizações | Backoffice</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title">
+      <div class="auth-card">
+        <div class="auth-brand" aria-hidden="true"><span class="brand-mark">PR</span></div>
+        <p class="eyebrow">BACKOFFICE</p>
+        <h1 id="auth-title">Bem-vinda de volta<span>.</span></h1>
+        <p class="auth-intro">Entre para cuidar de cada detalhe da sua realização.</p>
+        <form id="login-form" class="login-form">
+          <label for="login-email">E-mail</label>
+          <input id="login-email" name="email" type="email" autocomplete="email" placeholder="seu@email.com" required />
+          <label for="login-password">Senha</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Sua senha" required />
+          <button class="login-button" type="submit"><span>Entrar no backoffice</span><i data-lucide="arrow-right"></i></button>
+          <p class="login-feedback" id="login-feedback" role="alert"></p>
+        </form>
+      </div>
+    </section>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#inicio" aria-label="Plenitude Realizações, início">
+          <span class="brand-mark">PR</span>
+          <span class="brand-name">Plenitude <strong>Realizações</strong></span>
+        </a>
+        <div class="topbar-actions">
+          <button class="icon-button" type="button" aria-label="Notificações" data-action="Notificações">
+            <i data-lucide="bell"></i>
+            <span class="notification-dot"></span>
+          </button>
+          <button class="avatar" type="button" aria-label="Abrir perfil de Ana" data-action="Perfil">AM</button>
+          <button class="icon-button" id="logout-button" type="button" aria-label="Sair" title="Sair">
+            <i data-lucide="log-out"></i>
+          </button>
+        </div>
+      </header>
+
+      <section class="welcome-panel" id="inicio">
+        <div class="welcome-copy">
+          <p class="eyebrow">TERÇA-FEIRA, 22 DE SETEMBRO</p>
+          <h1>Bom dia, Ana<span>.</span></h1>
+          <p>O essencial para realizar cada detalhe com presença.</p>
+        </div>
+        <div class="welcome-art" aria-hidden="true">
+          <span class="sun-line"></span>
+          <span class="leaf leaf-one"></span>
+          <span class="leaf leaf-two"></span>
+          <span class="leaf leaf-three"></span>
+        </div>
+      </section>
+
+      <section class="today-row" aria-label="Resumo do dia">
+        <div>
+          <span class="today-label">AGENDA DE HOJE</span>
+          <strong>2 compromissos</strong>
+        </div>
+        <button class="text-button" type="button" data-action="Agenda de hoje">Ver agenda <i data-lucide="arrow-up-right"></i></button>
+      </section>
+
+      <section class="quick-actions" aria-label="Ações rápidas">
+        <button class="quick-action primary" type="button" data-action="Novo orçamento">
+          <span class="quick-icon"><i data-lucide="file-plus-2"></i></span>
+          <span>Novo orçamento</span>
+        </button>
+        <button class="quick-action" type="button" data-open-clients data-new-client>
+          <span class="quick-icon"><i data-lucide="user-plus"></i></span>
+          <span>Novo cliente</span>
+        </button>
+        <button class="quick-action" type="button" data-action="Novo evento">
+          <span class="quick-icon"><i data-lucide="calendar-plus-2"></i></span>
+          <span>Novo evento</span>
+        </button>
+      </section>
+
+      <section class="modules-section" aria-labelledby="modules-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">GESTÃO</p>
+            <h2 id="modules-title">Acesse seus módulos</h2>
+          </div>
+          <button class="more-button" type="button" aria-label="Mais opções" data-action="Mais opções"><i data-lucide="more-horizontal"></i></button>
+        </div>
+
+        <div class="module-grid">
+          <button class="module-card card-clientes" type="button" data-open-clients>
+            <span class="module-icon"><i data-lucide="users-round"></i></span>
+            <span class="module-text"><strong>Clientes</strong><small>Contatos e histórico</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-orcamentos" type="button" data-action="Orçamentos">
+            <span class="module-icon"><i data-lucide="notebook-tabs"></i></span>
+            <span class="module-text"><strong>Orçamentos</strong><small>Propostas e valores</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-servicos" type="button" data-open-services>
+            <span class="module-icon"><i data-lucide="sparkles"></i></span>
+            <span class="module-text"><strong>Serviços</strong><small>Seu catálogo</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-estoque" type="button" data-action="Estoque">
+            <span class="module-icon"><i data-lucide="boxes"></i></span>
+            <span class="module-text"><strong>Estoque</strong><small>Itens e disponibilidade</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-eventos" type="button" data-action="Eventos">
+            <span class="module-icon"><i data-lucide="calendar-days"></i></span>
+            <span class="module-text"><strong>Eventos</strong><small>Produção e agenda</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-cerimonial" type="button" data-action="Cerimonial">
+            <span class="module-icon"><i data-lucide="clipboard-check"></i></span>
+            <span class="module-text"><strong>Cerimonial</strong><small>Operação do evento</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+        </div>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Navegação principal">
+        <button class="nav-item active" type="button" data-nav="Início"><i data-lucide="house"></i><span>Início</span></button>
+        <button class="nav-item" type="button" data-nav="Agenda"><i data-lucide="calendar-clock"></i><span>Agenda</span></button>
+        <button class="nav-item" type="button" data-nav="Menu"><i data-lucide="layout-grid"></i><span>Menu</span></button>
+      </nav>
+    </main>
+    <section class="client-panel" id="client-panel" hidden aria-labelledby="clients-title">
+      <div class="client-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">GESTÃO</p>
+            <h2 id="clients-title">Clientes</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-clients aria-label="Fechar clientes"><i data-lucide="x"></i></button>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="client-search">
+            <i data-lucide="search"></i>
+            <input id="client-search" type="search" placeholder="Buscar por nome ou WhatsApp" />
+          </label>
+          <button class="add-client-button" type="button" data-new-client><i data-lucide="user-plus"></i><span>Novo cliente</span></button>
+        </div>
+        <p class="client-feedback" id="client-feedback" role="status"></p>
+        <div class="client-list" id="client-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="client-form-panel" hidden aria-labelledby="client-form-title">
+      <form class="client-form-card" id="client-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CADASTRO</p>
+            <h2 id="client-form-title">Novo cliente</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-client-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="client-id" type="hidden" />
+        <label for="client-name">Nome completo</label>
+        <input id="client-name" name="name" type="text" placeholder="Ex.: Mariana Oliveira" required />
+        <label for="client-whatsapp">WhatsApp</label>
+        <input id="client-whatsapp" name="whatsapp" type="tel" placeholder="(00) 00000-0000" />
+        <label for="client-email">E-mail</label>
+        <input id="client-email" name="email" type="email" placeholder="cliente@email.com" />
+        <label for="client-notes">Observações</label>
+        <textarea id="client-notes" name="notes" rows="3" placeholder="Informações importantes sobre o cliente"></textarea>
+        <p class="client-form-feedback" id="client-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar cliente</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="service-panel" id="service-panel" hidden aria-labelledby="services-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="services-title">Serviços</h2>
+          </div>
+          <div class="panel-header-actions">
+            <button class="icon-button" type="button" data-open-menus aria-label="Gerenciar cardápios" title="Cardápios"><i data-lucide="book-open"></i></button>
+            <button class="icon-button" type="button" data-close-services aria-label="Fechar serviços"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="service-search">
+            <i data-lucide="search"></i>
+            <input id="service-search" type="search" placeholder="Buscar serviço ou categoria" />
+          </label>
+          <select class="catalog-filter" id="service-menu-filter" aria-label="Filtrar por cardápio">
+            <option value="">Todos os cardápios</option>
+          </select>
+          <button class="add-client-button" type="button" data-new-service><i data-lucide="plus"></i><span>Novo serviço</span></button>
+        </div>
+        <p class="client-feedback" id="service-feedback" role="status"></p>
+        <div class="client-list" id="service-list"></div>
+      </div>
+    </section>
+    <section class="service-panel" id="menu-panel" hidden aria-labelledby="menus-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="menus-title">Cardápios</h2>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-menu><i data-lucide="plus"></i><span>Novo</span></button>
+            <button class="icon-button" type="button" data-close-menus aria-label="Fechar cardápios"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <p class="client-feedback" id="menu-feedback" role="status"></p>
+        <div class="client-list" id="menu-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="menu-form-panel" hidden aria-labelledby="menu-form-title">
+      <form class="client-form-card" id="menu-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="menu-form-title">Novo cardápio</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-menu-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="menu-id" type="hidden" />
+        <label for="menu-name">Nome do cardápio</label>
+        <input id="menu-name" name="name" type="text" placeholder="Ex.: Mesa posta" required />
+        <label for="menu-description">Descrição</label>
+        <textarea id="menu-description" name="description" rows="3" placeholder="Apresente este cardápio para a equipe"></textarea>
+        <label class="service-active-field" for="menu-active"><input id="menu-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
+        <p class="client-form-feedback" id="menu-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar cardápio</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="client-form-panel" id="service-form-panel" hidden aria-labelledby="service-form-title">
+      <form class="client-form-card" id="service-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="service-form-title">Novo serviço</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-service-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="service-id" type="hidden" />
+        <label for="service-name">Nome do serviço</label>
+        <input id="service-name" name="name" type="text" placeholder="Ex.: Mesa posta para 20 pessoas" required />
+        <label for="service-category">Categoria</label>
+        <input id="service-category" name="category" type="text" placeholder="Ex.: Mesa posta, alimentação ou cerimonial" />
+        <label for="service-price">Preço padrão</label>
+        <input id="service-price" name="default_price" type="number" min="0" step="0.01" placeholder="0,00" required />
+        <label for="service-description">Descrição</label>
+        <textarea id="service-description" name="description" rows="3" placeholder="O que está incluído neste serviço"></textarea>
+        <fieldset class="menu-checkboxes">
+          <legend>Este serviço aparece em</legend>
+          <div id="service-menu-options"><span class="field-hint">Cadastre um cardápio para selecioná-lo aqui.</span></div>
+        </fieldset>
+        <label class="service-active-field" for="service-active"><input id="service-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
+        <p class="client-form-feedback" id="service-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar serviço</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <div class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
