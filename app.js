@@ -1,5 +1,13 @@
 lucide.createIcons();
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((error) => {
+      console.error('Não foi possível ativar o modo offline:', error);
+    });
+  });
+}
+
 const authScreen = document.querySelector('#auth-screen');
 const appShell = document.querySelector('.app-shell');
 const loginForm = document.querySelector('#login-form');
