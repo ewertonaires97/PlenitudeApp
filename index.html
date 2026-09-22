@@ -208,11 +208,33 @@
           </div>
           <div class="panel-header-actions">
             <button class="add-client-button" type="button" data-new-menu><i data-lucide="plus"></i><span>Novo</span></button>
+            <button class="icon-button" type="button" data-open-categories aria-label="Gerenciar categorias" title="Categorias"><i data-lucide="tags"></i></button>
             <button class="icon-button" type="button" data-close-menus aria-label="Fechar cardápios"><i data-lucide="x"></i></button>
           </div>
         </header>
+        <div class="menu-filter-row">
+          <select class="catalog-filter" id="menu-category-filter" aria-label="Filtrar por categoria">
+            <option value="">Todas as categorias</option>
+          </select>
+        </div>
         <p class="client-feedback" id="menu-feedback" role="status"></p>
         <div class="client-list" id="menu-list"></div>
+      </div>
+    </section>
+    <section class="service-panel" id="category-panel" hidden aria-labelledby="categories-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="categories-title">Categorias</h2>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-category><i data-lucide="plus"></i><span>Nova</span></button>
+            <button class="icon-button" type="button" data-close-categories aria-label="Fechar categorias"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <p class="client-feedback" id="category-feedback" role="status"></p>
+        <div class="client-list" id="category-list"></div>
       </div>
     </section>
     <section class="client-form-panel" id="menu-form-panel" hidden aria-labelledby="menu-form-title">
@@ -229,6 +251,15 @@
         <input id="menu-name" name="name" type="text" placeholder="Ex.: Mesa posta" required />
         <label for="menu-description">Descrição</label>
         <textarea id="menu-description" name="description" rows="3" placeholder="Apresente este cardápio para a equipe"></textarea>
+        <label for="menu-images">Imagens do cardápio</label>
+        <input id="menu-images" name="images" type="file" accept="image/*" multiple />
+        <span class="field-hint">Você pode selecionar várias imagens. JPG, PNG ou WEBP.</span>
+        <div class="image-preview-grid" id="menu-image-previews"></div>
+        <fieldset class="menu-checkboxes category-checkboxes">
+          <legend>Categorias</legend>
+          <div id="menu-category-options"><span class="field-hint">Carregando categorias...</span></div>
+          <button class="inline-create-button" type="button" data-new-category><i data-lucide="plus"></i><span>Adicionar categoria</span></button>
+        </fieldset>
         <label class="service-active-field" for="menu-active"><input id="menu-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
         <p class="client-form-feedback" id="menu-form-feedback" role="alert"></p>
         <button class="login-button" type="submit"><span>Salvar cardápio</span><i data-lucide="check"></i></button>

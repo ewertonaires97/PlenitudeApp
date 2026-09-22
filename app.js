@@ -31,10 +31,22 @@ const menuForm = document.querySelector('#menu-form');
 const menuFormTitle = document.querySelector('#menu-form-title');
 const menuFormFeedback = document.querySelector('#menu-form-feedback');
 const menuFeedback = document.querySelector('#menu-feedback');
+const menuCategoryFilter = document.querySelector('#menu-category-filter');
+const menuImageInput = document.querySelector('#menu-images');
+const menuImagePreviews = document.querySelector('#menu-image-previews');
+const menuCategoryOptions = document.querySelector('#menu-category-options');
+const categoryPanel = document.querySelector('#category-panel');
+const categoryList = document.querySelector('#category-list');
+const categoryFeedback = document.querySelector('#category-feedback');
 let clients = [];
 let services = [];
 let menus = [];
 let menuServices = [];
+let menuImages = [];
+let menuCategories = [];
+let menuCategoryLinks = [];
+let pendingMenuImages = [];
+let removedMenuImageIds = [];
 
 function setAuthenticated(isAuthenticated) {
   authScreen.hidden = isAuthenticated;
@@ -437,18 +449,43 @@ function setMenuFeedback(message, isError = false) {
   menuFeedback.style.color = isError ? '#a0483d' : '';
 }
 
+function setCategoryFeedback(message, isError = false) {
+  categoryFeedback.textContent = message;
+  categoryFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+function renderCategories() {
+  if (!menuCategories.length) {
+    categoryList.innerHTML = '<div class="empty-clients">Ainda não há categorias cadastradas.</div>';
+    return;
+  }
+  categoryList.innerHTML = menuCategories.map((category) => {
+    const menuCount = menuCategoryLinks.filter((link) => link.category_id === category.id).length;
+    return `<article class="client-row"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${menuCount} ${menuCount === 1 ? 'cardápio' : 'cardápios'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+  }).join('');
+  lucide.createIcons();
+}
+
 function renderMenuFilter() {
   const selectedValue = serviceMenuFilter.value;
   serviceMenuFilter.innerHTML = '<option value="">Todos os cardápios</option>' + menus.map((menu) => `<option value="${menu.id}">${escapeHTML(menu.name)}</option>`).join('');
   serviceMenuFilter.value = menus.some((menu) => menu.id === selectedValue) ? selectedValue : '';
 }
 
+function renderMenuCategoryFilter() {
+  const selectedValue = menuCategoryFilter.value;
+  menuCategoryFilter.innerHTML = '<option value="">Todas as categorias</option>' + menuCategories.map((category) => `<option value="${category.id}">${escapeHTML(category.name)}</option>`).join('');
+  menuCategoryFilter.value = menuCategories.some((category) => category.id === selectedValue) ? selectedValue : '';
+}
+
 function renderMenus() {
-  if (!menus.length) {
+  const selectedCategoryId = menuCategoryFilter.value;
+  const visibleMenus = menus.filter((menu) => !selectedCategoryId || menuCategoryLinks.some((link) => link.menu_id === menu.id && link.category_id === selectedCategoryId));
+  if (!visibleMenus.length) {
     menuList.innerHTML = '<div class="empty-clients">Ainda não há cardápios cadastrados.</div>';
     return;
   }
-  menuList.innerHTML = menus.map((menu) => {
+  menuList.innerHTML = visibleMenus.map((menu) => {
     const serviceCount = menuServices.filter((link) => link.menu_id === menu.id).length;
     return `<article class="client-row service-row">
       <span class="client-initial">${escapeHTML(clientInitial(menu.name))}</span>
@@ -460,14 +497,30 @@ function renderMenus() {
 }
 
 async function loadMenus() {
+  const selectedCategoryIds = !menuFormPanel.hidden ? [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value) : [];
+  const openMenuId = !menuFormPanel.hidden ? document.querySelector('#menu-id').value || null : null;
   const { data, error } = await supabaseClient.from('menus').select('id, name, description, active, created_at').order('name');
   if (error) {
     setMenuFeedback('Não foi possível carregar os cardápios. Execute a migração 002 no Supabase.', true);
     return;
   }
   menus = data || [];
+  const [imagesResult, categoriesResult, categoryLinksResult] = await Promise.all([
+    supabaseClient.from('menu_images').select('id, menu_id, storage_path, public_url, sort_order').order('sort_order'),
+    supabaseClient.from('menu_categories').select('id, name').order('name'),
+    supabaseClient.from('menu_category_links').select('menu_id, category_id')
+  ]);
+  menuImages = imagesResult.data || [];
+  menuCategories = categoriesResult.data || [];
+  menuCategoryLinks = categoryLinksResult.data || [];
   renderMenuFilter();
+  renderMenuCategoryFilter();
   renderMenus();
+  renderCategories();
+  if (!menuFormPanel.hidden) {
+    renderMenuCategoryOptions(selectedCategoryIds);
+    renderMenuImagePreviews(openMenuId);
+  }
   if (!serviceFormPanel.hidden) await renderServiceMenuOptions([...serviceMenuOptions.querySelectorAll('input:checked')].map((input) => input.value));
 }
 
@@ -478,6 +531,8 @@ function openMenus() {
 
 function openMenuForm(menu = null) {
   menuForm.reset();
+  pendingMenuImages = [];
+  removedMenuImageIds = [];
   document.querySelector('#menu-id').value = menu?.id || '';
   document.querySelector('#menu-name').value = menu?.name || '';
   document.querySelector('#menu-description').value = menu?.description || '';
@@ -485,6 +540,8 @@ function openMenuForm(menu = null) {
   menuFormTitle.textContent = menu ? 'Editar cardápio' : 'Novo cardápio';
   menuFormFeedback.textContent = '';
   menuFormPanel.hidden = false;
+  renderMenuCategoryOptions(menu ? menuCategoryLinks.filter((link) => link.menu_id === menu.id).map((link) => link.category_id) : []);
+  renderMenuImagePreviews(menu?.id || null);
   document.querySelector('#menu-name').focus();
 }
 
@@ -496,6 +553,12 @@ serviceMenuOptions.addEventListener('click', (event) => {
   if (event.target.closest('[data-new-menu-from-service]')) openMenuForm();
 });
 
+document.querySelector('[data-open-categories]').addEventListener('click', () => {
+  categoryPanel.hidden = false;
+  loadMenus();
+});
+document.querySelector('[data-close-categories]').addEventListener('click', () => { categoryPanel.hidden = true; });
+
 menuForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = menuForm.querySelector('button[type="submit"]');
@@ -503,12 +566,52 @@ menuForm.addEventListener('submit', async (event) => {
   const payload = { name: document.querySelector('#menu-name').value.trim(), description: document.querySelector('#menu-description').value.trim() || null, active: document.querySelector('#menu-active').checked };
   saveButton.disabled = true;
   saveButton.querySelector('span').textContent = 'Salvando...';
-  const result = menuId ? await supabaseClient.from('menus').update(payload).eq('id', menuId) : await supabaseClient.from('menus').insert(payload);
+  const result = menuId
+    ? await supabaseClient.from('menus').update(payload).eq('id', menuId).select('id').single()
+    : await supabaseClient.from('menus').insert(payload).select('id').single();
   if (result.error) {
     menuFormFeedback.textContent = 'Não foi possível salvar o cardápio.';
     saveButton.disabled = false;
     saveButton.querySelector('span').textContent = 'Salvar cardápio';
     return;
+  }
+  const savedMenuId = result.data.id;
+  const selectedCategoryIds = [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value);
+  const { error: clearCategoriesError } = await supabaseClient.from('menu_category_links').delete().eq('menu_id', savedMenuId);
+  if (clearCategoriesError) {
+    menuFormFeedback.textContent = 'Cardápio salvo, mas não foi possível atualizar as categorias.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cardápio';
+    return;
+  }
+  if (selectedCategoryIds.length) {
+    const { error: categoryError } = await supabaseClient.from('menu_category_links').insert(selectedCategoryIds.map((categoryId) => ({ menu_id: savedMenuId, category_id: categoryId })));
+    if (categoryError) {
+      menuFormFeedback.textContent = 'Cardápio salvo, mas não foi possível vincular as categorias.';
+      saveButton.disabled = false;
+      saveButton.querySelector('span').textContent = 'Salvar cardápio';
+      return;
+    }
+  }
+  if (removedMenuImageIds.length) {
+    const removedImages = menuImages.filter((image) => removedMenuImageIds.includes(image.id));
+    await supabaseClient.storage.from('menu-images').remove(removedImages.map((image) => image.storage_path));
+    await supabaseClient.from('menu_images').delete().in('id', removedMenuImageIds);
+  }
+  if (pendingMenuImages.length) {
+    const uploadedImages = [];
+    for (const [index, file] of pendingMenuImages.entries()) {
+      const extension = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const storagePath = `${savedMenuId}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabaseClient.storage.from('menu-images').upload(storagePath, file, { contentType: file.type, upsert: false });
+      if (uploadError) {
+        menuFormFeedback.textContent = 'Cardápio salvo, mas uma imagem não pôde ser enviada.';
+        continue;
+      }
+      const { data: publicData } = supabaseClient.storage.from('menu-images').getPublicUrl(storagePath);
+      uploadedImages.push({ menu_id: savedMenuId, storage_path: storagePath, public_url: publicData.publicUrl, sort_order: index });
+    }
+    if (uploadedImages.length) await supabaseClient.from('menu_images').insert(uploadedImages);
   }
   menuFormPanel.hidden = true;
   await loadMenus();
@@ -538,6 +641,94 @@ menuList.addEventListener('click', async (event) => {
     showToast('Cardápio excluído');
   }
 });
+
+function renderMenuCategoryOptions(selectedCategoryIds = []) {
+  if (!menuCategories.length) {
+    menuCategoryOptions.innerHTML = '<span class="field-hint">Adicione categorias para organizar este cardápio.</span>';
+    return;
+  }
+  menuCategoryOptions.innerHTML = menuCategories.map((category) => `<label class="category-option" for="menu-category-${category.id}"><input id="menu-category-${category.id}" type="checkbox" value="${category.id}" ${selectedCategoryIds.includes(category.id) ? 'checked' : ''} /><span>${escapeHTML(category.name)}</span></label>`).join('');
+}
+
+function renderMenuImagePreviews(menuId = null) {
+  const existingImages = menuImages.filter((image) => image.menu_id === menuId && !removedMenuImageIds.includes(image.id));
+  const existingMarkup = existingImages.map((image) => `<div class="image-preview"><img src="${escapeHTML(image.public_url)}" alt="Imagem do cardápio" /><button type="button" data-remove-existing-image="${image.id}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
+  const pendingMarkup = pendingMenuImages.map((file, index) => `<div class="image-preview"><img src="${URL.createObjectURL(file)}" alt="Prévia de ${escapeHTML(file.name)}" /><button type="button" data-remove-pending-image="${index}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
+  menuImagePreviews.innerHTML = existingMarkup + pendingMarkup;
+  lucide.createIcons();
+}
+
+menuImageInput.addEventListener('change', () => {
+  pendingMenuImages = [...pendingMenuImages, ...menuImageInput.files].filter((file) => file.type.startsWith('image/'));
+  menuImageInput.value = '';
+  renderMenuImagePreviews(document.querySelector('#menu-id').value || null);
+});
+
+menuImagePreviews.addEventListener('click', (event) => {
+  const existingButton = event.target.closest('[data-remove-existing-image]');
+  const pendingButton = event.target.closest('[data-remove-pending-image]');
+  if (existingButton) {
+    removedMenuImageIds.push(existingButton.dataset.removeExistingImage);
+    renderMenuImagePreviews(document.querySelector('#menu-id').value || null);
+  }
+  if (pendingButton) {
+    pendingMenuImages.splice(Number(pendingButton.dataset.removePendingImage), 1);
+    renderMenuImagePreviews(document.querySelector('#menu-id').value || null);
+  }
+});
+
+async function createCategory() {
+  const name = window.prompt('Nome da nova categoria:');
+  if (!name?.trim()) return;
+  const selectedCategoryIds = [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value);
+  const { error } = await supabaseClient.from('menu_categories').insert({ name: name.trim() });
+  if (error) {
+    const message = error.code === '42P01'
+      ? 'A tabela de categorias não existe. Execute a migração 003 no Supabase.'
+      : error.code === '23505'
+        ? 'Essa categoria já existe.'
+        : 'Não foi possível criar a categoria. Verifique as permissões do Supabase.';
+    menuFormFeedback.textContent = message;
+    setCategoryFeedback(message, true);
+    return;
+  }
+  await loadMenus();
+  renderMenuCategoryOptions(selectedCategoryIds);
+  setCategoryFeedback('Categoria criada.');
+}
+
+document.querySelectorAll('[data-new-category]').forEach((button) => button.addEventListener('click', createCategory));
+
+categoryList.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('[data-edit-category]');
+  const deleteButton = event.target.closest('[data-delete-category]');
+  if (editButton) {
+    const category = menuCategories.find((item) => item.id === editButton.dataset.editCategory);
+    const name = window.prompt('Nome da categoria:', category?.name || '');
+    if (!category || !name?.trim() || name.trim() === category.name) return;
+    const { error } = await supabaseClient.from('menu_categories').update({ name: name.trim() }).eq('id', category.id);
+    if (error) {
+      setCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível editar a categoria.', true);
+      return;
+    }
+    await loadMenus();
+    setCategoryFeedback('Categoria atualizada.');
+    return;
+  }
+  if (deleteButton) {
+    const category = menuCategories.find((item) => item.id === deleteButton.dataset.deleteCategory);
+    if (!category || !window.confirm(`Excluir a categoria ${category.name}?`)) return;
+    const { error } = await supabaseClient.from('menu_categories').delete().eq('id', category.id);
+    if (error) {
+      setCategoryFeedback('Não foi possível excluir a categoria.', true);
+      return;
+    }
+    await loadMenus();
+    setCategoryFeedback('Categoria excluída.');
+  }
+});
+
+menuCategoryFilter.addEventListener('change', renderMenus);
 
 const toast = document.querySelector('.toast');
 let toastTimer;
