@@ -4,6 +4,7 @@ const APP_SHELL = [
   './index.html',
   './styles.css',
   './app.js',
+  './events.js',
   './supabase-config.js',
   './manifest.webmanifest',
   './icons/icon-192.svg',

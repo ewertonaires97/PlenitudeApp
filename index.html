@@ -413,7 +413,6 @@
         <label for="quote-name">Nome do orçamento</label><input id="quote-name" type="text" placeholder="Ex.: Casamento Mariana e João" required />
         <label for="quote-client">Cliente</label><select id="quote-client" class="movement-select" required><option value="">Selecione um cliente</option></select>
         <label for="quote-menu">Cardápio</label><select id="quote-menu" class="movement-select"><option value="">Todos os serviços</option></select>
-        <label for="quote-client">Cliente</label><select id="quote-client" class="movement-select" required><option value="">Selecione um cliente</option></select>
         <div class="quote-event-fields"><div><label for="quote-date">Data do evento</label><input id="quote-date" type="date" /></div><div><label for="quote-time">Horário</label><input id="quote-time" type="time" /></div></div>
         <label for="quote-venue">Local</label><input id="quote-venue" type="text" placeholder="Ex.: Espaço Jardim" />
         <label>Serviços oferecidos</label><div class="quote-service-picker" id="quote-service-picker"></div>
@@ -422,6 +421,108 @@
         <label for="quote-notes">Observações</label><textarea id="quote-notes" rows="3" placeholder="Condições, prazo de validade ou observações"></textarea>
         <p class="client-form-feedback" id="quote-form-feedback" role="alert"></p><button class="login-button" type="submit"><span>Salvar orçamento</span><i data-lucide="check"></i></button>
       </form>
+    </section>
+    <section class="service-panel" id="event-panel" hidden aria-labelledby="events-title">
+      <div class="service-panel-card quote-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">PRODUÇÃO</p>
+            <h2 id="events-title">Eventos</h2>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-event><i data-lucide="plus"></i><span>Novo</span></button>
+            <button class="icon-button" type="button" data-close-events aria-label="Fechar eventos"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="event-search">
+            <i data-lucide="search"></i>
+            <input id="event-search" type="search" placeholder="Buscar por evento, cliente ou local" />
+          </label>
+          <select class="catalog-filter" id="event-status-filter" aria-label="Filtrar por status">
+            <option value="">Todos os status</option>
+            <option value="planned">Planejados</option>
+            <option value="in_progress">Em andamento</option>
+            <option value="completed">Realizados</option>
+            <option value="cancelled">Cancelados</option>
+          </select>
+        </div>
+        <div class="event-filter-pills">
+          <button class="event-pill active" type="button" data-event-filter="all">Todos</button>
+          <button class="event-pill" type="button" data-event-filter="upcoming">Próximos</button>
+          <button class="event-pill" type="button" data-event-filter="today">Hoje</button>
+          <button class="event-pill" type="button" data-event-filter="completed">Realizados</button>
+        </div>
+        <p class="client-feedback" id="event-feedback" role="status"></p>
+        <div class="client-list event-list" id="event-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="event-form-panel" hidden aria-labelledby="event-form-title">
+      <form class="client-form-card quote-form-card" id="event-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">PRODUÇÃO</p>
+            <h2 id="event-form-title">Novo evento</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-event-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="event-id" type="hidden" />
+        <input id="event-quote-id" type="hidden" />
+        <label for="event-name">Nome do evento</label>
+        <input id="event-name" type="text" placeholder="Ex.: Casamento Mariana e João" required />
+        <label for="event-client">Cliente</label>
+        <select id="event-client" class="movement-select" required>
+          <option value="">Selecione um cliente</option>
+        </select>
+        <label for="event-quote-select">Orçamento vinculado</label>
+        <select id="event-quote-select" class="movement-select">
+          <option value="">Gerar / Vincular automaticamente</option>
+        </select>
+        <span class="field-hint">Os eventos podem ser originados de orçamentos confirmados.</span>
+        <div class="quote-event-fields">
+          <div>
+            <label for="event-date">Data do evento</label>
+            <input id="event-date" type="date" required />
+          </div>
+          <div>
+            <label for="event-time">Horário</label>
+            <input id="event-time" type="time" />
+          </div>
+        </div>
+        <label for="event-venue">Local</label>
+        <input id="event-venue" type="text" placeholder="Ex.: Espaço Jardim das Flores" />
+        <label for="event-status">Status do evento</label>
+        <select id="event-status" class="movement-select">
+          <option value="planned">Planejado</option>
+          <option value="in_progress">Em andamento</option>
+          <option value="completed">Realizado</option>
+          <option value="cancelled">Cancelado</option>
+        </select>
+        <label for="event-notes">Observações de produção</label>
+        <textarea id="event-notes" rows="3" placeholder="Detalhes da equipe, montagem, cerimônia e cronograma"></textarea>
+        <p class="client-form-feedback" id="event-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar evento</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="service-panel" id="event-detail-panel" hidden aria-labelledby="event-detail-title">
+      <div class="service-panel-card event-detail-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow" id="event-detail-eyebrow">PRODUÇÃO & OPERAÇÃO</p>
+            <h2 id="event-detail-title">Gestão do Evento</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-event-detail aria-label="Fechar detalhes"><i data-lucide="x"></i></button>
+        </header>
+        <div id="event-detail-hero" class="event-detail-hero"></div>
+        <div class="event-detail-tabs" role="tablist">
+          <button class="event-tab-btn active" type="button" data-event-tab="overview"><i data-lucide="info"></i><span>Visão geral</span></button>
+          <button class="event-tab-btn" type="button" data-event-tab="timeline"><i data-lucide="clipboard-check"></i><span>Cerimonial</span></button>
+          <button class="event-tab-btn" type="button" data-event-tab="guests"><i data-lucide="users"></i><span>Convidados</span></button>
+        </div>
+        <div class="event-tab-content" id="event-tab-overview"></div>
+        <div class="event-tab-content" id="event-tab-timeline" hidden></div>
+        <div class="event-tab-content" id="event-tab-guests" hidden></div>
+      </div>
     </section>
     <section class="image-viewer" id="image-viewer" hidden aria-label="Visualização da imagem">
       <button class="image-viewer-close" type="button" data-close-image-viewer aria-label="Fechar imagem"><i data-lucide="x"></i></button>
@@ -442,5 +543,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js"></script>
     <script src="app.js"></script>
+    <script src="events.js"></script>
   </body>
 </html>
