@@ -365,7 +365,7 @@ async function loadServices() {
       menuNames: serviceLinks.map((link) => link.menus?.name).filter(Boolean)
     };
   });
-  setServiceFeedback(`${services.length} ${services.length === 1 ? 'serviço cadastrado' : 'serviços cadastrados'}`);
+  if (!linksError) setServiceFeedback(`${services.length} ${services.length === 1 ? 'serviço cadastrado' : 'serviços cadastrados'}`);
   renderServices();
   if (!menuPanel.hidden) renderMenus();
 }
@@ -1171,7 +1171,13 @@ quoteForm.addEventListener('submit', async (event) => {
   const result = quoteId ? await supabaseClient.from('quotes').update(payload).eq('id', quoteId).select('id').single() : await supabaseClient.from('quotes').insert(payload).select('id').single();
   if (result.error) { quoteFormFeedback.textContent = result.error.message.includes('confirmed_quote') ? 'Orçamentos confirmados precisam ter uma data.' : 'Não foi possível salvar o orçamento.'; saveButton.disabled = false; saveButton.querySelector('span').textContent = 'Salvar orçamento'; return; }
   const savedId = result.data.id;
-  await supabaseClient.from('quote_items').delete().eq('quote_id', savedId);
+  const { error: deleteItemsError } = await supabaseClient.from('quote_items').delete().eq('quote_id', savedId);
+  if (deleteItemsError) {
+    quoteFormFeedback.textContent = 'Orçamento salvo, mas não foi possível substituir os serviços anteriores.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar orçamento';
+    return;
+  }
   const { error: itemError } = await supabaseClient.from('quote_items').insert(items.map((item, index) => ({ quote_id: savedId, ...item, sort_order: index })));
   if (itemError) { quoteFormFeedback.textContent = 'Orçamento salvo, mas não foi possível salvar os serviços.'; saveButton.disabled = false; saveButton.querySelector('span').textContent = 'Salvar orçamento'; return; }
   quoteFormPanel.hidden = true;
