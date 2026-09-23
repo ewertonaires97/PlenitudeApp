@@ -71,6 +71,20 @@ const detailView = document.querySelector('#detail-view');
 const detailViewTitle = document.querySelector('#detail-view-title');
 const detailViewEyebrow = document.querySelector('#detail-view-eyebrow');
 const detailViewContent = document.querySelector('#detail-view-content');
+const quotePanel = document.querySelector('#quote-panel');
+const quoteList = document.querySelector('#quote-list');
+const quoteSearch = document.querySelector('#quote-search');
+const quoteStatusFilter = document.querySelector('#quote-status-filter');
+const quoteFeedback = document.querySelector('#quote-feedback');
+const quoteFormPanel = document.querySelector('#quote-form-panel');
+const quoteForm = document.querySelector('#quote-form');
+const quoteFormTitle = document.querySelector('#quote-form-title');
+const quoteFormFeedback = document.querySelector('#quote-form-feedback');
+const quoteServicePicker = document.querySelector('#quote-service-picker');
+const quoteMenuSelect = document.querySelector('#quote-menu');
+const quoteClientSelect = document.querySelector('#quote-client');
+const quoteSubtotalPreview = document.querySelector('#quote-subtotal-preview');
+const quoteTotalPreview = document.querySelector('#quote-total-preview');
 let clients = [];
 let services = [];
 let menus = [];
@@ -80,6 +94,7 @@ let menuCategories = [];
 let menuCategoryLinks = [];
 let pendingMenuImages = [];
 let removedMenuImageIds = [];
+let quotes = [];
 let inventoryItems = [];
 let inventoryImages = [];
 let inventoryCategories = [];
@@ -995,6 +1010,12 @@ function openDetail(type, id) {
     title = category.name;
     eyebrow = 'CATEGORIA';
     content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="tags"></i></span><div><strong>${escapeHTML(category.name)}</strong><span>Categoria de cardápios</span></div></div>${detailRow('Cardápios', `${menuCategoryLinks.filter((link) => link.category_id === id).length}`)}`;
+  } else if (type === 'quote') {
+    const quote = quotes.find((item) => item.id === id);
+    if (!quote) return;
+    title = quote.name;
+    eyebrow = 'ORÇAMENTO';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.status)}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Cardápio', quote.menus?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
   }
   detailViewTitle.textContent = title;
   detailViewEyebrow.textContent = eyebrow;
@@ -1024,6 +1045,155 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape') cl
 document.querySelector('[data-close-detail]').addEventListener('click', closeDetail);
 detailView.addEventListener('click', (event) => { if (event.target === detailView) closeDetail(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDetail(); });
+
+function setQuoteFeedback(message, isError = false) {
+  quoteFeedback.textContent = message;
+  quoteFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+function quoteStatusLabel(status) {
+  return { draft: 'Rascunho', sent: 'Enviado', confirmed: 'Confirmado', cancelled: 'Cancelado', expired: 'Expirado' }[status] || status;
+}
+
+function renderQuotes() {
+  const term = quoteSearch.value.trim().toLowerCase();
+  const status = quoteStatusFilter.value;
+  const visibleQuotes = quotes.filter((quote) => {
+    const content = Object.values(quote).map((value) => String(value ?? '')).join(' ').toLowerCase();
+    return content.includes(term) && (!status || quote.status === status);
+  });
+  if (!visibleQuotes.length) {
+    quoteList.innerHTML = `<div class="empty-clients">${term || status ? 'Nenhum orçamento encontrado.' : 'Ainda não há orçamentos cadastrados.'}</div>`;
+    return;
+  }
+  quoteList.innerHTML = visibleQuotes.map((quote) => `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.clients?.name || 'Cliente não informado')} · ${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span><span class="quote-total">${formatCurrency(quote.total)}</span></div><div class="client-actions"><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`).join('');
+  lucide.createIcons();
+}
+
+async function loadQuotes() {
+  setQuoteFeedback('Carregando orçamentos...');
+  const { data, error } = await supabaseClient.from('quotes').select('id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, menu_id, clients(id, name), menus(id, name)').order('created_at', { ascending: false });
+  if (error) {
+    setQuoteFeedback('Não foi possível carregar os orçamentos. Verifique a migração 002.', true);
+    quoteList.innerHTML = '';
+    return;
+  }
+  quotes = data || [];
+  setQuoteFeedback(`${quotes.length} ${quotes.length === 1 ? 'orçamento cadastrado' : 'orçamentos cadastrados'}`);
+  renderQuotes();
+}
+
+async function loadQuoteReferences() {
+  await Promise.all([loadClients(), loadServices(), loadMenus()]);
+  quoteClientSelect.innerHTML = '<option value="">Selecione um cliente</option>' + clients.map((client) => `<option value="${client.id}">${escapeHTML(client.name)}</option>`).join('');
+  quoteMenuSelect.innerHTML = '<option value="">Todos os serviços</option>' + menus.filter((menu) => menu.active).map((menu) => `<option value="${menu.id}">${escapeHTML(menu.name)}</option>`).join('');
+}
+
+function renderQuoteServices(selectedItems = []) {
+  const selectedMenuId = quoteMenuSelect.value;
+  const selectedByService = new Map(selectedItems.map((item) => [item.service_id, item]));
+  const available = services.filter((service) => service.active && (!selectedMenuId || service.menuIds.includes(selectedMenuId)));
+  if (!available.length) {
+    quoteServicePicker.innerHTML = '<span class="field-hint">Cadastre serviços ativos para adicioná-los ao orçamento.</span>';
+    updateQuotePreview();
+    return;
+  }
+  quoteServicePicker.innerHTML = available.map((service) => {
+    const selected = selectedByService.get(service.id);
+    return `<label class="quote-service-option"><input type="checkbox" data-quote-service="${service.id}" ${selected ? 'checked' : ''} /><span class="quote-service-name">${escapeHTML(service.name)}</span><span class="quote-service-price">${formatCurrency(service.default_price)}</span><input type="number" min="0.01" step="0.01" value="${selected?.quantity || 1}" data-quote-quantity="${service.id}" aria-label="Quantidade de ${escapeHTML(service.name)}" /><input type="number" min="0" step="0.01" value="${selected?.unit_price ?? service.default_price}" data-quote-price="${service.id}" aria-label="Preço de ${escapeHTML(service.name)}" /></label>`;
+  }).join('');
+  updateQuotePreview();
+}
+
+function getQuoteItemsFromForm() {
+  return [...quoteServicePicker.querySelectorAll('[data-quote-service]:checked')].map((checkbox) => ({ service_id: checkbox.dataset.quoteService, quantity: Number(quoteServicePicker.querySelector(`[data-quote-quantity="${checkbox.dataset.quoteService}"]`).value), unit_price: Number(quoteServicePicker.querySelector(`[data-quote-price="${checkbox.dataset.quoteService}"]`).value), description: services.find((service) => service.id === checkbox.dataset.quoteService)?.name || 'Serviço' }));
+}
+
+function updateQuotePreview() {
+  const subtotal = getQuoteItemsFromForm().reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  const discount = Number(document.querySelector('#quote-discount').value || 0);
+  const fee = Number(document.querySelector('#quote-fee').value || 0);
+  quoteSubtotalPreview.textContent = formatCurrency(subtotal);
+  quoteTotalPreview.textContent = formatCurrency(Math.max(0, subtotal - discount + fee));
+}
+
+async function openQuotes() {
+  quotePanel.hidden = false;
+  quoteSearch.value = '';
+  quoteStatusFilter.value = '';
+  await loadQuotes();
+}
+
+async function openQuoteForm(quote = null) {
+  quoteForm.reset();
+  document.querySelector('#quote-id').value = quote?.id || '';
+  document.querySelector('#quote-name').value = quote?.name || '';
+  const selectedClientId = quote?.client_id || '';
+  const selectedMenuId = quote?.menu_id || '';
+  document.querySelector('#quote-date').value = quote?.event_date || '';
+  document.querySelector('#quote-time').value = quote?.event_time || '';
+  document.querySelector('#quote-venue').value = quote?.venue || '';
+  document.querySelector('#quote-discount').value = quote?.discount || 0;
+  document.querySelector('#quote-fee').value = quote?.additional_fee || 0;
+  document.querySelector('#quote-status').value = quote?.status || 'draft';
+  document.querySelector('#quote-notes').value = quote?.notes || '';
+  quoteFormTitle.textContent = quote ? 'Editar orçamento' : 'Novo orçamento';
+  quoteFormFeedback.textContent = '';
+  quoteFormPanel.hidden = false;
+  await loadQuoteReferences();
+  quoteClientSelect.value = selectedClientId;
+  quoteMenuSelect.value = selectedMenuId;
+  const { data: items } = quote ? await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order') : { data: [] };
+  renderQuoteServices(items || []);
+  document.querySelector('#quote-name').focus();
+}
+
+document.querySelector('[data-open-quotes]').addEventListener('click', openQuotes);
+document.querySelectorAll('[data-new-quote]').forEach((button) => button.addEventListener('click', () => openQuoteForm()));
+document.querySelector('[data-close-quotes]').addEventListener('click', () => { quotePanel.hidden = true; });
+document.querySelector('[data-close-quote-form]').addEventListener('click', () => { quoteFormPanel.hidden = true; });
+quoteSearch.addEventListener('input', renderQuotes);
+quoteStatusFilter.addEventListener('change', renderQuotes);
+quoteMenuSelect.addEventListener('change', () => renderQuoteServices(getQuoteItemsFromForm()));
+quoteServicePicker.addEventListener('input', updateQuotePreview);
+document.querySelector('#quote-discount').addEventListener('input', updateQuotePreview);
+document.querySelector('#quote-fee').addEventListener('input', updateQuotePreview);
+
+quoteForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = quoteForm.querySelector('button[type="submit"]');
+  const quoteId = document.querySelector('#quote-id').value;
+  const payload = { name: document.querySelector('#quote-name').value.trim(), client_id: quoteClientSelect.value, menu_id: quoteMenuSelect.value || null, venue: document.querySelector('#quote-venue').value.trim() || null, event_date: document.querySelector('#quote-date').value || null, event_time: document.querySelector('#quote-time').value || null, status: document.querySelector('#quote-status').value, notes: document.querySelector('#quote-notes').value.trim() || null, discount: Number(document.querySelector('#quote-discount').value || 0), additional_fee: Number(document.querySelector('#quote-fee').value || 0) };
+  const items = getQuoteItemsFromForm();
+  if (!items.length) { quoteFormFeedback.textContent = 'Selecione pelo menos um serviço.'; return; }
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Salvando...';
+  const result = quoteId ? await supabaseClient.from('quotes').update(payload).eq('id', quoteId).select('id').single() : await supabaseClient.from('quotes').insert(payload).select('id').single();
+  if (result.error) { quoteFormFeedback.textContent = result.error.message.includes('confirmed_quote') ? 'Orçamentos confirmados precisam ter uma data.' : 'Não foi possível salvar o orçamento.'; saveButton.disabled = false; saveButton.querySelector('span').textContent = 'Salvar orçamento'; return; }
+  const savedId = result.data.id;
+  await supabaseClient.from('quote_items').delete().eq('quote_id', savedId);
+  const { error: itemError } = await supabaseClient.from('quote_items').insert(items.map((item, index) => ({ quote_id: savedId, ...item, sort_order: index })));
+  if (itemError) { quoteFormFeedback.textContent = 'Orçamento salvo, mas não foi possível salvar os serviços.'; saveButton.disabled = false; saveButton.querySelector('span').textContent = 'Salvar orçamento'; return; }
+  quoteFormPanel.hidden = true;
+  await loadQuotes();
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Salvar orçamento';
+  showToast(quoteId ? 'Orçamento atualizado' : 'Orçamento cadastrado');
+});
+
+quoteList.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('[data-edit-quote]');
+  const deleteButton = event.target.closest('[data-delete-quote]');
+  if (editButton) { openQuoteForm(quotes.find((quote) => quote.id === editButton.dataset.editQuote)); return; }
+  if (deleteButton) {
+    const quote = quotes.find((item) => item.id === deleteButton.dataset.deleteQuote);
+    if (!quote || !window.confirm(`Excluir o orçamento ${quote.name}?`)) return;
+    const { error } = await supabaseClient.from('quotes').delete().eq('id', quote.id);
+    if (error) { setQuoteFeedback('Não foi possível excluir este orçamento.', true); return; }
+    await loadQuotes();
+    showToast('Orçamento excluído');
+  }
+});
 
 inventoryImageInput.addEventListener('change', () => {
   pendingInventoryImages = [...pendingInventoryImages, ...inventoryImageInput.files].filter((file) => file.type.startsWith('image/'));

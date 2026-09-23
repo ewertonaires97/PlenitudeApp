@@ -75,7 +75,7 @@
       </section>
 
       <section class="quick-actions" aria-label="Ações rápidas">
-        <button class="quick-action primary" type="button" data-action="Novo orçamento">
+        <button class="quick-action primary" type="button" data-open-quotes data-new-quote>
           <span class="quick-icon"><i data-lucide="file-plus-2"></i></span>
           <span>Novo orçamento</span>
         </button>
@@ -104,7 +104,7 @@
             <span class="module-text"><strong>Clientes</strong><small>Contatos e histórico</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-orcamentos" type="button" data-action="Orçamentos">
+          <button class="module-card card-orcamentos" type="button" data-open-quotes>
             <span class="module-icon"><i data-lucide="notebook-tabs"></i></span>
             <span class="module-text"><strong>Orçamentos</strong><small>Propostas e valores</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
@@ -394,6 +394,32 @@
         <label class="service-active-field" for="service-active"><input id="service-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
         <p class="client-form-feedback" id="service-form-feedback" role="alert"></p>
         <button class="login-button" type="submit"><span>Salvar serviço</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="service-panel" id="quote-panel" hidden aria-labelledby="quotes-title">
+      <div class="service-panel-card quote-panel-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow">NEGÓCIOS</p><h2 id="quotes-title">Orçamentos</h2></div>
+          <div class="panel-header-actions"><button class="add-client-button" type="button" data-new-quote><i data-lucide="plus"></i><span>Novo</span></button><button class="icon-button" type="button" data-close-quotes aria-label="Fechar orçamentos"><i data-lucide="x"></i></button></div>
+        </header>
+        <div class="client-toolbar"><label class="search-field" for="quote-search"><i data-lucide="search"></i><input id="quote-search" type="search" placeholder="Buscar orçamento, cliente ou local" /></label><select class="catalog-filter" id="quote-status-filter" aria-label="Filtrar status"><option value="">Todos</option><option value="draft">Rascunhos</option><option value="sent">Enviados</option><option value="confirmed">Confirmados</option><option value="cancelled">Cancelados</option></select></div>
+        <p class="client-feedback" id="quote-feedback" role="status"></p><div class="client-list" id="quote-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="quote-form-panel" hidden aria-labelledby="quote-form-title">
+      <form class="client-form-card quote-form-card" id="quote-form">
+        <header class="client-panel-header"><div><p class="eyebrow">PROPOSTA</p><h2 id="quote-form-title">Novo orçamento</h2></div><button class="icon-button" type="button" data-close-quote-form aria-label="Fechar formulário"><i data-lucide="x"></i></button></header>
+        <input id="quote-id" type="hidden" />
+        <label for="quote-name">Nome do orçamento</label><input id="quote-name" type="text" placeholder="Ex.: Casamento Mariana e João" required />
+        <label for="quote-client">Cliente</label><select id="quote-client" class="movement-select" required><option value="">Selecione um cliente</option></select>
+        <label for="quote-menu">Cardápio</label><select id="quote-menu" class="movement-select"><option value="">Todos os serviços</option></select>
+        <div class="quote-event-fields"><div><label for="quote-date">Data do evento</label><input id="quote-date" type="date" /></div><div><label for="quote-time">Horário</label><input id="quote-time" type="time" /></div></div>
+        <label for="quote-venue">Local</label><input id="quote-venue" type="text" placeholder="Ex.: Espaço Jardim" />
+        <label>Serviços oferecidos</label><div class="quote-service-picker" id="quote-service-picker"></div>
+        <div class="quote-totals"><span>Subtotal</span><strong id="quote-subtotal-preview">R$ 0,00</strong><label for="quote-discount">Desconto</label><input id="quote-discount" type="number" min="0" step="0.01" value="0" /><label for="quote-fee">Taxa adicional</label><input id="quote-fee" type="number" min="0" step="0.01" value="0" /><span>Total</span><strong id="quote-total-preview">R$ 0,00</strong></div>
+        <label for="quote-status">Status</label><select id="quote-status" class="movement-select"><option value="draft">Rascunho</option><option value="sent">Enviado</option><option value="confirmed">Confirmado</option><option value="cancelled">Cancelado</option></select>
+        <label for="quote-notes">Observações</label><textarea id="quote-notes" rows="3" placeholder="Condições, prazo de validade ou observações"></textarea>
+        <p class="client-form-feedback" id="quote-form-feedback" role="alert"></p><button class="login-button" type="submit"><span>Salvar orçamento</span><i data-lucide="check"></i></button>
       </form>
     </section>
     <section class="image-viewer" id="image-viewer" hidden aria-label="Visualização da imagem">
