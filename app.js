@@ -1100,9 +1100,16 @@ function renderQuoteServices(selectedItems = []) {
   }
   quoteServicePicker.innerHTML = available.map((service) => {
     const selected = selectedByService.get(service.id);
-    return `<label class="quote-service-option"><input type="checkbox" data-quote-service="${service.id}" ${selected ? 'checked' : ''} /><span class="quote-service-name">${escapeHTML(service.name)}</span><span class="quote-service-price">${formatCurrency(service.default_price)}</span><input type="number" min="0.01" step="0.01" value="${selected?.quantity || 1}" data-quote-quantity="${service.id}" aria-label="Quantidade de ${escapeHTML(service.name)}" /><input type="number" min="0" step="0.01" value="${selected?.unit_price ?? service.default_price}" data-quote-price="${service.id}" aria-label="Preço de ${escapeHTML(service.name)}" /></label>`;
+    return `<label class="quote-service-option"><input type="checkbox" data-quote-service="${service.id}" ${selected ? 'checked' : ''} /><span class="quote-service-copy"><strong class="quote-service-name">${escapeHTML(service.name)}</strong><small>${escapeHTML(service.category || 'Serviço')}</small></span><span class="quote-service-price">${formatCurrency(service.default_price)}</span><input type="number" min="0.01" step="0.01" value="${selected?.quantity || 1}" data-quote-quantity="${service.id}" aria-label="Quantidade de ${escapeHTML(service.name)}" /><input type="number" min="0" step="0.01" value="${selected?.unit_price ?? service.default_price}" data-quote-price="${service.id}" aria-label="Preço de ${escapeHTML(service.name)}" /><span class="quote-service-choice">Selecionado</span></label>`;
   }).join('');
+  updateQuoteServiceStates();
   updateQuotePreview();
+}
+
+function updateQuoteServiceStates() {
+  quoteServicePicker.querySelectorAll('.quote-service-option').forEach((option) => {
+    option.classList.toggle('selected', option.querySelector('[data-quote-service]').checked);
+  });
 }
 
 function getQuoteItemsFromForm() {
@@ -1148,7 +1155,7 @@ async function openQuoteForm(quote = null) {
   document.querySelector('#quote-name').focus();
 }
 
-document.querySelector('[data-open-quotes]').addEventListener('click', openQuotes);
+document.querySelectorAll('[data-open-quotes]').forEach((button) => button.addEventListener('click', openQuotes));
 document.querySelectorAll('[data-new-quote]').forEach((button) => button.addEventListener('click', () => openQuoteForm()));
 document.querySelector('[data-close-quotes]').addEventListener('click', () => { quotePanel.hidden = true; });
 document.querySelector('[data-close-quote-form]').addEventListener('click', () => { quoteFormPanel.hidden = true; });
@@ -1156,6 +1163,7 @@ quoteSearch.addEventListener('input', renderQuotes);
 quoteStatusFilter.addEventListener('change', renderQuotes);
 quoteMenuSelect.addEventListener('change', () => renderQuoteServices(getQuoteItemsFromForm()));
 quoteServicePicker.addEventListener('input', updateQuotePreview);
+quoteServicePicker.addEventListener('change', () => { updateQuoteServiceStates(); updateQuotePreview(); });
 document.querySelector('#quote-discount').addEventListener('input', updateQuotePreview);
 document.querySelector('#quote-fee').addEventListener('input', updateQuotePreview);
 
