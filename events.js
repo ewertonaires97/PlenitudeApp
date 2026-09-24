@@ -100,6 +100,17 @@
     return { text: `${Math.abs(diffDays)}d atrás`, type: 'past' };
   }
 
+  function formatQuoteStatus(status) {
+    switch (status) {
+      case 'draft': return 'Rascunho';
+      case 'sent': return 'Enviado';
+      case 'confirmed': return 'Confirmado';
+      case 'cancelled': return 'Cancelado';
+      case 'expired': return 'Expirado';
+      default: return status || 'Rascunho';
+    }
+  }
+
   function formatStatusLabel(status) {
     switch (status) {
       case 'planned': return 'Planejado';
@@ -758,7 +769,7 @@
               </div>
               <div class="detail-row" style="padding: 6px 0;">
                 <span>Status da Proposta</span>
-                <strong>${quote.status === 'confirmed' ? 'Confirmado' : quote.status}</strong>
+                <strong>${formatQuoteStatus(quote.status)}</strong>
               </div>
 
               ${quoteItems.length > 0 ? `

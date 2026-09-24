@@ -1015,7 +1015,7 @@ function openDetail(type, id) {
     if (!quote) return;
     title = quote.name;
     eyebrow = 'ORÇAMENTO';
-    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.status)}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Cardápio', quote.menus?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Cardápio', quote.menus?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
   }
   detailViewTitle.textContent = title;
   detailViewEyebrow.textContent = eyebrow;

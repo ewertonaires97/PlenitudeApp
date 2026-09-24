@@ -1,0 +1,15 @@
+{
+  "name": "PlenitudeApp Dev Container",
+  "customizations": {
+    "codespaces": {
+      "repositories": {
+        "*": {
+          "permissions": {
+            "contents": "read",
+            "metadata": "read"
+          }
+        }
+      }
+    }
+  }
+}
