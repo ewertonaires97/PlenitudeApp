@@ -382,7 +382,7 @@
             </div>
           </div>
 
-          <div class="event-card-actions" onclick="event.stopPropagation()">
+          <div class="event-card-actions">
             ${waNumber ? `
               <a class="client-action whatsapp-action" href="https://wa.me/${waNumber}" target="_blank" rel="noopener noreferrer" title="Conversar no WhatsApp" aria-label="WhatsApp com ${sanitizeHtml(clientName)}">
                 <i data-lucide="message-circle"></i>
