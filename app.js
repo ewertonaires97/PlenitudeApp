@@ -808,6 +808,23 @@ function showToast(message) {
 window.showToast = showToast;
 
 document.querySelectorAll('[data-action]').forEach((button) => {
+  const attrs = Object.keys(button.dataset);
+  const hasSpecificHandler = attrs.some(attr => attr !== 'action' && (
+    attr.startsWith('open') ||
+    attr.startsWith('close') ||
+    attr.startsWith('new') ||
+    attr === 'nav' ||
+    attr.startsWith('confirm') ||
+    attr.startsWith('delete') ||
+    attr.startsWith('toggle') ||
+    attr.startsWith('move') ||
+    attr.startsWith('edit') ||
+    attr.startsWith('view') ||
+    attr.startsWith('add') ||
+    attr.startsWith('jump') ||
+    attr.startsWith('set')
+  ));
+  if (hasSpecificHandler) return;
   button.addEventListener('click', () => showToast(`${button.dataset.action} em breve`));
 });
 
