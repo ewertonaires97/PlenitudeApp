@@ -1511,6 +1511,22 @@
     openEventByQuoteId,
     onQuoteConfirmed,
     reloadEvents: loadEvents,
+    reloadClients: loadClients,
+    reloadQuotes: loadQuotes,
+    reloadEventDetails: (eventId) => {
+      if (state.currentEventId && (!eventId || state.currentEventId === eventId)) {
+        return loadEventFullDetails(state.currentEventId);
+      }
+    },
+    getCurrentEventId: () => state.currentEventId,
+    isDetailOpen: () => {
+      const p = document.getElementById('event-detail-panel');
+      return p && !p.hidden;
+    },
+    isPanelOpen: () => {
+      const p = document.getElementById('event-panel');
+      return p && !p.hidden;
+    }
   };
 
   // Carrega quando o DOM estiver pronto

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plenitude-static-v2';
+const CACHE_NAME = 'plenitude-static-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const APP_SHELL = [
   './app.js',
   './events.js',
   './ceremonial.js',
+  './realtime.js',
   './supabase-config.js',
   './manifest.webmanifest',
   './icons/icon-192.svg',

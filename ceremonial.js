@@ -2139,8 +2139,16 @@
     openCeremonialPanel,
     closeCeremonialPanel,
     selectEvent,
-    reloadCeremonial: () => {
-      if (state.selectedEventId) loadSelectedEventDetails(state.selectedEventId);
+    reloadEvents: loadEvents,
+    reloadCeremonial: (eventId) => {
+      if (state.selectedEventId && (!eventId || state.selectedEventId === eventId)) {
+        return loadSelectedEventDetails(state.selectedEventId);
+      }
+    },
+    getSelectedEventId: () => state.selectedEventId,
+    isPanelOpen: () => {
+      const p = document.getElementById('ceremonial-panel');
+      return p && !p.hidden;
     }
   };
 

@@ -32,7 +32,18 @@ button { border: 0; font: inherit; cursor: pointer; }
 .brand-mark { display: grid; place-items: center; width: 35px; height: 35px; border: 1px solid var(--gold); border-radius: 50%; color: var(--gold); font: 700 11px "Playfair Display", serif; letter-spacing: .04em; }
 .brand-name { font-size: 13px; letter-spacing: .01em; }
 .brand-name strong { display: block; font: 600 16px "Playfair Display", serif; }
-.topbar-actions { gap: 14px; }
+.topbar-actions { gap: 10px; }
+.realtime-status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px 4px 7px; border-radius: 20px; border: 1px solid rgba(49, 72, 59, .15); background: var(--cream); color: var(--moss); font-size: 8.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; cursor: pointer; transition: all .2s ease; user-select: none; }
+.realtime-status-pill:hover { background: #ede7dc; border-color: var(--moss); }
+.realtime-pulse-dot { position: relative; width: 6px; height: 6px; border-radius: 50%; background: #9ca3af; flex-shrink: 0; }
+.realtime-status-pill.connected { border-color: rgba(46, 125, 50, .3); background: #eef6ee; color: #235c26; }
+.realtime-status-pill.connected .realtime-pulse-dot { background: #2e7d32; box-shadow: 0 0 0 0 rgba(46, 125, 50, .7); animation: realtime-pulse 2s infinite cubic-bezier(0.66, 0, 0, 1); }
+.realtime-status-pill.connecting { border-color: rgba(245, 158, 11, .3); background: #fef8ec; color: #92540c; }
+.realtime-status-pill.connecting .realtime-pulse-dot { background: #f59e0b; animation: realtime-blink 1s infinite alternate; }
+.realtime-status-pill.disconnected, .realtime-status-pill.error { border-color: rgba(156, 163, 175, .3); background: #f3f4f6; color: #4b5563; }
+.realtime-status-pill.disconnected .realtime-pulse-dot, .realtime-status-pill.error .realtime-pulse-dot { background: #9ca3af; }
+@keyframes realtime-pulse { 0% { box-shadow: 0 0 0 0 rgba(46, 125, 50, .6); } 70% { box-shadow: 0 0 0 6px rgba(46, 125, 50, 0); } 100% { box-shadow: 0 0 0 0 rgba(46, 125, 50, 0); } }
+@keyframes realtime-blink { from { opacity: .3; } to { opacity: 1; } }
 .icon-button, .more-button { position: relative; display: grid; place-items: center; width: 35px; height: 35px; padding: 0; color: var(--ink); background: transparent; }
 .icon-button svg, .more-button svg { width: 19px; height: 19px; stroke-width: 1.6; }
 .notification-dot { position: absolute; top: 7px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--gold); }

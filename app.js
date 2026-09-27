@@ -105,6 +105,13 @@ let removedInventoryImageIds = [];
 function setAuthenticated(isAuthenticated) {
   authScreen.hidden = isAuthenticated;
   appShell.classList.toggle('ready', isAuthenticated);
+  if (isAuthenticated) {
+    loadClients();
+    loadServices();
+    loadMenus();
+    loadInventory();
+    loadQuotes();
+  }
 }
 
 function showLoginError(message) {
@@ -793,21 +800,22 @@ const toast = document.querySelector('.toast');
 let toastTimer;
 
 function showToast(message) {
-  toast.textContent = `${message} em breve`;
+  toast.textContent = message;
   toast.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
 }
+window.showToast = showToast;
 
 document.querySelectorAll('[data-action]').forEach((button) => {
-  button.addEventListener('click', () => showToast(button.dataset.action));
+  button.addEventListener('click', () => showToast(`${button.dataset.action} em breve`));
 });
 
 document.querySelectorAll('[data-nav]').forEach((button) => {
   button.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
     button.classList.add('active');
-    showToast(button.dataset.nav);
+    showToast(`${button.dataset.nav} em breve`);
   });
 });
 
@@ -1193,6 +1201,10 @@ quoteForm.addEventListener('submit', async (event) => {
   saveButton.disabled = false;
   saveButton.querySelector('span').textContent = 'Salvar orçamento';
   showToast(quoteId ? 'Orçamento atualizado' : 'Orçamento cadastrado');
+
+  if (payload.status === 'confirmed') {
+    window.dispatchEvent(new CustomEvent('plenitude:quote-confirmed', { detail: { quoteId: savedId } }));
+  }
 });
 
 quoteList.addEventListener('click', async (event) => {
@@ -1334,3 +1346,36 @@ inventoryList.addEventListener('click', async (event) => {
     showToast('Item excluído');
   }
 });
+
+// ==========================================================================
+// Expor API Pública do Core App para Sincronização em Tempo Real (Realtime)
+// ==========================================================================
+window.plenitudeApp = {
+  loadClients,
+  loadServices,
+  loadMenus,
+  loadInventory,
+  loadQuotes,
+  loadAll: () => Promise.all([
+    loadClients(),
+    loadServices(),
+    loadMenus(),
+    loadInventory(),
+    loadQuotes()
+  ]),
+  renderClients,
+  renderServices,
+  renderMenus,
+  renderInventory,
+  renderQuotes,
+  getClients: () => clients,
+  getServices: () => services,
+  getMenus: () => menus,
+  getInventory: () => inventoryItems,
+  getQuotes: () => quotes,
+  isClientPanelOpen: () => !clientPanel.hidden,
+  isServicePanelOpen: () => !servicePanel.hidden,
+  isMenuPanelOpen: () => !menuPanel.hidden,
+  isInventoryPanelOpen: () => !inventoryPanel.hidden,
+  isQuotePanelOpen: () => !quotePanel.hidden,
+};

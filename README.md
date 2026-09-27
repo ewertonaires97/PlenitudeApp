@@ -38,6 +38,15 @@ Para habilitar as movimentações de estoque, execute [supabase/migrations/004_i
 
 Para categorias e imagens dos itens, execute [supabase/migrations/005_inventory_categories_images.sql](supabase/migrations/005_inventory_categories_images.sql). As imagens ficam no bucket `inventory-images`, podem ser múltiplas e abrem em tela cheia ao toque. O mesmo visualizador é usado nas imagens dos cardápios.
 
+### Sincronização em Tempo Real (Realtime)
+
+Para que qualquer alteração feita por um usuário (clientes, orçamentos, estoque, serviços, cardápios, eventos, cerimonial, convidados) seja refletida imediatamente na tela de todos os outros usuários sem precisar recarregar a página, execute a migração [supabase/migrations/010_enable_realtime.sql](supabase/migrations/010_enable_realtime.sql) no SQL Editor do Supabase.
+
+Essa migração:
+- Adiciona todas as tabelas públicas à publicação `supabase_realtime`;
+- Define `REPLICA IDENTITY FULL` em todas as tabelas para garantir integridade e dados completos nos eventos de atualização e exclusão;
+- Ativa o indicador visual "Ao vivo" com reconexão automática e sincronização inteligente em background.
+
 ### Instalar como PWA
 
 O app agora possui [manifest.webmanifest](manifest.webmanifest), [sw.js](sw.js) e ícones em [icons](icons). Depois do deploy no Netlify:
