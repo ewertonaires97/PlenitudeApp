@@ -124,7 +124,7 @@
             <span class="module-text"><strong>Eventos</strong><small>Produção e agenda</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-cerimonial" type="button" data-action="Cerimonial">
+          <button class="module-card card-cerimonial" type="button" data-open-ceremonial data-action="Cerimonial">
             <span class="module-icon"><i data-lucide="clipboard-check"></i></span>
             <span class="module-text"><strong>Cerimonial</strong><small>Operação do evento</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
@@ -537,6 +537,232 @@
         <div id="detail-view-content"></div>
       </div>
     </section>
+
+    <!-- ====================================================================== -->
+    <!-- MÓDULO DE CERIMONIAL & OPERAÇÃO                                        -->
+    <!-- ====================================================================== -->
+    <section class="service-panel" id="ceremonial-panel" hidden aria-labelledby="ceremonial-title">
+      <div class="service-panel-card ceremonial-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">OPERAÇÃO & CERIMÔNIA</p>
+            <h2 id="ceremonial-title">Cerimonial</h2>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button ceremonial-live-toggle-btn" type="button" data-ceremonial-live-toggle title="Alternar Modo Ao Vivo">
+              <i data-lucide="play-circle"></i>
+              <span>Ao Vivo</span>
+            </button>
+            <button class="icon-button" type="button" data-close-ceremonial aria-label="Fechar cerimonial"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+
+        <!-- Seletor do Evento Ativo -->
+        <div class="ceremonial-event-selector-box">
+          <label for="ceremonial-event-select" class="ceremonial-selector-label">
+            <i data-lucide="calendar"></i>
+            <span>Evento ativo:</span>
+          </label>
+          <select id="ceremonial-event-select" class="movement-select ceremonial-select" aria-label="Selecionar Evento"></select>
+        </div>
+
+        <!-- Resumo Hero do Evento -->
+        <div id="ceremonial-event-hero" class="ceremonial-event-hero"></div>
+
+        <!-- Tabs de Navegação do Cerimonial -->
+        <div class="event-detail-tabs ceremonial-tabs" role="tablist">
+          <button class="event-tab-btn active" type="button" data-ceremonial-tab="timeline">
+            <i data-lucide="list-checks"></i>
+            <span>Roteiro</span>
+          </button>
+          <button class="event-tab-btn" type="button" data-ceremonial-tab="arrival">
+            <i data-lucide="user-check"></i>
+            <span>Recepção</span>
+          </button>
+          <button class="event-tab-btn" type="button" data-ceremonial-tab="staff">
+            <i data-lucide="users-round"></i>
+            <span>Equipe</span>
+          </button>
+          <button class="event-tab-btn" type="button" data-ceremonial-tab="tables">
+            <i data-lucide="utensils"></i>
+            <span>Mesas</span>
+          </button>
+          <button class="event-tab-btn" type="button" data-ceremonial-tab="live">
+            <i data-lucide="play"></i>
+            <span>Ao Vivo</span>
+          </button>
+        </div>
+
+        <!-- Feedback de status -->
+        <p class="client-feedback" id="ceremonial-feedback" role="status"></p>
+
+        <!-- Conteúdo das Tabs -->
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-timeline"></div>
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-arrival" hidden></div>
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-staff" hidden></div>
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-tables" hidden></div>
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-live" hidden></div>
+      </div>
+    </section>
+
+    <!-- Modal: Adicionar/Editar Momento do Cerimonial -->
+    <section class="client-form-panel" id="ceremonial-activity-modal" hidden aria-labelledby="ceremonial-activity-modal-title">
+      <form class="client-form-card" id="ceremonial-activity-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ROTEIRO</p>
+            <h2 id="ceremonial-activity-modal-title">Momento do Cerimonial</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-activity-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="modal-act-id" type="hidden" />
+        <label for="modal-act-title">Nome / Título do momento</label>
+        <input id="modal-act-title" type="text" placeholder="Ex.: Entrada dos Noivos, Votos, Brinde" required />
+
+        <div class="quote-event-fields">
+          <div>
+            <label for="modal-act-time">Horário programado</label>
+            <input id="modal-act-time" type="time" />
+          </div>
+          <div>
+            <label for="modal-act-status">Status atual</label>
+            <select id="modal-act-status" class="movement-select">
+              <option value="pending">Pendente</option>
+              <option value="in_progress">Em andamento</option>
+              <option value="completed">Concluído</option>
+              <option value="skipped">Ignorado</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="modal-act-resp">Responsável / Executores</label>
+        <input id="modal-act-resp" type="text" placeholder="Ex.: Cerimonialista de Pista, DJ, Fotógrafo, Buffet" />
+
+        <label for="modal-act-desc">Orientações, Músicas & Detalhes</label>
+        <textarea id="modal-act-desc" rows="3" placeholder="Ex.: Música 03, cortejo com padrinhos alinhados, acender sparkles na saída..."></textarea>
+
+        <p class="client-form-feedback" id="ceremonial-activity-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar momento no roteiro</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
+    <!-- Modal: Adicionar/Editar Convidado (Recepção) -->
+    <section class="client-form-panel" id="ceremonial-guest-modal" hidden aria-labelledby="ceremonial-guest-modal-title">
+      <form class="client-form-card" id="ceremonial-guest-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">RECEPÇÃO</p>
+            <h2 id="ceremonial-guest-modal-title">Convidado</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-guest-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="modal-guest-id" type="hidden" />
+        <label for="modal-guest-name">Nome completo do convidado</label>
+        <input id="modal-guest-name" type="text" placeholder="Ex.: Dr. Roberto Andrade & Família" required />
+
+        <div class="quote-event-fields">
+          <div>
+            <label for="modal-guest-phone">WhatsApp</label>
+            <input id="modal-guest-phone" type="tel" placeholder="(00) 00000-0000" />
+          </div>
+          <div>
+            <label for="modal-guest-table">Mesa atribuída</label>
+            <select id="modal-guest-table" class="movement-select">
+              <option value="">Sem mesa definida</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="modal-guest-status">Status de confirmação (RSVP)</label>
+        <select id="modal-guest-status" class="movement-select">
+          <option value="confirmed">Confirmado</option>
+          <option value="pending">Pendente</option>
+          <option value="declined">Recusado</option>
+        </select>
+
+        <label class="service-active-field" for="modal-guest-arrived">
+          <input id="modal-guest-arrived" type="checkbox" />
+          <span>Marcar presença imediatamente (já chegou no evento)</span>
+        </label>
+
+        <label for="modal-guest-notes">Observações / Restrições</label>
+        <textarea id="modal-guest-notes" rows="2" placeholder="Ex.: Vegetariano, mesa próxima à pista, acompanhado de 1 bebê"></textarea>
+
+        <p class="client-form-feedback" id="ceremonial-guest-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar convidado</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
+    <!-- Modal: Adicionar/Editar Cerimonialista / Equipe -->
+    <section class="client-form-panel" id="ceremonial-staff-modal" hidden aria-labelledby="ceremonial-staff-modal-title">
+      <form class="client-form-card" id="ceremonial-staff-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">EQUIPE</p>
+            <h2 id="ceremonial-staff-modal-title">Profissional de Cerimonial</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-staff-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="modal-staff-id" type="hidden" />
+        <label for="modal-staff-name">Nome do profissional</label>
+        <input id="modal-staff-name" type="text" placeholder="Ex.: Juliana Martins" required />
+
+        <label for="modal-staff-specialty">Função / Especialidade</label>
+        <select id="modal-staff-specialty" class="movement-select" required>
+          <option value="coordenacao">Coordenação Geral</option>
+          <option value="andamento">Andamento de Pista</option>
+          <option value="recepcao">Recepção & Portaria</option>
+          <option value="logistica">Logística & Montagem</option>
+          <option value="decoracao">Decoração & Cenografia</option>
+          <option value="som_iluminacao">Som & Iluminação</option>
+          <option value="alimentacao">Alimentação & Buffet</option>
+          <option value="outros">Outros</option>
+        </select>
+
+        <div class="quote-event-fields">
+          <div>
+            <label for="modal-staff-phone">WhatsApp</label>
+            <input id="modal-staff-phone" type="tel" placeholder="(00) 00000-0000" />
+          </div>
+          <div>
+            <label for="modal-staff-email">E-mail</label>
+            <input id="modal-staff-email" type="email" placeholder="staff@email.com" />
+          </div>
+        </div>
+
+        <label for="modal-staff-notes">Atribuições / Responsabilidades no evento</label>
+        <textarea id="modal-staff-notes" rows="2" placeholder="Ex.: Acompanhamento da noiva, cortejo da igreja, alinhamento com DJ"></textarea>
+
+        <p class="client-form-feedback" id="ceremonial-staff-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar profissional</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
+    <!-- Modal: Adicionar/Editar Mesa -->
+    <section class="client-form-panel" id="ceremonial-table-modal" hidden aria-labelledby="ceremonial-table-modal-title">
+      <form class="client-form-card" id="ceremonial-table-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">LAYOUT DO SALÃO</p>
+            <h2 id="ceremonial-table-modal-title">Mesa / Setor</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-table-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="modal-table-id" type="hidden" />
+        <label for="modal-table-number">Identificação da mesa</label>
+        <input id="modal-table-number" type="text" placeholder="Ex.: 01, Família da Noiva, Padrinhos" required />
+
+        <label for="modal-table-capacity">Capacidade (número de assentos)</label>
+        <input id="modal-table-capacity" type="number" min="1" max="50" placeholder="8" value="8" required />
+
+        <label for="modal-table-notes">Localização / Observações</label>
+        <textarea id="modal-table-notes" rows="2" placeholder="Ex.: Próxima à pista de dança, mesa reservada para idosos"></textarea>
+
+        <p class="client-form-feedback" id="ceremonial-table-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar mesa</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
     <div class="toast" role="status" aria-live="polite"></div>
 
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -544,5 +770,6 @@
     <script src="supabase-config.js"></script>
     <script src="app.js"></script>
     <script src="events.js"></script>
+    <script src="ceremonial.js"></script>
   </body>
 </html>

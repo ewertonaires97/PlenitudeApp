@@ -823,8 +823,13 @@
     if (timelineEl) {
       timelineEl.innerHTML = `
         <div class="ceremonial-header-bar">
-          <h4>Cronograma da Realização</h4>
-          <span style="font-size: 10px; color: var(--muted);">${state.ceremonialActivities.length} momentos cadastrados</span>
+          <div>
+            <h4>Cronograma da Realização</h4>
+            <span style="font-size: 10px; color: var(--muted);">${state.ceremonialActivities.length} momentos cadastrados</span>
+          </div>
+          <button class="text-button" type="button" data-jump-to-ceremonial="${event.id}" style="color: var(--moss); font-size: 10px; font-weight: 700; gap: 4px;">
+            <span>Módulo Cerimonial</span><i data-lucide="arrow-up-right"></i>
+          </button>
         </div>
 
         <div class="ceremonial-list" id="ceremonial-items-container">
@@ -1224,6 +1229,15 @@
       if (target.dataset.nav === 'Agenda') {
         e.preventDefault();
         openEventsPanel();
+        return;
+      }
+
+      if (target.hasAttribute('data-jump-to-ceremonial')) {
+        e.preventDefault();
+        const eventId = target.dataset.jumpToCeremonial;
+        if (window.plenitudeCeremonial && typeof window.plenitudeCeremonial.openCeremonialPanel === 'function') {
+          window.plenitudeCeremonial.openCeremonialPanel(eventId);
+        }
         return;
       }
 
