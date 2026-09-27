@@ -75,7 +75,7 @@
           <span class="today-label">AGENDA DE HOJE</span>
           <strong>2 compromissos</strong>
         </div>
-        <button class="text-button" type="button" data-action="Agenda de hoje">Ver agenda <i data-lucide="arrow-up-right"></i></button>
+        <button class="text-button" type="button" data-open-events="today" data-action="Agenda de hoje">Ver agenda <i data-lucide="arrow-up-right"></i></button>
       </section>
 
       <section class="quick-actions" aria-label="Ações rápidas">
@@ -87,7 +87,7 @@
           <span class="quick-icon"><i data-lucide="user-plus"></i></span>
           <span>Novo cliente</span>
         </button>
-        <button class="quick-action" type="button" data-action="Novo evento">
+        <button class="quick-action" type="button" data-open-events data-new-event>
           <span class="quick-icon"><i data-lucide="calendar-plus-2"></i></span>
           <span>Novo evento</span>
         </button>
@@ -123,12 +123,12 @@
             <span class="module-text"><strong>Estoque</strong><small>Itens e disponibilidade</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-eventos" type="button" data-action="Eventos">
+          <button class="module-card card-eventos" type="button" data-open-events>
             <span class="module-icon"><i data-lucide="calendar-days"></i></span>
             <span class="module-text"><strong>Eventos</strong><small>Produção e agenda</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-cerimonial" type="button" data-open-ceremonial data-action="Cerimonial">
+          <button class="module-card card-cerimonial" type="button" data-open-ceremonial>
             <span class="module-icon"><i data-lucide="clipboard-check"></i></span>
             <span class="module-text"><strong>Cerimonial</strong><small>Operação do evento</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>

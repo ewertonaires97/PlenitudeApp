@@ -1208,9 +1208,10 @@
       if (!target) return;
 
       // Botões de navegação / módulos
-      if (target.matches('.card-eventos') || target.dataset.action === 'Eventos') {
+      if (target.matches('.card-eventos') || target.dataset.action === 'Eventos' || target.hasAttribute('data-open-events')) {
         e.preventDefault();
-        openEventsPanel();
+        const filter = target.dataset.openEvents === 'today' ? 'today' : null;
+        openEventsPanel(filter);
         return;
       }
 
@@ -1220,7 +1221,7 @@
         return;
       }
 
-      if (target.dataset.action === 'Agenda de hoje') {
+      if (target.dataset.action === 'Agenda de hoje' || target.dataset.openEvents === 'today') {
         e.preventDefault();
         openEventsPanel('today');
         return;

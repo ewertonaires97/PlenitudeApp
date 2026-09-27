@@ -807,30 +807,29 @@ function showToast(message) {
 }
 window.showToast = showToast;
 
+const placeholderActions = ['Notificações', 'Mais opções', 'Perfil'];
 document.querySelectorAll('[data-action]').forEach((button) => {
-  // Check if the button has any dataset property other than 'action'
-  // These properties indicate a specific handler is available elsewhere.
-  const hasSpecificHandler = Object.keys(button.dataset).some(attr =>
-    attr !== 'action' && (
-      attr.startsWith('open') ||
-      attr.startsWith('close') ||
-      attr.startsWith('new') ||
-      attr === 'nav' ||
-      attr.startsWith('confirm') ||
-      attr.startsWith('delete') ||
-      attr.startsWith('toggle') ||
-      attr.startsWith('move') ||
-      attr.startsWith('edit') ||
-      attr.startsWith('view') ||
-      attr.startsWith('add') ||
-      attr.startsWith('jump') ||
-      attr.startsWith('set')
-    )
-  );
+  if (placeholderActions.includes(button.dataset.action)) {
+    button.addEventListener('click', () => showToast(`${button.dataset.action} em breve`));
+  }
+});
 
-  if (hasSpecificHandler) return; // Skip if a specific handler exists
+document.querySelectorAll('[data-open-ceremonial], .card-cerimonial').forEach((button) => {
+  button.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (window.plenitudeCeremonial && typeof window.plenitudeCeremonial.openCeremonialPanel === 'function') {
+      window.plenitudeCeremonial.openCeremonialPanel();
+    }
+  });
+});
 
-  button.addEventListener('click', () => showToast(`${button.dataset.action} em breve`));
+document.querySelectorAll('[data-open-events], .card-eventos').forEach((button) => {
+  button.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (window.plenitudeEvents && typeof window.plenitudeEvents.openEventsPanel === 'function') {
+      window.plenitudeEvents.openEventsPanel();
+    }
+  });
 });
 
 document.querySelectorAll('[data-nav]').forEach((button) => {
