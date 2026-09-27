@@ -808,23 +808,28 @@ function showToast(message) {
 window.showToast = showToast;
 
 document.querySelectorAll('[data-action]').forEach((button) => {
-  const attrs = Object.keys(button.dataset);
-  const hasSpecificHandler = attrs.some(attr => attr !== 'action' && (
-    attr.startsWith('open') ||
-    attr.startsWith('close') ||
-    attr.startsWith('new') ||
-    attr === 'nav' ||
-    attr.startsWith('confirm') ||
-    attr.startsWith('delete') ||
-    attr.startsWith('toggle') ||
-    attr.startsWith('move') ||
-    attr.startsWith('edit') ||
-    attr.startsWith('view') ||
-    attr.startsWith('add') ||
-    attr.startsWith('jump') ||
-    attr.startsWith('set')
-  ));
-  if (hasSpecificHandler) return;
+  // Check if the button has any dataset property other than 'action'
+  // These properties indicate a specific handler is available elsewhere.
+  const hasSpecificHandler = Object.keys(button.dataset).some(attr =>
+    attr !== 'action' && (
+      attr.startsWith('open') ||
+      attr.startsWith('close') ||
+      attr.startsWith('new') ||
+      attr === 'nav' ||
+      attr.startsWith('confirm') ||
+      attr.startsWith('delete') ||
+      attr.startsWith('toggle') ||
+      attr.startsWith('move') ||
+      attr.startsWith('edit') ||
+      attr.startsWith('view') ||
+      attr.startsWith('add') ||
+      attr.startsWith('jump') ||
+      attr.startsWith('set')
+    )
+  );
+
+  if (hasSpecificHandler) return; // Skip if a specific handler exists
+
   button.addEventListener('click', () => showToast(`${button.dataset.action} em breve`));
 });
 
