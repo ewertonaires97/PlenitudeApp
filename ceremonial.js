@@ -718,12 +718,6 @@
               </div>
 
               <div class="activity-actions-col">
-                <select class="activity-status-quick-select ${act.status}" data-change-activity-status="${act.id}" aria-label="Mudar status">
-                  <option value="pending" ${act.status === 'pending' ? 'selected' : ''}>Pendente</option>
-                  <option value="in_progress" ${act.status === 'in_progress' ? 'selected' : ''}>Em andamento</option>
-                  <option value="completed" ${act.status === 'completed' ? 'selected' : ''}>Concluído</option>
-                  <option value="skipped" ${act.status === 'skipped' ? 'selected' : ''}>Ignorado</option>
-                </select>
                 <div class="activity-mini-actions">
                   <button class="client-action" type="button" data-edit-activity="${act.id}" title="Editar momento">
                     <i data-lucide="pencil"></i>
