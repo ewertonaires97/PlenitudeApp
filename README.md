@@ -34,9 +34,13 @@ Para imagens e categorias, execute em seguida [supabase/migrations/003_menu_imag
 
 ### Cardápio por serviço
 
-Execute [supabase/migrations/010_menus_service_link.sql](supabase/migrations/010_menus_service_link.sql). Ela conclui a `002_menus.sql`, que criou `menus` e `menu_services` mas não chegou a alterar a tabela `quotes`, e adiciona `menus.service_id` para que cada cardápio pertença a um serviço. Os vínculos já cadastrados em `menu_services` são copiados para a nova coluna automaticamente.
+Execute [supabase/migrations/010_menus_service_link.sql](supabase/migrations/010_menus_service_link.sql). Ela conclui a `002_menus.sql`, que criou `menus` e `menu_services` mas não chegou a alterar a tabela `quotes`. Sem ela o módulo de Orçamentos não carrega e o erro aparece como `column quotes.menu_id does not exist`.
 
-Sem a `010` o módulo de Orçamentos não carrega e o erro aparece como `column quotes.menu_id does not exist`. A migração pode ser executada mais de uma vez.
+Execute depois [supabase/migrations/011_menu_services_nn.sql](supabase/migrations/011_menu_services_nn.sql). Ela transforma o vínculo cardápio ↔ serviço em muitos-para-muitos: um mesmo cardápio pode participar de vários serviços ao mesmo tempo. Os vínculos gravados em `menus.service_id` são copiados para a tabela `menu_services` e a coluna é removida, para não sobrar fonte duplicada.
+
+Depois de aplicada a `011`, a `010` já não é mais necessária para o vínculo de cardápios — basta a `011`, que sozinha também conclui a `002`. As duas podem ser executadas nesta ordem e mais de uma vez.
+
+No formulário de serviço, os cardápios marcados são os que aquele serviço inclui; desmarcar remove o vínculo **apenas daquele serviço**, mantendo o cardápio nos outros. No formulário de cardápio, os serviços marcados são os que incluem aquele cardápio.
 
 ### Estoque
 

@@ -59,6 +59,10 @@ const menuCategoryOptions = document.querySelector('#menu-category-options');
 const categoryPanel = document.querySelector('#category-panel');
 const categoryList = document.querySelector('#category-list');
 const categoryFeedback = document.querySelector('#category-feedback');
+const settingsPanel = document.querySelector('#settings-panel');
+const inventoryCategoryPanel = document.querySelector('#inventory-category-panel');
+const inventoryCategoryList = document.querySelector('#inventory-category-list');
+const inventoryCategoryFeedback = document.querySelector('#inventory-category-feedback');
 const inventoryPanel = document.querySelector('#inventory-panel');
 const inventoryList = document.querySelector('#inventory-list');
 const inventorySearch = document.querySelector('#inventory-search');
@@ -94,7 +98,7 @@ const quoteForm = document.querySelector('#quote-form');
 const quoteFormTitle = document.querySelector('#quote-form-title');
 const quoteFormFeedback = document.querySelector('#quote-form-feedback');
 const quoteServicePicker = document.querySelector('#quote-service-picker');
-const menuServiceSelect = document.querySelector('#menu-service');
+const menuServiceOptions = document.querySelector('#menu-service-options');
 const quoteClientSelect = document.querySelector('#quote-client');
 const quoteSubtotalPreview = document.querySelector('#quote-subtotal-preview');
 const quoteTotalPreview = document.querySelector('#quote-total-preview');
@@ -371,18 +375,33 @@ async function loadServices() {
   if (!menuPanel.hidden) renderMenus();
 }
 
-// O vinculo cardapio <-> serviço mora em menus.service_id (N:1).
-// Derivar os dois lados aqui mantem services e menus coerentes mesmo com
-// os dois loaders rodando em paralelo.
+// O vinculo cardapio <-> serviço é N:N: um mesmo cardapio pode participar de
+// varios servicos e, por isso, aparece em mais de um deles no orcamento.
+function groupMenusByService(menus, serviceIds) {
+  const wanted = new Set(serviceIds.filter(Boolean));
+  const byService = new Map();
+  menus.forEach((menu) => {
+    menu.serviceIds.forEach((serviceId) => {
+      if (!wanted.has(serviceId)) return;
+      if (!byService.has(serviceId)) byService.set(serviceId, []);
+      byService.get(serviceId).push(menu);
+    });
+  });
+  return byService;
+}
+
+// O vinculo cardapio <-> serviço é N:N e mora em menu_services. Derivar os dois
+// lados aqui mantem services e menus coerentes mesmo com os dois loaders rodando
+// em paralelo.
 function hydrateMenuServiceLinks() {
   services = services.map((service) => {
-    const linked = menus.filter((menu) => menu.serviceId === service.id);
+    const linked = menus.filter((menu) => menu.serviceIds.includes(service.id));
     return { ...service, menuIds: linked.map((menu) => menu.id), menuNames: linked.map((menu) => menu.name) };
   });
-  menus = menus.map((menu) => {
-    const service = services.find((item) => item.id === menu.serviceId);
-    return { ...menu, serviceName: service ? service.name : null };
-  });
+  menus = menus.map((menu) => ({
+    ...menu,
+    serviceNames: menu.serviceIds.map((id) => services.find((item) => item.id === id)?.name).filter(Boolean)
+  }));
 }
 
 function openServices() {
@@ -392,20 +411,38 @@ function openServices() {
   Promise.all([loadMenus(), loadServices()]);
 }
 
+// No formulario de servico todos os cardapios sao listados: os marcados sao os
+// que participam deste servico. O mesmo cardapio pode estar marcado em outros
+// servicos ao mesmo tempo, e o nome do cardapio abre a tela de detalhes dele.
+let serviceMenusBefore = [];
+
 function renderServiceMenuOptions(serviceId) {
-  const linked = menus.filter((menu) => menu.serviceId === serviceId);
-  if (!linked.length) {
-    serviceMenuOptions.innerHTML = '<span class="field-hint">Nenhum cardápio vinculado ainda.</span>';
+  if (!menus.length) {
+    serviceMenuOptions.innerHTML = '<span class="field-hint">Nenhum cardápio cadastrado ainda.</span>';
     return;
   }
-  serviceMenuOptions.innerHTML = linked.map((menu) => `
-    <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
-      <i data-lucide="book-open"></i>
-      <span>${escapeHTML(menu.name)}</span>
-    </button>
-  `).join('');
+  serviceMenuOptions.innerHTML = menus.map((menu) => {
+    const checked = serviceId ? menu.serviceIds.includes(serviceId) : false;
+    const others = menu.serviceIds
+      .filter((id) => id !== serviceId)
+      .map((id) => services.find((service) => service.id === id)?.name)
+      .filter(Boolean);
+    const othersLine = others.length
+      ? `<span class="service-menu-owner">também em ${escapeHTML(others.join(', '))}</span>`
+      : '';
+    return `<div class="service-menu-option${checked ? ' selected' : ''}">
+      <label class="service-menu-check" for="service-menu-${menu.id}"><input id="service-menu-${menu.id}" type="checkbox" data-service-menu="${menu.id}" ${checked ? 'checked' : ''} /></label>
+      <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}"><i data-lucide="book-open"></i><span>${escapeHTML(menu.name)}</span></button>
+      ${othersLine}
+    </div>`;
+  }).join('');
   lucide.createIcons();
 }
+
+serviceMenuOptions.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-service-menu]');
+  if (checkbox) checkbox.closest('.service-menu-option').classList.toggle('selected', checkbox.checked);
+});
 
 async function openServiceForm(service = null) {
   serviceForm.reset();
@@ -419,6 +456,7 @@ async function openServiceForm(service = null) {
   serviceFormFeedback.textContent = '';
   serviceFormPanel.hidden = false;
   await Promise.all([loadMenus(), loadServices()]);
+  serviceMenusBefore = service ? menus.filter((menu) => menu.serviceIds.includes(service.id)).map((menu) => menu.id) : [];
   renderServiceMenuOptions(service?.id || '');
   serviceMenuCreate.hidden = !service;
   document.querySelector('#service-name').focus();
@@ -457,10 +495,45 @@ serviceForm.addEventListener('submit', async (event) => {
     return;
   }
 
+  const savedId = result.data?.id;
+  if (!savedId) {
+    serviceFormFeedback.textContent = 'Não foi possível salvar. Confira os dados e tente novamente.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar serviço';
+    return;
+  }
+  // Vinculo N:N em menu_services. Os cardapios marcados passam a participar
+  // deste servico; os que estavam vinculados e foram desmarcados saem apenas
+  // deste servico, continuando nos demais onde tambem aparecem.
+  const checkedMenus = [...serviceMenuOptions.querySelectorAll('[data-service-menu]:checked')].map((checkbox) => checkbox.dataset.serviceMenu);
+  const releasedMenus = serviceMenusBefore.filter((menuId) => !checkedMenus.includes(menuId));
+  let menusError = null;
+  if (releasedMenus.length) {
+    const release = await supabaseClient.from('menu_services').delete().eq('service_id', savedId).in('menu_id', releasedMenus);
+    if (release.error) menusError = release.error;
+  }
+  if (!menusError && checkedMenus.length) {
+    // Só entram os vínculos novos: os que já existiam permanecem intactos, para
+    // não repetir a chave (menu_id, service_id).
+    const newLinks = checkedMenus.filter((menuId) => !serviceMenusBefore.includes(menuId));
+    if (newLinks.length) {
+      const attach = await supabaseClient.from('menu_services').insert(
+        newLinks.map((menuId, index) => ({ menu_id: menuId, service_id: savedId, sort_order: index }))
+      );
+      if (attach.error) menusError = attach.error;
+    }
+  }
+  if (menusError) {
+    serviceFormFeedback.textContent = 'Serviço salvo, mas não foi possível atualizar os cardápios vinculados.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar serviço';
+    return;
+  }
+
   serviceFormPanel.hidden = true;
-  // O vinculo dos cardapios mora em menus.service_id, entao o servico e
-  // recarregado junto com os cardapios (excluir um servico leva junto os
-  // cardapios dele, por causa do ON DELETE CASCADE).
+  // O vinculo dos cardapios mora em menu_services, entao os dois lados sao
+  // recarregados juntos (excluir um servico leva junto os vinculos dele, por
+  // causa do ON DELETE CASCADE).
   await Promise.all([loadServices(), loadMenus()]);
   saveButton.disabled = false;
   saveButton.querySelector('span').textContent = 'Salvar serviço';
@@ -546,7 +619,7 @@ function renderMenus() {
     return `<article class="visual-card menu-card detail-trigger" data-detail-type="menu" data-detail-id="${menu.id}">
       <button class="visual-card-hero${heroImage ? '' : ' visual-card-placeholder'}" type="button" ${heroImage ? `data-view-image="${escapeHTML(heroImage)}"` : ''} aria-label="${heroImage ? `Ver imagem de ${escapeHTML(menu.name)}` : 'Cardápio sem imagem'}">${heroImage ? `<img src="${escapeHTML(heroImage)}" alt="${escapeHTML(menu.name)}" />` : '<i data-lucide="book-open"></i><span>Sem imagem</span>'}</button>
       <div class="visual-card-body"><div class="visual-card-heading"><div><strong>${escapeHTML(menu.name)}</strong><span>${escapeHTML(menu.description || 'Sem descrição')}</span></div><span class="service-status${menu.active ? '' : ' inactive'}">${menu.active ? 'Ativo' : 'Inativo'}</span></div>
-        <div class="visual-card-meta"><span class="menu-owner">${menu.serviceName ? escapeHTML(menu.serviceName) : 'Sem serviço vinculado'}</span>${images.length > 1 ? `<span>${images.length} imagens</span>` : ''}</div>
+        <div class="visual-card-meta"><span class="menu-owner">${menu.serviceNames.length ? escapeHTML(menu.serviceNames.join(' · ')) : 'Sem serviço vinculado'}</span>${images.length > 1 ? `<span>${images.length} imagens</span>` : ''}</div>
         ${images.length > 1 ? `<div class="visual-card-thumbs">${images.slice(1).map((image) => `<button type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ver imagem do cardápio"><img src="${escapeHTML(image.public_url)}" alt="" /></button>`).join('')}</div>` : ''}
         <div class="visual-card-actions"><button class="client-action" type="button" data-edit-menu="${menu.id}" aria-label="Editar ${escapeHTML(menu.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-menu="${menu.id}" aria-label="Excluir ${escapeHTML(menu.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div>
       </div>
@@ -558,18 +631,25 @@ function renderMenus() {
 async function loadMenus() {
   const selectedCategoryIds = !menuFormPanel.hidden ? [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value) : [];
   const openMenuId = !menuFormPanel.hidden ? document.querySelector('#menu-id').value || null : null;
-  const openMenuServiceId = !menuFormPanel.hidden ? menuServiceSelect.value || '' : '';
-  const { data, error } = await supabaseClient.from('menus').select('id, name, description, active, created_at, service_id').order('name');
-  if (error) {
-    setMenuFeedback('Não foi possível carregar os cardápios. Execute a migração 010 no Supabase.', true);
-    return;
-  }
-  menus = (data || []).map((menu) => ({ ...menu, serviceId: menu.service_id || '' }));
-  const [imagesResult, categoriesResult, categoryLinksResult] = await Promise.all([
+  const checkedServiceIds = !menuFormPanel.hidden ? [...menuServiceOptions.querySelectorAll('input:checked')].map((input) => input.value) : [];
+  // O vinculo cardapio <-> servico e N:N e mora em menu_services.
+  const [menusResult, linksResult, imagesResult, categoriesResult, categoryLinksResult] = await Promise.all([
+    supabaseClient.from('menus').select('id, name, description, active, created_at').order('name'),
+    supabaseClient.from('menu_services').select('menu_id, service_id, sort_order').order('sort_order'),
     supabaseClient.from('menu_images').select('id, menu_id, storage_path, public_url, sort_order').order('sort_order'),
     supabaseClient.from('menu_categories').select('id, name').order('name'),
     supabaseClient.from('menu_category_links').select('menu_id, category_id')
   ]);
+  if (menusResult.error) {
+    setMenuFeedback(`Não foi possível carregar os cardápios: ${menusResult.error.message}`, true);
+    return;
+  }
+  const serviceIdsByMenu = new Map();
+  (linksResult.data || []).forEach((link) => {
+    if (!serviceIdsByMenu.has(link.menu_id)) serviceIdsByMenu.set(link.menu_id, []);
+    serviceIdsByMenu.get(link.menu_id).push(link.service_id);
+  });
+  menus = (menusResult.data || []).map((menu) => ({ ...menu, serviceIds: serviceIdsByMenu.get(menu.id) || [] }));
   menuImages = imagesResult.data || [];
   menuCategories = categoriesResult.data || [];
   menuCategoryLinks = categoryLinksResult.data || [];
@@ -579,7 +659,7 @@ async function loadMenus() {
   renderMenus();
   renderCategories();
   if (!menuFormPanel.hidden) {
-    renderMenuServiceOptions(openMenuServiceId);
+    renderMenuServiceOptions(checkedServiceIds);
     renderMenuCategoryOptions(selectedCategoryIds);
     renderMenuImagePreviews(openMenuId);
   }
@@ -591,16 +671,22 @@ function openMenus() {
   Promise.all([loadMenus(), loadServices()]);
 }
 
-function renderMenuServiceOptions(selectedServiceId = '') {
+function renderMenuServiceOptions(selectedServiceIds = []) {
   if (!services.length) {
-    menuServiceSelect.innerHTML = '<option value="">Cadastre um serviço primeiro</option>';
-    menuServiceSelect.disabled = true;
+    menuServiceOptions.innerHTML = '<span class="field-hint">Cadastre um serviço primeiro.</span>';
     return;
   }
-  menuServiceSelect.disabled = false;
-  menuServiceSelect.innerHTML = '<option value="">Selecione um serviço</option>' + services.map((service) => `<option value="${service.id}">${escapeHTML(service.name)}</option>`).join('');
-  menuServiceSelect.value = services.some((service) => service.id === selectedServiceId) ? selectedServiceId : '';
+  const selected = new Set(selectedServiceIds);
+  menuServiceOptions.innerHTML = services.map((service) => `<div class="service-menu-option${selected.has(service.id) ? ' selected' : ''}">
+    <label class="service-menu-check" for="menu-service-${service.id}"><input id="menu-service-${service.id}" type="checkbox" value="${service.id}" data-menu-service ${selected.has(service.id) ? 'checked' : ''} /></label>
+    <label class="menu-service-name" for="menu-service-${service.id}">${escapeHTML(service.name)}</label>
+  </div>`).join('');
 }
+
+menuServiceOptions.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-menu-service]');
+  if (checkbox) checkbox.closest('.service-menu-option').classList.toggle('selected', checkbox.checked);
+});
 
 async function openMenuForm(menu = null, presetServiceId = '') {
   menuForm.reset();
@@ -614,14 +700,14 @@ async function openMenuForm(menu = null, presetServiceId = '') {
   menuFormFeedback.textContent = '';
   menuFormPanel.hidden = false;
   await Promise.all([loadServices(), loadMenus()]);
-  renderMenuServiceOptions(menu?.serviceId || presetServiceId);
+  renderMenuServiceOptions(menu ? menu.serviceIds : (presetServiceId ? [presetServiceId] : []));
   renderMenuCategoryOptions(menu ? menuCategoryLinks.filter((link) => link.menu_id === menu.id).map((link) => link.category_id) : []);
   renderMenuImagePreviews(menu?.id || null);
   document.querySelector('#menu-name').focus();
 }
 
 document.querySelectorAll('[data-open-menus]').forEach((button) => button.addEventListener('click', openMenus));
-document.querySelectorAll('[data-close-menus]').forEach((button) => button.addEventListener('click', () => { menuPanel.hidden = true; }));
+document.querySelectorAll('[data-close-menus]').forEach((button) => button.addEventListener('click', () => { fecharPainelDeApoio(menuPanel); }));
 document.querySelectorAll('[data-new-menu]').forEach((button) => button.addEventListener('click', () => openMenuForm()));
 document.querySelectorAll('[data-close-menu-form]').forEach((button) => button.addEventListener('click', () => { menuFormPanel.hidden = true; }));
 serviceMenuCreate.addEventListener('click', () => {
@@ -632,20 +718,134 @@ document.querySelector('[data-open-categories]').addEventListener('click', () =>
   categoryPanel.hidden = false;
   loadMenus();
 });
-document.querySelector('[data-close-categories]').addEventListener('click', () => { categoryPanel.hidden = true; });
+
+/* ========================================================================== */
+/* CONFIGURAÇÕES                                                              */
+/* Reúne as telas de apoio que antes só eram acessadas por ícones pequenos    */
+/* dentro de outros módulos.                                                  */
+/* ========================================================================== */
+function openSettings() {
+  settingsPanel.hidden = false;
+}
+
+// Enquanto o usuario navega a partir das Configuracoes, o X das telas de apoio
+// devolve para Configuracoes em vez de fechar direto para a tela inicial.
+let settingsFlowAtivo = false;
+
+function fecharPainelDeApoio(panel) {
+  const voltarParaConfiguracoes = settingsFlowAtivo;
+  panel.hidden = true;
+  settingsFlowAtivo = false;
+  // Aberto pelo modulo, o X fecha direto para a tela inicial.
+  settingsPanel.hidden = !voltarParaConfiguracoes;
+}
+
+function abrirDeConfiguracoes(destino) {
+  settingsFlowAtivo = true;
+  settingsPanel.hidden = true;
+  if (destino === 'menus') openMenus();
+  if (destino === 'menu-categories') { categoryPanel.hidden = false; loadMenus(); }
+  if (destino === 'inventory-categories') { inventoryCategoryPanel.hidden = false; loadInventoryCategories(); }
+}
+
+document.querySelectorAll('[data-open-settings]').forEach((button) => button.addEventListener('click', openSettings));
+document.querySelectorAll('[data-close-settings]').forEach((button) => button.addEventListener('click', () => {
+  settingsFlowAtivo = false;
+  settingsPanel.hidden = true;
+}));
+settingsPanel.addEventListener('click', (event) => {
+  if (event.target === settingsPanel) { settingsFlowAtivo = false; settingsPanel.hidden = true; return; }
+  const item = event.target.closest('[data-settings-goto]');
+  if (!item) return;
+  abrirDeConfiguracoes(item.dataset.settingsGoto);
+});
+
+/* Categorias de itens do estoque: espelha o painel de categorias de cardapio. */
+function setInventoryCategoryFeedback(message, isError = false) {
+  inventoryCategoryFeedback.textContent = message;
+  inventoryCategoryFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+async function loadInventoryCategories() {
+  const [categoriesResult, linksResult] = await Promise.all([
+    supabaseClient.from('inventory_categories').select('id, name').order('name'),
+    supabaseClient.from('inventory_category_links').select('inventory_item_id, category_id')
+  ]);
+  if (categoriesResult.error) {
+    setInventoryCategoryFeedback(`Não foi possível carregar as categorias: ${categoriesResult.error.message}`, true);
+    return;
+  }
+  inventoryCategories = categoriesResult.data || [];
+  inventoryCategoryLinks = linksResult.data || [];
+  renderInventoryCategories();
+}
+
+function renderInventoryCategories() {
+  if (!inventoryCategories.length) {
+    inventoryCategoryList.innerHTML = '<div class="empty-clients">Ainda não há categorias cadastradas.</div>';
+    return;
+  }
+  inventoryCategoryList.innerHTML = inventoryCategories.map((category) => {
+    const itemCount = inventoryCategoryLinks.filter((link) => link.category_id === category.id).length;
+    return `<article class="client-row"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${itemCount} ${itemCount === 1 ? 'item' : 'itens'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-inventory-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-inventory-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+async function createInventoryCategory() {
+  const name = window.prompt('Nome da nova categoria:');
+  if (!name?.trim()) return;
+  const { error } = await supabaseClient.from('inventory_categories').insert({ name: name.trim() });
+  if (error) {
+    setInventoryCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível criar a categoria.', true);
+    return;
+  }
+  await loadInventoryCategories();
+  await loadInventory();
+  setInventoryCategoryFeedback('Categoria criada.');
+}
+
+document.querySelectorAll('[data-new-inventory-category]').forEach((button) => button.addEventListener('click', createInventoryCategory));
+document.querySelectorAll('[data-close-inventory-categories]').forEach((button) => button.addEventListener('click', () => { fecharPainelDeApoio(inventoryCategoryPanel); }));
+
+inventoryCategoryList.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('[data-edit-inventory-category]');
+  const deleteButton = event.target.closest('[data-delete-inventory-category]');
+  if (editButton) {
+    const category = inventoryCategories.find((item) => item.id === editButton.dataset.editInventoryCategory);
+    const name = window.prompt('Nome da categoria:', category?.name || '');
+    if (!category || !name?.trim() || name.trim() === category.name) return;
+    const { error } = await supabaseClient.from('inventory_categories').update({ name: name.trim() }).eq('id', category.id);
+    if (error) {
+      setInventoryCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível editar a categoria.', true);
+      return;
+    }
+    await loadInventoryCategories();
+    await loadInventory();
+    setInventoryCategoryFeedback('Categoria atualizada.');
+    return;
+  }
+  if (deleteButton) {
+    const category = inventoryCategories.find((item) => item.id === deleteButton.dataset.deleteInventoryCategory);
+    if (!category || !window.confirm(`Excluir a categoria ${category.name}?`)) return;
+    const { error } = await supabaseClient.from('inventory_categories').delete().eq('id', category.id);
+    if (error) {
+      setInventoryCategoryFeedback('Não foi possível excluir a categoria.', true);
+      return;
+    }
+    await loadInventoryCategories();
+    await loadInventory();
+    setInventoryCategoryFeedback('Categoria excluída.');
+  }
+});
+document.querySelector('[data-close-categories]').addEventListener('click', () => { fecharPainelDeApoio(categoryPanel); });
 
 menuForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = menuForm.querySelector('button[type="submit"]');
   const menuId = document.querySelector('#menu-id').value;
-  const serviceId = menuServiceSelect.value;
-  if (!serviceId) {
-    menuFormFeedback.textContent = 'Escolha o serviço ao qual este cardápio pertence.';
-    saveButton.disabled = false;
-    saveButton.querySelector('span').textContent = 'Salvar cardápio';
-    return;
-  }
-  const payload = { name: document.querySelector('#menu-name').value.trim(), description: document.querySelector('#menu-description').value.trim() || null, service_id: serviceId, active: document.querySelector('#menu-active').checked };
+  const selectedServiceIds = [...menuServiceOptions.querySelectorAll('[data-menu-service]:checked')].map((input) => input.value);
+  const payload = { name: document.querySelector('#menu-name').value.trim(), description: document.querySelector('#menu-description').value.trim() || null, active: document.querySelector('#menu-active').checked };
   saveButton.disabled = true;
   saveButton.querySelector('span').textContent = 'Salvando...';
   const result = menuId
@@ -657,7 +857,30 @@ menuForm.addEventListener('submit', async (event) => {
     saveButton.querySelector('span').textContent = 'Salvar cardápio';
     return;
   }
-  const savedMenuId = result.data.id;
+  const savedMenuId = result.data?.id;
+  if (!savedMenuId) {
+    menuFormFeedback.textContent = 'Não foi possível salvar o cardápio.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cardápio';
+    return;
+  }
+  // Vinculos N:N: apaga os anteriores e regrava os servios marcados.
+  const { error: clearServicesError } = await supabaseClient.from('menu_services').delete().eq('menu_id', savedMenuId);
+  if (clearServicesError) {
+    menuFormFeedback.textContent = 'Cardápio salvo, mas não foi possível atualizar os serviços vinculados.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cardápio';
+    return;
+  }
+  if (selectedServiceIds.length) {
+    const { error: linkError } = await supabaseClient.from('menu_services').insert(selectedServiceIds.map((serviceId, index) => ({ menu_id: savedMenuId, service_id: serviceId, sort_order: index })));
+    if (linkError) {
+      menuFormFeedback.textContent = 'Cardápio salvo, mas não foi possível vincular os serviços.';
+      saveButton.disabled = false;
+      saveButton.querySelector('span').textContent = 'Salvar cardápio';
+      return;
+    }
+  }
   const selectedCategoryIds = [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value);
   const { error: clearCategoriesError } = await supabaseClient.from('menu_category_links').delete().eq('menu_id', savedMenuId);
   if (clearCategoriesError) {
@@ -830,6 +1053,15 @@ document.querySelectorAll('[data-nav]').forEach((button) => {
   button.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
     button.classList.add('active');
+    // "Menu" e a propria tela de ajustes; Inicio e o painel principal.
+    if (button.dataset.nav === 'Início') {
+      settingsPanel.hidden = true;
+      return;
+    }
+    if (button.dataset.nav === 'Menu') {
+      openSettings();
+      return;
+    }
     showToast(button.dataset.nav);
   });
 });
@@ -1001,6 +1233,7 @@ async function openDetail(type, id) {
   let title = 'Detalhes';
   let eyebrow = 'DETALHES';
   let content = '';
+  let actionQuoteId = '';
   if (type === 'client') {
     const client = clients.find((item) => item.id === id);
     if (!client) return;
@@ -1012,7 +1245,16 @@ async function openDetail(type, id) {
     if (!service) return;
     title = service.name;
     eyebrow = 'SERVIÇO';
-    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="sparkles"></i></span><div><strong>${escapeHTML(service.name)}</strong><span>${service.active ? 'Serviço ativo' : 'Serviço inativo'}</span></div></div>${detailRow('Categoria', service.category)}${detailRow('Preço padrão', formatCurrency(service.default_price))}${detailRow('Cardápios', service.menuNames.join(' · '))}${detailRow('Descrição', service.description)}`;
+    // Mesmo padrao do detalhe do orcamento: cartapios em etiquetas que abrem a
+    // ficha de cada um.
+    const menusBox = service.menuNames.length
+      ? `<div class="detail-box"><strong class="detail-box-title">CARDÁPIOS DESTE SERVIÇO</strong><div class="detail-item-menus">${service.menuIds.map((menuId) => {
+        const menu = menus.find((item) => item.id === menuId);
+        if (!menu) return '';
+        return `<button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}"><i data-lucide="book-open"></i><span>${escapeHTML(menu.name)}</span></button>`;
+      }).join('')}</div></div>`
+      : '';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="sparkles"></i></span><div><strong>${escapeHTML(service.name)}</strong><span>${service.active ? 'Serviço ativo' : 'Serviço inativo'}</span></div></div>${detailRow('Categoria', service.category)}${detailRow('Preço padrão', formatCurrency(service.default_price))}${menusBox}${detailRow('Descrição', service.description)}`;
   } else if (type === 'menu') {
     const menu = menus.find((item) => item.id === id);
     if (!menu) return;
@@ -1020,7 +1262,7 @@ async function openDetail(type, id) {
     const categories = menuCategoryLinks.filter((link) => link.menu_id === id).map((link) => menuCategories.find((category) => category.id === link.category_id)?.name).filter(Boolean);
     title = menu.name;
     eyebrow = 'CARDÁPIO';
-    content = renderDetailImages(images, menu.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="book-open"></i></span><div><strong>${escapeHTML(menu.name)}</strong><span>${menu.active ? 'Disponível' : 'Inativo'}</span></div></div>${detailRow('Serviço', menu.serviceName)}${detailRow('Categorias', categories.join(' · '))}${detailRow('Descrição', menu.description)}`;
+    content = renderDetailImages(images, menu.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="book-open"></i></span><div><strong>${escapeHTML(menu.name)}</strong><span>${menu.active ? 'Disponível' : 'Inativo'}</span></div></div>${detailRow('Serviços', menu.serviceNames.join(' · ') || 'Nenhum')}${detailRow('Categorias', categories.join(' · '))}${detailRow('Descrição', menu.description)}`;
   } else if (type === 'inventory') {
     const item = inventoryItems.find((entry) => entry.id === id);
     if (!item) return;
@@ -1036,38 +1278,41 @@ async function openDetail(type, id) {
   } else if (type === 'quote') {
     const quote = quotes.find((item) => item.id === id);
     if (!quote) return;
+    actionQuoteId = quote.id;
     title = quote.name;
     eyebrow = 'ORÇAMENTO';
     let servicesHtml = '';
-    let menusHtml = '';
     try {
       if (!menus.length) await loadMenus();
       const { data: items } = await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order');
       if (items && items.length > 0) {
-        // O cardapio nao e escolhido no orcamento: ele vem dos servicos marcados.
-        const chosenServiceIds = new Set(items.map((item) => item.service_id).filter(Boolean));
-        const linkedMenus = menus.filter((menu) => chosenServiceIds.has(menu.serviceId));
-        if (linkedMenus.length) {
-          menusHtml = `<div class="detail-menus"><strong class="detail-menus-title">CARDÁPIOS DOS SERVIÇOS ESCOLHIDOS</strong><div class="linked-menu-list">${linkedMenus.map((menu) => `
-            <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
-              <i data-lucide="book-open"></i>
-              <span>${escapeHTML(menu.name)}</span>
-            </button>
-          `).join('')}</div></div>`;
-        }
-        servicesHtml = '<div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:4px;background:#fff;"><strong style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--moss);">SERVIÇOS SELECIONADOS</strong>' + items.map((item) => {
+        // O cardapio nao e escolhido no orcamento: cada servico lista os seus,
+        // no mesmo agrupamento usado no PDF.
+        const menusByService = groupMenusByService(menus, items.map((item) => item.service_id));
+        const rowsHtml = items.map((item) => {
           const service = services.find((s) => s.id === item.service_id);
           const name = service ? service.name : item.description || 'Serviço';
           const total = item.quantity * item.unit_price;
-          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line);font-size:10px;"><span>${escapeHTML(name)} <span style="color:var(--muted);">×${item.quantity}</span></span><span style="font-weight:600;color:var(--moss);">${formatCurrency(total)}</span></div>`;
-        }).join('') + `<div style="display:flex;justify-content:space-between;padding:8px 0 0;font-size:11px;font-weight:700;color:var(--moss);"><span>TOTAL</span><span>${formatCurrency(quote.total)}</span></div></div>`;
+          const linked = menusByService.get(item.service_id) || [];
+          const menusCell = linked.length
+            ? `<div class="detail-item-menus">${linked.map((menu) => `
+                <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
+                  <i data-lucide="book-open"></i>
+                  <span>${escapeHTML(menu.name)}</span>
+                </button>`).join('')}</div>`
+            : '';
+          return `<div class="detail-service-row"><div class="detail-service-head"><span>${escapeHTML(name)} <span class="detail-service-qty">×${item.quantity}</span></span><span class="detail-service-total">${formatCurrency(total)}</span></div>${menusCell}</div>`;
+        }).join('');
+        servicesHtml = `<div class="detail-box"><strong class="detail-box-title">SERVIÇOS SELECIONADOS</strong>${rowsHtml}<div class="detail-total-line"><span>TOTAL</span><span>${formatCurrency(quote.total)}</span></div></div>`;
       }
     } catch (e) { /* ignore */ }
-    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${menusHtml}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${servicesHtml}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${servicesHtml}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
   }
   detailViewTitle.textContent = title;
   detailViewEyebrow.textContent = eyebrow;
-  detailViewContent.innerHTML = content;
+  detailViewContent.innerHTML = actionQuoteId
+    ? `${content}<div class="quote-saved-actions"><button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
+    : content;
   detailView.hidden = false;
   lucide.createIcons();
 }
@@ -1099,6 +1344,14 @@ imageViewer.addEventListener('click', (event) => { if (event.target === imageVie
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeImageViewer(); });
 document.querySelector('[data-close-detail]').addEventListener('click', closeDetail);
 detailView.addEventListener('click', (event) => { if (event.target === detailView) closeDetail(); });
+detailView.addEventListener('click', async (event) => {
+  const pdfButton = event.target.closest('[data-quote-pdf-row]');
+  const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
+  const shareButton = event.target.closest('[data-quote-share-row]');
+  if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
+  if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
+  if (shareButton) { await shareQuote(shareButton.dataset.quoteShareRow); }
+});
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDetail(); });
 
 function setQuoteFeedback(message, isError = false) {
@@ -1131,7 +1384,7 @@ function renderQuotes() {
   for (const [clientName, groupQuotes] of Object.entries(grouped)) {
     html += `<div style="margin-bottom:6px;padding:0 4px;"><strong style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">${escapeHTML(clientName)}</strong></div>`;
     for (const quote of groupQuotes) {
-      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span></div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span></div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
     }
   }
   quoteList.innerHTML = html;
@@ -1151,6 +1404,151 @@ async function loadQuotes() {
   renderQuotes();
 }
 
+/* ========================================================================== */
+/* ORÇAMENTO EM PDF E ENVIO                                                  */
+/* O PDF nasce da impressão do navegador: usa as fontes e as cores reais do   */
+/* app e o texto continua selecionável. Tudo é montado na hora a partir do     */
+/* banco, então o documento nunca sai desatualizado em relação ao orçamento.   */
+/* ========================================================================== */
+const quotePrint = document.querySelector('#quote-print');
+const quoteSavedPanel = document.querySelector('#quote-saved-panel');
+const quoteSavedFeedback = document.querySelector('#quote-saved-feedback');
+const quoteSavedTitle = document.querySelector('#quote-saved-title');
+let quoteSavedId = '';
+
+function formatDateBR(value) {
+  if (!value) return '';
+  const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('pt-BR');
+}
+
+// Busca o orcamento e seus itens direto do banco, para o PDF e a mensagem
+// refletirem o estado mais recente e nao a copia guardada em memoria.
+async function loadQuoteForOutput(quoteId) {
+  const { data: quote, error } = await supabaseClient.from('quotes').select('id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, clients(id, name, whatsapp, email)').eq('id', quoteId).single();
+  if (error) throw new Error(error.message);
+  const { data: items, error: itemsError } = await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quoteId).order('sort_order');
+  if (itemsError) throw new Error(itemsError.message);
+  if (!menus.length) await loadMenus();
+  // Cardapios ficam agrupados pelos servicos que participam deles, em vez de
+  // uma lista solta: no PDF e na mensagem cada servico mostra os seus.
+  const menusByService = groupMenusByService(menus, (items || []).map((item) => item.service_id));
+  return { quote, items: items || [], menusByService };
+}
+
+function renderQuotePrint({ quote, items, menusByService }) {
+  const eventLine = [formatDateBR(quote.event_date), quote.event_time ? String(quote.event_time).slice(0, 5) : ''].filter(Boolean).join(' · ');
+  const rows = items.map((item) => {
+    const linked = menusByService.get(item.service_id) || [];
+    const menusCell = linked.length
+      ? `<span class="pd-item-menus">${linked.map((menu) => `<span class="pd-item-menu">${escapeHTML(menu.name)}</span>`).join('')}</span>`
+      : '';
+    return `<tr><td><span class="pd-item-name">${escapeHTML(item.description || 'Serviço')}</span>${menusCell}</td><td class="pd-num">${formatNumber(item.quantity)}</td><td class="pd-num">${formatCurrency(item.unit_price)}</td><td class="pd-num">${formatCurrency(Number(item.quantity) * Number(item.unit_price))}</td></tr>`;
+  }).join('');
+  quotePrint.innerHTML = `
+    <header class="pd-head">
+      <div class="pd-brand"><span class="pd-brand-mark">PR</span><span><span class="pd-brand-name">Plenitude</span><span class="pd-brand-sub">Realizações</span></span></div>
+      <div class="pd-meta"><span class="pd-number-label">Orçamento</span><span class="pd-number">#${String(quote.quote_number ?? 0).padStart(4, '0')}</span><span class="pd-status ${escapeHTML(quote.status)}">${quoteStatusLabel(quote.status)}</span></div>
+    </header>
+    <h1 class="pd-title">${escapeHTML(quote.name)}</h1>
+    <div class="pd-blocks">
+      <div class="pd-block"><span class="pd-block-label">Cliente</span><span class="pd-block-value">${escapeHTML(quote.clients?.name || 'Sem cliente')}</span>${quote.clients?.whatsapp ? `<span class="pd-block-line">${escapeHTML(quote.clients.whatsapp)}</span>` : ''}${quote.clients?.email ? `<span class="pd-block-line">${escapeHTML(quote.clients.email)}</span>` : ''}</div>
+      <div class="pd-block"><span class="pd-block-label">Data do evento</span><span class="pd-block-value">${escapeHTML(eventLine || 'A definir')}</span>${quote.event_time ? '' : ''}</div>
+      <div class="pd-block"><span class="pd-block-label">Local</span><span class="pd-block-value">${escapeHTML(quote.venue || 'A definir')}</span></div>
+    </div>
+    <table class="pd-items"><thead><tr><th>Serviço</th><th class="pd-num">Qtd.</th><th class="pd-num">Valor unit.</th><th class="pd-num">Total</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="pd-totals"><div class="pd-totals-box">
+      <div class="pd-total-line"><span>Subtotal</span><strong>${formatCurrency(quote.subtotal)}</strong></div>
+      ${Number(quote.discount) > 0 ? `<div class="pd-total-line"><span>Desconto</span><strong>- ${formatCurrency(quote.discount)}</strong></div>` : ''}
+      ${Number(quote.additional_fee) > 0 ? `<div class="pd-total-line"><span>Taxa adicional</span><strong>+ ${formatCurrency(quote.additional_fee)}</strong></div>` : ''}
+      <div class="pd-total-line pd-grand"><span>Total</span><strong>${formatCurrency(quote.total)}</strong></div>
+    </div></div>
+    ${quote.notes ? `<div class="pd-notes"><span class="pd-notes-label">Observações</span><span class="pd-notes-text">${escapeHTML(quote.notes)}</span></div>` : ''}
+    <footer class="pd-foot"><span>Plenitude Realizações</span><span>Emitido em ${formatDateBR(new Date().toISOString())}</span></footer>`;
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+async function printQuotePdf(quoteId) {
+  try {
+    const payload = await loadQuoteForOutput(quoteId);
+    renderQuotePrint(payload);
+    // As fontes do Google chegam por rede: sem esta espera o PDF sairia no fallback.
+    if (document.fonts?.ready) await document.fonts.ready;
+    window.print();
+  } catch (error) {
+    setQuoteFeedback(`Não foi possível gerar o PDF: ${error.message}`, true);
+  }
+}
+
+function quoteWhatsappText({ quote, items, menusByService }) {
+  const lines = [`*ORÇAMENTO #${String(quote.quote_number ?? 0).padStart(4, '0')}*`, `*${quote.name}*`, ''];
+  lines.push(`Olá, ${quote.clients?.name || 'tudo bem'}!`.trim());
+  lines.push('Segue a proposta da Plenitude Realizações:');
+  lines.push('');
+  // Mesmo agrupamento do PDF: cada servico lista os cardapios que o acompanham.
+  items.forEach((item) => {
+    lines.push(`• ${item.description || 'Serviço'} — ${formatNumber(item.quantity)} × ${formatCurrency(item.unit_price)} = ${formatCurrency(Number(item.quantity) * Number(item.unit_price))}`);
+    const linked = menusByService.get(item.service_id) || [];
+    if (linked.length) lines.push(`   _Cardápio: ${linked.map((menu) => menu.name).join(', ')}_`);
+  });
+  lines.push('');
+  lines.push(`*Total: ${formatCurrency(quote.total)}*`);
+  const details = [formatDateBR(quote.event_date), quote.venue].filter(Boolean);
+  if (details.length) lines.push(`Evento: ${details.join(' · ')}`);
+  if (quote.notes) lines.push('', `Observações: ${quote.notes}`);
+  lines.push('', 'Enviado por Plenitude Realizações');
+  return lines.join('\n');
+}
+
+async function sendQuoteOnWhatsapp(quoteId) {
+  try {
+    const payload = await loadQuoteForOutput(quoteId);
+    const number = whatsappNumber(payload.quote.clients?.whatsapp);
+    if (!number) {
+      if (quoteSavedPanel.contains(document.activeElement) || !quoteSavedPanel.hidden) quoteSavedFeedback.textContent = 'Cadastre o WhatsApp do cliente para enviar.';
+      else setQuoteFeedback('Cadastre o WhatsApp do cliente para enviar.', true);
+      return;
+    }
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(quoteWhatsappText(payload))}`, '_blank', 'noopener,noreferrer');
+  } catch (error) {
+    setQuoteFeedback(`Não foi possível preparar o envio: ${error.message}`, true);
+  }
+}
+
+async function shareQuote(quoteId) {
+  try {
+    const payload = await loadQuoteForOutput(quoteId);
+    const shareData = { title: `Orçamento #${String(payload.quote.quote_number ?? 0).padStart(4, '0')} — ${payload.quote.name}`, text: quoteWhatsappText(payload) };
+    if (navigator.share) {
+      await navigator.share(shareData);
+      return;
+    }
+    await navigator.clipboard.writeText(shareData.text);
+    setQuoteFeedback('Orçamento copiado. Cole no WhatsApp do cliente.');
+  } catch (error) {
+    if (error?.name === 'AbortError') return;
+    setQuoteFeedback('Não foi possível compartilhar o orçamento.', true);
+  }
+}
+
+function openQuoteSavedPanel(quoteId, message) {
+  quoteSavedId = quoteId;
+  quoteSavedFeedback.textContent = '';
+  quoteSavedTitle.textContent = message;
+  quoteSavedPanel.hidden = false;
+}
+
+document.querySelectorAll('[data-close-quote-saved]').forEach((button) => button.addEventListener('click', () => { quoteSavedPanel.hidden = true; quoteSavedId = ''; }));
+quoteSavedPanel.addEventListener('click', (event) => {
+  if (event.target === quoteSavedPanel) { quoteSavedPanel.hidden = true; quoteSavedId = ''; }
+  if (event.target.closest('[data-quote-pdf]')) printQuotePdf(quoteSavedId);
+  if (event.target.closest('[data-quote-whatsapp]')) sendQuoteOnWhatsapp(quoteSavedId);
+  if (event.target.closest('[data-quote-share]')) shareQuote(quoteSavedId);
+});
+
 async function loadQuoteReferences() {
   await Promise.all([loadClients(), loadServices(), loadMenus()]);
   quoteClientSelect.innerHTML = '<option value="">Selecione um cliente</option>' + clients.map((client) => `<option value="${client.id}">${escapeHTML(client.name)}</option>`).join('');
@@ -1167,7 +1565,7 @@ function renderQuoteServices(selectedItems = []) {
   quoteServicePicker.innerHTML = available.map((service) => {
     const selected = selectedByService.get(service.id);
     // O cardapio nunca e escolhido: ele acompanha o servico marcado.
-    const linkedMenus = menus.filter((menu) => menu.serviceId === service.id);
+    const linkedMenus = menus.filter((menu) => menu.serviceIds.includes(service.id));
     const menusHtml = linkedMenus.length
       ? `<span class="quote-service-menus"><span class="quote-service-menus-label">Cardápios</span>${linkedMenus.map((menu) => `
           <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
@@ -1267,9 +1665,16 @@ quoteForm.addEventListener('submit', async (event) => {
   saveButton.disabled = false;
   saveButton.querySelector('span').textContent = 'Salvar orçamento';
   showToast(quoteId ? 'Orçamento atualizado' : 'Orçamento cadastrado');
+  // O PDF e a mensagem sao montados sob demanda, entao o documento sempre
+  // corresponde ao estado atual do orcamento, antigo ou novo.
+  openQuoteSavedPanel(savedId, quoteId ? 'Orçamento atualizado' : 'Orçamento cadastrado');
 });
 
 quoteList.addEventListener('click', async (event) => {
+  const pdfButton = event.target.closest('[data-quote-pdf-row]');
+  const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
+  if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
+  if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
   const editButton = event.target.closest('[data-edit-quote]');
   const deleteButton = event.target.closest('[data-delete-quote]');
   if (editButton) { openQuoteForm(quotes.find((quote) => quote.id === editButton.dataset.editQuote)); return; }

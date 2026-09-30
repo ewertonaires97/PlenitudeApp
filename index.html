@@ -119,9 +119,9 @@
             <span class="module-text"><strong>Estoque</strong><small>Itens e disponibilidade</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-eventos" type="button" data-action="Eventos">
-            <span class="module-icon"><i data-lucide="calendar-days"></i></span>
-            <span class="module-text"><strong>Eventos</strong><small>Produção e agenda</small></span>
+          <button class="module-card card-config" type="button" data-open-settings>
+            <span class="module-icon"><i data-lucide="settings"></i></span>
+            <span class="module-text"><strong>Configurações</strong><small>Cardápios e categorias</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
           <button class="module-card card-cerimonial" type="button" data-open-ceremonial data-action="Cerimonial">
@@ -325,6 +325,53 @@
         <div class="client-list" id="menu-list"></div>
       </div>
     </section>
+    <section class="service-panel" id="settings-panel" hidden aria-labelledby="settings-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">AJUSTES</p>
+            <h2 id="settings-title">Configurações</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-settings aria-label="Fechar configurações"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">Telas de apoio do catálogo e do estoque. Tudo aqui também pode ser aberto direto pelo módulo correspondente.</p>
+        <div class="client-list settings-list">
+          <button class="client-row settings-item" type="button" data-settings-goto="menus">
+            <span class="client-initial"><i data-lucide="book-open"></i></span>
+            <span class="client-details"><strong>Cardápios</strong><span>Catálogo de cardápios e serviços que os usam</span></span>
+            <i data-lucide="chevron-right" class="settings-chevron"></i>
+          </button>
+          <button class="client-row settings-item" type="button" data-settings-goto="menu-categories">
+            <span class="client-initial"><i data-lucide="tags"></i></span>
+            <span class="client-details"><strong>Categorias de cardápio</strong><span>Agrupam cardápios em Doces, Bebidas, Sobremesas…</span></span>
+            <i data-lucide="chevron-right" class="settings-chevron"></i>
+          </button>
+          <button class="client-row settings-item" type="button" data-settings-goto="inventory-categories">
+            <span class="client-initial"><i data-lucide="boxes"></i></span>
+            <span class="client-details"><strong>Categorias de itens</strong><span>Agrupam os itens do estoque, como Louças, Taças e Toalhas</span></span>
+            <i data-lucide="chevron-right" class="settings-chevron"></i>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="service-panel" id="inventory-category-panel" hidden aria-labelledby="inventory-categories-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CONTROLE</p>
+            <h2 id="inventory-categories-title">Categorias de itens</h2>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-inventory-category><i data-lucide="plus"></i><span>Nova</span></button>
+            <button class="icon-button" type="button" data-close-inventory-categories aria-label="Fechar categorias de itens"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <p class="client-feedback" id="inventory-category-feedback" role="status"></p>
+        <div class="client-list" id="inventory-category-list"></div>
+      </div>
+    </section>
+
     <section class="service-panel" id="category-panel" hidden aria-labelledby="categories-title">
       <div class="service-panel-card">
         <header class="client-panel-header">
@@ -351,9 +398,11 @@
           <button class="icon-button" type="button" data-close-menu-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
         </header>
         <input id="menu-id" type="hidden" />
-        <label for="menu-service">Serviço</label>
-        <select id="menu-service" class="movement-select" required><option value="">Selecione um serviço</option></select>
-        <span class="field-hint">Todo cardápio pertence a um serviço. Nos orçamentos, ele aparece junto do serviço escolhido.</span>
+        <fieldset class="menu-checkboxes">
+          <legend>Serviços que incluem este cardápio</legend>
+          <span class="field-hint">O mesmo cardápio pode participar de vários serviços. Nos orçamentos, ele aparece junto de cada serviço escolhido.</span>
+          <div id="menu-service-options"><span class="field-hint">Carregando serviços...</span></div>
+        </fieldset>
         <label for="menu-name">Nome do cardápio</label>
         <input id="menu-name" name="name" type="text" placeholder="Ex.: Mesa posta" required />
         <label for="menu-description">Descrição</label>
@@ -392,7 +441,8 @@
         <textarea id="service-description" name="description" rows="3" placeholder="O que está incluído neste serviço"></textarea>
         <fieldset class="menu-checkboxes">
           <legend>Cardápios deste serviço</legend>
-          <div id="service-menu-options"><span class="field-hint">Nenhum cardápio vinculado ainda.</span></div>
+          <p class="field-hint">Marque os cardápios que participam deste serviço. Um mesmo cardápio pode estar em vários serviços. Toque no nome para abrir a ficha do cardápio.</p>
+          <div id="service-menu-options"><span class="field-hint">Nenhum cardápio cadastrado ainda.</span></div>
           <button class="inline-create-button" type="button" data-new-menu-from-service><i data-lucide="plus"></i><span>Criar cardápio para este serviço</span></button>
         </fieldset>
         <label class="service-active-field" for="service-active"><input id="service-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
@@ -765,6 +815,25 @@
         <button class="login-button" type="submit"><span>Salvar mesa</span><i data-lucide="check"></i></button>
       </form>
     </section>
+
+    <section class="client-form-panel quote-saved-panel" id="quote-saved-panel" hidden aria-labelledby="quote-saved-title">
+      <div class="client-form-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow">PROPOSTA</p><h2 id="quote-saved-title">Orçamento salvo</h2></div>
+          <button class="icon-button" type="button" data-close-quote-saved aria-label="Fechar"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">O PDF é gerado na hora com os dados atualizados. Você pode conferir o resultado e enviar para o cliente.</p>
+        <div class="quote-saved-actions">
+          <button class="client-action-button" type="button" data-quote-pdf><i data-lucide="file-text"></i><span>Ver PDF</span></button>
+          <button class="whatsapp-action-button" type="button" data-quote-whatsapp><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button>
+          <button class="client-action-button" type="button" data-quote-share><i data-lucide="share-2"></i><span>Compartilhar</span></button>
+        </div>
+        <p class="client-form-feedback" id="quote-saved-feedback" role="alert"></p>
+        <button class="login-button" type="button" data-close-quote-saved><span>Concluir</span><i data-lucide="check"></i></button>
+      </div>
+    </section>
+
+    <section class="print-doc" id="quote-print" aria-hidden="true"></section>
 
     <div class="toast" role="status" aria-live="polite"></div>
 
