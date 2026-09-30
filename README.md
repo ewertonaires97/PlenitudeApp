@@ -48,6 +48,17 @@ Para habilitar as movimentações de estoque, execute [supabase/migrations/004_i
 
 Para categorias e imagens dos itens, execute [supabase/migrations/005_inventory_categories_images.sql](supabase/migrations/005_inventory_categories_images.sql). As imagens ficam no bucket `inventory-images`, podem ser múltiplas e abrem em tela cheia ao toque. O mesmo visualizador é usado nas imagens dos cardápios.
 
+### Sincronização em tempo real
+
+Execute [supabase/migrations/012_realtime_publication.sql](supabase/migrations/012_realtime_publication.sql) no SQL Editor. **Sem ela nada sincroniza**, mesmo com o frontend correto: a publication `supabase_realtime` do Supabase é criada vazia e cada tabela precisa ser adicionada a ela explicitamente. As subscriptions do navegador respondem `SUBSCRIBED` mesmo quando a tabela não está publicada, então o sintoma é o app "parecer" sincronizado e nunca receber nada. A migração é idempotenta e emite um `NOTICE` com o resultado da verificação ao final.
+
+A partir daí, [realtime.js](realtime.js) mantém um único canal que escuta as 20 tabelas do app. Quando qualquer usuário altera um registro, só as telas **visíveis naquele momento** são recarregadas, com 400 ms de debounce — salvar um orçamento dispara `UPDATE quotes` + `DELETE quote_items` + N `INSERT quote_items` e mesmo assim causa uma única recarga. Uploads de imagem sincronizam pelo mesmo caminho, porque cada imagem é uma linha em `menu_images` / `inventory_images`.
+
+Dois pontos que dependem de manutenção futura:
+
+- `app.js` não exportava nada. As funções que o `realtime.js` chama foram expostas em `window.plenitudeApp`. Ao adicionar uma tela nova, inclua o respective loader nessa lista, senão ela não sincroniza.
+- A tabela `profiles` está publicada, mas não é assinada: nenhum módulo a consulta ainda. Quando o cabeçalho passar a exibir o nome do usuário autenticado, acrescente um tópico para ela em `realtime.js`.
+
 ### Instalar como PWA
 
 O app agora possui [manifest.webmanifest](manifest.webmanifest), [sw.js](sw.js) e ícones em [icons](icons). Depois do deploy no Netlify:

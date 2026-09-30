@@ -27,9 +27,7 @@
     editingActivityId: null,
     editingStaffId: null,
     editingGuestId: null,
-    editingTableId: null,
-    // ── Supabase Realtime ────────────────────────────────────────
-    realtimeChannels: []
+    editingTableId: null
   };
 
   // Modelos pré-definidos de momentos para o cerimonial (templates rápidos)
@@ -185,77 +183,12 @@
   }
 
   // ==========================================================================
-  // Supabase Realtime – sincronização em tempo real para todos os usuários
+  // Sincronização em tempo real
   // ==========================================================================
-
-  function setupRealtimeForEvent(eventId) {
-    const sb = getSupabase();
-    if (!sb || !eventId) return;
-
-    stopRealtime();
-
-    const channelName = `ceremonial-v1:${eventId}`;
-
-    // Canal principal com todas as tabelas do cerimonial
-    const channel = sb.channel(channelName).on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'ceremonial_activities'
-      },
-      () => refreshFromServer()
-    ).on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'guests'
-      },
-      () => refreshFromServer()
-    ).on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'ceremonialistas'
-      },
-      () => refreshFromServer()
-    ).on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'event_tables'
-      },
-      () => refreshFromServer()
-    ).subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        console.info(`[Realtime] Conectado ao canal ${channelName}`);
-      } else if (status === 'CHANNEL_ERROR') {
-        console.warn('[Realtime] Erro ao conectar ao canal', channelName, '- realtime desabilitado');
-      }
-    });
-
-    state.realtimeChannels.push(channel);
-  }
-
-  function stopRealtime() {
-    state.realtimeChannels.forEach(ch => {
-      getSupabase()?.removeChannel(ch);
-    });
-    state.realtimeChannels = [];
-  }
-
-  async function refreshFromServer() {
-    if (!state.selectedEventId) return;
-
-    try {
-      await loadSelectedEventDetails(state.selectedEventId);
-    } catch (err) {
-      console.error('[Realtime] Erro ao recarregar dados:', err);
-    }
-  }
+  // A assinatura do canal é global e mora em realtime.js: um único canal
+  // atende todas as tabelas do app e recarrega o cerimonial apenas quando a
+  // tela está aberta. Este módulo só precisa reagir quando o evento
+  // selecionado mudar por causa de outro usuário.
 
   // ==========================================================================
   // Utilitários de Erro de Schema (orienta usuário sobre migrações pendentes)
@@ -315,6 +248,13 @@
       state.events = data || [];
       populateEventSelector();
 
+      // O evento selecionado pode ter sido excluído por outro usuário desde a
+      // última carga: nesse caso a seleção é refeita a partir da lista atual.
+      if (state.selectedEventId && !state.events.some(e => e.id === state.selectedEventId)) {
+        state.selectedEventId = null;
+        state.selectedEvent = null;
+      }
+
       // Se nenhum evento foi selecionado ainda, seleciona o mais próximo de hoje
       if (!state.selectedEventId && state.events.length > 0) {
         const todayStr = new Date().toISOString().split('T')[0];
@@ -359,9 +299,6 @@
   async function selectEvent(eventId) {
     if (!eventId) return;
 
-    // Para realtime anterior se já houver evento selecionado
-    stopRealtime();
-
     state.selectedEventId = eventId;
     state.selectedEvent = state.events.find(e => e.id === eventId) || null;
 
@@ -371,9 +308,6 @@
     }
 
     await loadSelectedEventDetails(eventId);
-
-    // Configura subscrição realtime para o novo evento
-    setupRealtimeForEvent(eventId);
   }
 
   async function loadSelectedEventDetails(eventId) {
@@ -1877,7 +1811,6 @@
     const panel = document.getElementById('ceremonial-panel');
     if (panel) panel.hidden = true;
     clearInterval(state.liveTimerInterval);
-    stopRealtime();
   }
 
   // ==========================================================================
@@ -2133,9 +2066,12 @@
     openCeremonialPanel,
     closeCeremonialPanel,
     selectEvent,
+    // Chamados por realtime.js. reloadCeremonial só tem efeito com um evento
+    // selecionado; reloadEventsList recarrega a lista e reaplica a seleção.
     reloadCeremonial: () => {
       if (state.selectedEventId) loadSelectedEventDetails(state.selectedEventId);
-    }
+    },
+    reloadEventsList: loadEventsList
   };
 
   if (document.readyState === 'loading') {

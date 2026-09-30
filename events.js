@@ -1511,6 +1511,14 @@
     openEventByQuoteId,
     onQuoteConfirmed,
     reloadEvents: loadEvents,
+    // Chamados por realtime.js quando outro usuário mexe em clientes,
+    // orçamentos ou no próprio evento.
+    reloadLookups: async () => {
+      await Promise.all([loadClients(), loadQuotes()]);
+    },
+    reloadEventDetail: () => {
+      if (state.currentEventId) loadEventFullDetails(state.currentEventId);
+    }
   };
 
   // Carrega quando o DOM estiver pronto

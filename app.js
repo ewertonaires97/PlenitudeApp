@@ -1813,3 +1813,19 @@ inventoryList.addEventListener('click', async (event) => {
     showToast('Item excluído');
   }
 });
+
+/* ========================================================================== */
+/* API Pública                                                                */
+/* ========================================================================== */
+/* Exposta para realtime.js, que chama estes loaders quando outro usuário      */
+/* altera uma tabela. Também é o que events.js usava em window.plenitudeApp   */
+/* sem que esse objeto existisse.                                             */
+window.plenitudeApp = {
+  loadClients,
+  loadServices,
+  loadMenus,
+  loadInventory,
+  loadInventoryCategories,
+  loadQuotes,
+  loadQuoteReferences
+};
