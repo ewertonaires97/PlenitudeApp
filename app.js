@@ -1,5 +1,17 @@
 lucide.createIcons();
 
+const days = ['DOMINGO', 'SEGUNDA-FEIRA', 'TERÇA-FEIRA', 'QUARTA-FEIRA', 'QUINTA-FEIRA', 'SEXTA-FEIRA', 'SÁBADO'];
+const months = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+function updateWelcomeDate() {
+  const now = new Date();
+  const dayName = days[now.getDay()];
+  const day = now.getDate();
+  const month = months[now.getMonth()];
+  const welcomeEyebrow = document.querySelector('.welcome-copy .eyebrow');
+  if (welcomeEyebrow) welcomeEyebrow.textContent = `${dayName}, ${day} DE ${month}`;
+}
+updateWelcomeDate();
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch((error) => {
@@ -974,7 +986,7 @@ function renderDetailImages(images, title) {
   return `<div class="detail-images">${images.map((url) => `<button type="button" data-view-image="${escapeHTML(url)}" aria-label="Ampliar imagem de ${escapeHTML(title)}"><img src="${escapeHTML(url)}" alt="${escapeHTML(title)}" /></button>`).join('')}</div>`;
 }
 
-function openDetail(type, id) {
+async function openDetail(type, id) {
   let title = 'Detalhes';
   let eyebrow = 'DETALHES';
   let content = '';
@@ -1015,7 +1027,19 @@ function openDetail(type, id) {
     if (!quote) return;
     title = quote.name;
     eyebrow = 'ORÇAMENTO';
-    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Cardápio', quote.menus?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
+    let servicesHtml = '';
+    try {
+      const { data: items } = await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order');
+      if (items && items.length > 0) {
+        servicesHtml = '<div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:4px;background:#fff;"><strong style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--moss);">SERVIÇOS SELECIONADOS</strong>' + items.map((item) => {
+          const service = services.find((s) => s.id === item.service_id);
+          const name = service ? service.name : item.description || 'Serviço';
+          const total = item.quantity * item.unit_price;
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line);font-size:10px;"><span>${escapeHTML(name)} <span style="color:var(--muted);">×${item.quantity}</span></span><span style="font-weight:600;color:var(--moss);">${formatCurrency(total)}</span></div>`;
+        }).join('') + `<div style="display:flex;justify-content:space-between;padding:8px 0 0;font-size:11px;font-weight:700;color:var(--moss);"><span>TOTAL</span><span>${formatCurrency(quote.total)}</span></div></div>`;
+      }
+    } catch (e) { /* ignore */ }
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Cardápio', quote.menus?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${servicesHtml}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
   }
   detailViewTitle.textContent = title;
   detailViewEyebrow.textContent = eyebrow;
@@ -1066,7 +1090,20 @@ function renderQuotes() {
     quoteList.innerHTML = `<div class="empty-clients">${term || status ? 'Nenhum orçamento encontrado.' : 'Ainda não há orçamentos cadastrados.'}</div>`;
     return;
   }
-  quoteList.innerHTML = visibleQuotes.map((quote) => `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.clients?.name || 'Cliente não informado')} · ${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span><span class="quote-total">${formatCurrency(quote.total)}</span></div><div class="client-actions"><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`).join('');
+  const grouped = {};
+  visibleQuotes.forEach((q) => {
+    const clientName = q.clients?.name || 'Sem cliente';
+    if (!grouped[clientName]) grouped[clientName] = [];
+    grouped[clientName].push(q);
+  });
+  let html = '';
+  for (const [clientName, groupQuotes] of Object.entries(grouped)) {
+    html += `<div style="margin-bottom:6px;padding:0 4px;"><strong style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">${escapeHTML(clientName)}</strong></div>`;
+    for (const quote of groupQuotes) {
+      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span></div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+    }
+  }
+  quoteList.innerHTML = html;
   lucide.createIcons();
 }
 
@@ -1092,7 +1129,7 @@ async function loadQuoteReferences() {
 function renderQuoteServices(selectedItems = []) {
   const selectedMenuId = quoteMenuSelect.value;
   const selectedByService = new Map(selectedItems.map((item) => [item.service_id, item]));
-  const available = services.filter((service) => service.active && (!selectedMenuId || service.menuIds.includes(selectedMenuId)));
+  const available = services.filter((service) => service.active);
   if (!available.length) {
     quoteServicePicker.innerHTML = '<span class="field-hint">Cadastre serviços ativos para adicioná-los ao orçamento.</span>';
     updateQuotePreview();
@@ -1100,7 +1137,7 @@ function renderQuoteServices(selectedItems = []) {
   }
   quoteServicePicker.innerHTML = available.map((service) => {
     const selected = selectedByService.get(service.id);
-    return `<label class="quote-service-option"><input type="checkbox" data-quote-service="${service.id}" ${selected ? 'checked' : ''} /><span class="quote-service-copy"><strong class="quote-service-name">${escapeHTML(service.name)}</strong><small>${escapeHTML(service.category || 'Serviço')}</small></span><span class="quote-service-price">${formatCurrency(service.default_price)}</span><input type="number" min="0.01" step="0.01" value="${selected?.quantity || 1}" data-quote-quantity="${service.id}" aria-label="Quantidade de ${escapeHTML(service.name)}" /><input type="number" min="0" step="0.01" value="${selected?.unit_price ?? service.default_price}" data-quote-price="${service.id}" aria-label="Preço de ${escapeHTML(service.name)}" /><span class="quote-service-choice">Selecionado</span></label>`;
+    return `<label class="quote-service-option"><input type="checkbox" data-quote-service="${service.id}" ${selected ? 'checked' : ''} /><span class="quote-service-copy"><strong class="quote-service-name">${escapeHTML(service.name)}</strong><small>${escapeHTML(service.category || 'Serviço')}</small></span><span class="quote-service-price">${formatCurrency(service.default_price)}</span><span><label for="qty-${service.id}" class="quote-qty-label">Quant.</label><input type="number" min="0.01" step="0.01" id="qty-${service.id}" value="${selected?.quantity || 1}" data-quote-quantity="${service.id}" /></span><span><label for="price-${service.id}" class="quote-price-label">Preço unit.</label><input type="number" min="0" step="0.01" id="price-${service.id}" value="${selected?.unit_price ?? service.default_price}" data-quote-price="${service.id}" /></span><span class="quote-service-choice">Selecionado</span></label>`;
   }).join('');
   updateQuoteServiceStates();
   updateQuotePreview();
