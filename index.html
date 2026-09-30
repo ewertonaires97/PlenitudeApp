@@ -351,6 +351,9 @@
           <button class="icon-button" type="button" data-close-menu-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
         </header>
         <input id="menu-id" type="hidden" />
+        <label for="menu-service">Serviço</label>
+        <select id="menu-service" class="movement-select" required><option value="">Selecione um serviço</option></select>
+        <span class="field-hint">Todo cardápio pertence a um serviço. Nos orçamentos, ele aparece junto do serviço escolhido.</span>
         <label for="menu-name">Nome do cardápio</label>
         <input id="menu-name" name="name" type="text" placeholder="Ex.: Mesa posta" required />
         <label for="menu-description">Descrição</label>
@@ -388,8 +391,9 @@
         <label for="service-description">Descrição</label>
         <textarea id="service-description" name="description" rows="3" placeholder="O que está incluído neste serviço"></textarea>
         <fieldset class="menu-checkboxes">
-          <legend>Este serviço aparece em</legend>
-          <div id="service-menu-options"><span class="field-hint">Cadastre um cardápio para selecioná-lo aqui.</span></div>
+          <legend>Cardápios deste serviço</legend>
+          <div id="service-menu-options"><span class="field-hint">Nenhum cardápio vinculado ainda.</span></div>
+          <button class="inline-create-button" type="button" data-new-menu-from-service><i data-lucide="plus"></i><span>Criar cardápio para este serviço</span></button>
         </fieldset>
         <label class="service-active-field" for="service-active"><input id="service-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
         <p class="client-form-feedback" id="service-form-feedback" role="alert"></p>
@@ -412,10 +416,9 @@
         <input id="quote-id" type="hidden" />
         <label for="quote-name">Nome do orçamento</label><input id="quote-name" type="text" placeholder="Ex.: Casamento Mariana e João" required />
         <label for="quote-client">Cliente</label><select id="quote-client" class="movement-select" required><option value="">Selecione um cliente</option></select>
-        <label for="quote-menu">Cardápio</label><select id="quote-menu" class="movement-select"><option value="">Todos os serviços</option></select>
         <div class="quote-event-fields"><div><label for="quote-date">Data do evento</label><input id="quote-date" type="date" /></div><div><label for="quote-time">Horário</label><input id="quote-time" type="time" /></div></div>
         <label for="quote-venue">Local</label><input id="quote-venue" type="text" placeholder="Ex.: Espaço Jardim" />
-        <label>Serviços oferecidos</label><div class="quote-service-picker" id="quote-service-picker"></div>
+        <label>Serviços oferecidos</label><span class="field-hint">Ao marcar um serviço, os cardápios vinculados a ele aparecem aqui para consulta.</span><div class="quote-service-picker" id="quote-service-picker"></div>
         <div class="quote-totals"><span>Subtotal</span><strong id="quote-subtotal-preview">R$ 0,00</strong><label for="quote-discount">Desconto</label><input id="quote-discount" type="number" min="0" step="0.01" value="0" /><label for="quote-fee">Taxa adicional</label><input id="quote-fee" type="number" min="0" step="0.01" value="0" /><span>Total</span><strong id="quote-total-preview">R$ 0,00</strong></div>
         <label for="quote-status">Status</label><select id="quote-status" class="movement-select"><option value="draft">Rascunho</option><option value="sent">Enviado</option><option value="confirmed">Confirmado</option><option value="cancelled">Cancelado</option></select>
         <label for="quote-notes">Observações</label><textarea id="quote-notes" rows="3" placeholder="Condições, prazo de validade ou observações"></textarea>

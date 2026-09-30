@@ -32,6 +32,12 @@ Para habilitar cardápios, execute também [supabase/migrations/002_menus.sql](s
 
 Para imagens e categorias, execute em seguida [supabase/migrations/003_menu_images_categories.sql](supabase/migrations/003_menu_images_categories.sql). Essa migração cria o bucket `menu-images`, aceita várias imagens por cardápio e cadastra categorias iniciais como Doces, Salgados, Bolos, Bebidas, Sobremesas e Frutas.
 
+### Cardápio por serviço
+
+Execute [supabase/migrations/010_menus_service_link.sql](supabase/migrations/010_menus_service_link.sql). Ela conclui a `002_menus.sql`, que criou `menus` e `menu_services` mas não chegou a alterar a tabela `quotes`, e adiciona `menus.service_id` para que cada cardápio pertença a um serviço. Os vínculos já cadastrados em `menu_services` são copiados para a nova coluna automaticamente.
+
+Sem a `010` o módulo de Orçamentos não carrega e o erro aparece como `column quotes.menu_id does not exist`. A migração pode ser executada mais de uma vez.
+
 ### Estoque
 
 Para habilitar as movimentações de estoque, execute [supabase/migrations/004_inventory_stock.sql](supabase/migrations/004_inventory_stock.sql). O módulo permite cadastrar itens, definir estoque mínimo e registrar entradas, saídas e ajustes com histórico no banco.

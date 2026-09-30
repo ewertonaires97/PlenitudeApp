@@ -44,6 +44,7 @@ const serviceFormFeedback = document.querySelector('#service-form-feedback');
 const serviceFeedback = document.querySelector('#service-feedback');
 const serviceMenuFilter = document.querySelector('#service-menu-filter');
 const serviceMenuOptions = document.querySelector('#service-menu-options');
+const serviceMenuCreate = document.querySelector('[data-new-menu-from-service]');
 const menuPanel = document.querySelector('#menu-panel');
 const menuList = document.querySelector('#menu-list');
 const menuFormPanel = document.querySelector('#menu-form-panel');
@@ -93,14 +94,13 @@ const quoteForm = document.querySelector('#quote-form');
 const quoteFormTitle = document.querySelector('#quote-form-title');
 const quoteFormFeedback = document.querySelector('#quote-form-feedback');
 const quoteServicePicker = document.querySelector('#quote-service-picker');
-const quoteMenuSelect = document.querySelector('#quote-menu');
+const menuServiceSelect = document.querySelector('#menu-service');
 const quoteClientSelect = document.querySelector('#quote-client');
 const quoteSubtotalPreview = document.querySelector('#quote-subtotal-preview');
 const quoteTotalPreview = document.querySelector('#quote-total-preview');
 let clients = [];
 let services = [];
 let menus = [];
-let menuServices = [];
 let menuImages = [];
 let menuCategories = [];
 let menuCategoryLinks = [];
@@ -364,22 +364,25 @@ async function loadServices() {
     serviceList.innerHTML = '';
     return;
   }
-  const { data: links, error: linksError } = await supabaseClient.from('menu_services').select('service_id, menu_id, menus(id, name)');
-  if (linksError) {
-    setServiceFeedback('Serviços carregados, mas não foi possível carregar os cardápios.', true);
-  }
-  menuServices = links || [];
-  services = (data || []).map((service) => {
-    const serviceLinks = menuServices.filter((link) => link.service_id === service.id);
-    return {
-      ...service,
-      menuIds: serviceLinks.map((link) => link.menu_id),
-      menuNames: serviceLinks.map((link) => link.menus?.name).filter(Boolean)
-    };
-  });
-  if (!linksError) setServiceFeedback(`${services.length} ${services.length === 1 ? 'serviço cadastrado' : 'serviços cadastrados'}`);
+  services = data || [];
+  hydrateMenuServiceLinks();
+  setServiceFeedback(`${services.length} ${services.length === 1 ? 'serviço cadastrado' : 'serviços cadastrados'}`);
   renderServices();
   if (!menuPanel.hidden) renderMenus();
+}
+
+// O vinculo cardapio <-> serviço mora em menus.service_id (N:1).
+// Derivar os dois lados aqui mantem services e menus coerentes mesmo com
+// os dois loaders rodando em paralelo.
+function hydrateMenuServiceLinks() {
+  services = services.map((service) => {
+    const linked = menus.filter((menu) => menu.serviceId === service.id);
+    return { ...service, menuIds: linked.map((menu) => menu.id), menuNames: linked.map((menu) => menu.name) };
+  });
+  menus = menus.map((menu) => {
+    const service = services.find((item) => item.id === menu.serviceId);
+    return { ...menu, serviceName: service ? service.name : null };
+  });
 }
 
 function openServices() {
@@ -389,18 +392,19 @@ function openServices() {
   Promise.all([loadMenus(), loadServices()]);
 }
 
-async function renderServiceMenuOptions(selectedMenuIds = []) {
-  if (!menus.length) {
-    serviceMenuOptions.innerHTML = '<span class="field-hint">Ainda não há cardápios cadastrados.</span><button class="inline-create-button" type="button" data-new-menu-from-service><i data-lucide="plus"></i><span>Criar novo cardápio</span></button>';
-    lucide.createIcons();
+function renderServiceMenuOptions(serviceId) {
+  const linked = menus.filter((menu) => menu.serviceId === serviceId);
+  if (!linked.length) {
+    serviceMenuOptions.innerHTML = '<span class="field-hint">Nenhum cardápio vinculado ainda.</span>';
     return;
   }
-  serviceMenuOptions.innerHTML = menus.map((menu) => `
-    <label class="menu-option" for="service-menu-${menu.id}">
-      <input id="service-menu-${menu.id}" type="checkbox" value="${menu.id}" ${selectedMenuIds.includes(menu.id) ? 'checked' : ''} />
+  serviceMenuOptions.innerHTML = linked.map((menu) => `
+    <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
+      <i data-lucide="book-open"></i>
       <span>${escapeHTML(menu.name)}</span>
-    </label>
+    </button>
   `).join('');
+  lucide.createIcons();
 }
 
 async function openServiceForm(service = null) {
@@ -414,8 +418,9 @@ async function openServiceForm(service = null) {
   serviceFormTitle.textContent = service ? 'Editar serviço' : 'Novo serviço';
   serviceFormFeedback.textContent = '';
   serviceFormPanel.hidden = false;
-  await loadMenus();
-  await renderServiceMenuOptions(service?.menuIds || []);
+  await Promise.all([loadMenus(), loadServices()]);
+  renderServiceMenuOptions(service?.id || '');
+  serviceMenuCreate.hidden = !service;
   document.querySelector('#service-name').focus();
 }
 
@@ -452,27 +457,11 @@ serviceForm.addEventListener('submit', async (event) => {
     return;
   }
 
-  const savedServiceId = result.data.id;
-  const selectedMenuIds = [...serviceMenuOptions.querySelectorAll('input:checked')].map((input) => input.value);
-  const { error: clearLinksError } = await supabaseClient.from('menu_services').delete().eq('service_id', savedServiceId);
-  if (clearLinksError) {
-    serviceFormFeedback.textContent = 'Serviço salvo, mas não foi possível atualizar os cardápios.';
-    saveButton.disabled = false;
-    saveButton.querySelector('span').textContent = 'Salvar serviço';
-    return;
-  }
-  if (selectedMenuIds.length) {
-    const { error: linkError } = await supabaseClient.from('menu_services').insert(selectedMenuIds.map((menuId, index) => ({ menu_id: menuId, service_id: savedServiceId, sort_order: index })));
-    if (linkError) {
-      serviceFormFeedback.textContent = 'Serviço salvo, mas não foi possível vincular os cardápios.';
-      saveButton.disabled = false;
-      saveButton.querySelector('span').textContent = 'Salvar serviço';
-      return;
-    }
-  }
-
   serviceFormPanel.hidden = true;
-  await loadServices();
+  // O vinculo dos cardapios mora em menus.service_id, entao o servico e
+  // recarregado junto com os cardapios (excluir um servico leva junto os
+  // cardapios dele, por causa do ON DELETE CASCADE).
+  await Promise.all([loadServices(), loadMenus()]);
   saveButton.disabled = false;
   saveButton.querySelector('span').textContent = 'Salvar serviço';
   showToast(serviceId ? 'Serviço atualizado' : 'Serviço cadastrado');
@@ -552,13 +541,12 @@ function renderMenus() {
     return;
   }
   menuList.innerHTML = visibleMenus.map((menu) => {
-    const serviceCount = menuServices.filter((link) => link.menu_id === menu.id).length;
     const images = menuImages.filter((image) => image.menu_id === menu.id).slice(0, 4);
     const heroImage = images[0]?.public_url;
     return `<article class="visual-card menu-card detail-trigger" data-detail-type="menu" data-detail-id="${menu.id}">
       <button class="visual-card-hero${heroImage ? '' : ' visual-card-placeholder'}" type="button" ${heroImage ? `data-view-image="${escapeHTML(heroImage)}"` : ''} aria-label="${heroImage ? `Ver imagem de ${escapeHTML(menu.name)}` : 'Cardápio sem imagem'}">${heroImage ? `<img src="${escapeHTML(heroImage)}" alt="${escapeHTML(menu.name)}" />` : '<i data-lucide="book-open"></i><span>Sem imagem</span>'}</button>
       <div class="visual-card-body"><div class="visual-card-heading"><div><strong>${escapeHTML(menu.name)}</strong><span>${escapeHTML(menu.description || 'Sem descrição')}</span></div><span class="service-status${menu.active ? '' : ' inactive'}">${menu.active ? 'Ativo' : 'Inativo'}</span></div>
-        <div class="visual-card-meta"><span class="service-price">${serviceCount} ${serviceCount === 1 ? 'serviço' : 'serviços'}</span>${images.length > 1 ? `<span>${images.length} imagens</span>` : ''}</div>
+        <div class="visual-card-meta"><span class="menu-owner">${menu.serviceName ? escapeHTML(menu.serviceName) : 'Sem serviço vinculado'}</span>${images.length > 1 ? `<span>${images.length} imagens</span>` : ''}</div>
         ${images.length > 1 ? `<div class="visual-card-thumbs">${images.slice(1).map((image) => `<button type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ver imagem do cardápio"><img src="${escapeHTML(image.public_url)}" alt="" /></button>`).join('')}</div>` : ''}
         <div class="visual-card-actions"><button class="client-action" type="button" data-edit-menu="${menu.id}" aria-label="Editar ${escapeHTML(menu.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-menu="${menu.id}" aria-label="Excluir ${escapeHTML(menu.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div>
       </div>
@@ -570,12 +558,13 @@ function renderMenus() {
 async function loadMenus() {
   const selectedCategoryIds = !menuFormPanel.hidden ? [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value) : [];
   const openMenuId = !menuFormPanel.hidden ? document.querySelector('#menu-id').value || null : null;
-  const { data, error } = await supabaseClient.from('menus').select('id, name, description, active, created_at').order('name');
+  const openMenuServiceId = !menuFormPanel.hidden ? menuServiceSelect.value || '' : '';
+  const { data, error } = await supabaseClient.from('menus').select('id, name, description, active, created_at, service_id').order('name');
   if (error) {
-    setMenuFeedback('Não foi possível carregar os cardápios. Execute a migração 002 no Supabase.', true);
+    setMenuFeedback('Não foi possível carregar os cardápios. Execute a migração 010 no Supabase.', true);
     return;
   }
-  menus = data || [];
+  menus = (data || []).map((menu) => ({ ...menu, serviceId: menu.service_id || '' }));
   const [imagesResult, categoriesResult, categoryLinksResult] = await Promise.all([
     supabaseClient.from('menu_images').select('id, menu_id, storage_path, public_url, sort_order').order('sort_order'),
     supabaseClient.from('menu_categories').select('id, name').order('name'),
@@ -584,15 +573,17 @@ async function loadMenus() {
   menuImages = imagesResult.data || [];
   menuCategories = categoriesResult.data || [];
   menuCategoryLinks = categoryLinksResult.data || [];
+  hydrateMenuServiceLinks();
   renderMenuFilter();
   renderMenuCategoryFilter();
   renderMenus();
   renderCategories();
   if (!menuFormPanel.hidden) {
+    renderMenuServiceOptions(openMenuServiceId);
     renderMenuCategoryOptions(selectedCategoryIds);
     renderMenuImagePreviews(openMenuId);
   }
-  if (!serviceFormPanel.hidden) await renderServiceMenuOptions([...serviceMenuOptions.querySelectorAll('input:checked')].map((input) => input.value));
+  if (!serviceFormPanel.hidden) renderServiceMenuOptions(document.querySelector('#service-id').value);
 }
 
 function openMenus() {
@@ -600,7 +591,18 @@ function openMenus() {
   Promise.all([loadMenus(), loadServices()]);
 }
 
-function openMenuForm(menu = null) {
+function renderMenuServiceOptions(selectedServiceId = '') {
+  if (!services.length) {
+    menuServiceSelect.innerHTML = '<option value="">Cadastre um serviço primeiro</option>';
+    menuServiceSelect.disabled = true;
+    return;
+  }
+  menuServiceSelect.disabled = false;
+  menuServiceSelect.innerHTML = '<option value="">Selecione um serviço</option>' + services.map((service) => `<option value="${service.id}">${escapeHTML(service.name)}</option>`).join('');
+  menuServiceSelect.value = services.some((service) => service.id === selectedServiceId) ? selectedServiceId : '';
+}
+
+async function openMenuForm(menu = null, presetServiceId = '') {
   menuForm.reset();
   pendingMenuImages = [];
   removedMenuImageIds = [];
@@ -611,6 +613,8 @@ function openMenuForm(menu = null) {
   menuFormTitle.textContent = menu ? 'Editar cardápio' : 'Novo cardápio';
   menuFormFeedback.textContent = '';
   menuFormPanel.hidden = false;
+  await Promise.all([loadServices(), loadMenus()]);
+  renderMenuServiceOptions(menu?.serviceId || presetServiceId);
   renderMenuCategoryOptions(menu ? menuCategoryLinks.filter((link) => link.menu_id === menu.id).map((link) => link.category_id) : []);
   renderMenuImagePreviews(menu?.id || null);
   document.querySelector('#menu-name').focus();
@@ -620,8 +624,8 @@ document.querySelectorAll('[data-open-menus]').forEach((button) => button.addEve
 document.querySelectorAll('[data-close-menus]').forEach((button) => button.addEventListener('click', () => { menuPanel.hidden = true; }));
 document.querySelectorAll('[data-new-menu]').forEach((button) => button.addEventListener('click', () => openMenuForm()));
 document.querySelectorAll('[data-close-menu-form]').forEach((button) => button.addEventListener('click', () => { menuFormPanel.hidden = true; }));
-serviceMenuOptions.addEventListener('click', (event) => {
-  if (event.target.closest('[data-new-menu-from-service]')) openMenuForm();
+serviceMenuCreate.addEventListener('click', () => {
+  openMenuForm(null, document.querySelector('#service-id').value);
 });
 
 document.querySelector('[data-open-categories]').addEventListener('click', () => {
@@ -634,7 +638,14 @@ menuForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = menuForm.querySelector('button[type="submit"]');
   const menuId = document.querySelector('#menu-id').value;
-  const payload = { name: document.querySelector('#menu-name').value.trim(), description: document.querySelector('#menu-description').value.trim() || null, active: document.querySelector('#menu-active').checked };
+  const serviceId = menuServiceSelect.value;
+  if (!serviceId) {
+    menuFormFeedback.textContent = 'Escolha o serviço ao qual este cardápio pertence.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cardápio';
+    return;
+  }
+  const payload = { name: document.querySelector('#menu-name').value.trim(), description: document.querySelector('#menu-description').value.trim() || null, service_id: serviceId, active: document.querySelector('#menu-active').checked };
   saveButton.disabled = true;
   saveButton.querySelector('span').textContent = 'Salvando...';
   const result = menuId
@@ -1009,7 +1020,7 @@ async function openDetail(type, id) {
     const categories = menuCategoryLinks.filter((link) => link.menu_id === id).map((link) => menuCategories.find((category) => category.id === link.category_id)?.name).filter(Boolean);
     title = menu.name;
     eyebrow = 'CARDÁPIO';
-    content = renderDetailImages(images, menu.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="book-open"></i></span><div><strong>${escapeHTML(menu.name)}</strong><span>${menu.active ? 'Disponível' : 'Inativo'}</span></div></div>${detailRow('Categorias', categories.join(' · '))}${detailRow('Serviços', `${menuServices.filter((link) => link.menu_id === id).length}`)}${detailRow('Descrição', menu.description)}`;
+    content = renderDetailImages(images, menu.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="book-open"></i></span><div><strong>${escapeHTML(menu.name)}</strong><span>${menu.active ? 'Disponível' : 'Inativo'}</span></div></div>${detailRow('Serviço', menu.serviceName)}${detailRow('Categorias', categories.join(' · '))}${detailRow('Descrição', menu.description)}`;
   } else if (type === 'inventory') {
     const item = inventoryItems.find((entry) => entry.id === id);
     if (!item) return;
@@ -1028,9 +1039,22 @@ async function openDetail(type, id) {
     title = quote.name;
     eyebrow = 'ORÇAMENTO';
     let servicesHtml = '';
+    let menusHtml = '';
     try {
+      if (!menus.length) await loadMenus();
       const { data: items } = await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order');
       if (items && items.length > 0) {
+        // O cardapio nao e escolhido no orcamento: ele vem dos servicos marcados.
+        const chosenServiceIds = new Set(items.map((item) => item.service_id).filter(Boolean));
+        const linkedMenus = menus.filter((menu) => chosenServiceIds.has(menu.serviceId));
+        if (linkedMenus.length) {
+          menusHtml = `<div class="detail-menus"><strong class="detail-menus-title">CARDÁPIOS DOS SERVIÇOS ESCOLHIDOS</strong><div class="linked-menu-list">${linkedMenus.map((menu) => `
+            <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
+              <i data-lucide="book-open"></i>
+              <span>${escapeHTML(menu.name)}</span>
+            </button>
+          `).join('')}</div></div>`;
+        }
         servicesHtml = '<div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:4px;background:#fff;"><strong style="display:block;margin-bottom:8px;font-size:10px;font-weight:700;color:var(--moss);">SERVIÇOS SELECIONADOS</strong>' + items.map((item) => {
           const service = services.find((s) => s.id === item.service_id);
           const name = service ? service.name : item.description || 'Serviço';
@@ -1039,7 +1063,7 @@ async function openDetail(type, id) {
         }).join('') + `<div style="display:flex;justify-content:space-between;padding:8px 0 0;font-size:11px;font-weight:700;color:var(--moss);"><span>TOTAL</span><span>${formatCurrency(quote.total)}</span></div></div>`;
       }
     } catch (e) { /* ignore */ }
-    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Cardápio', quote.menus?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${servicesHtml}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${menusHtml}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${servicesHtml}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
   }
   detailViewTitle.textContent = title;
   detailViewEyebrow.textContent = eyebrow;
@@ -1054,6 +1078,13 @@ function closeDetail() {
 }
 
 document.addEventListener('click', (event) => {
+  // Chips de cardapio: abrem o detail do cardapio. Precisa de um handler
+  // proprio porque o guard abaixo ignora cliques em botoes.
+  const menuChip = event.target.closest('[data-open-menu-detail]');
+  if (menuChip) {
+    openDetail('menu', menuChip.dataset.openMenuDetail);
+    return;
+  }
   const imageButton = event.target.closest('[data-view-image]');
   if (imageButton) {
     openImageViewer(imageButton.dataset.viewImage);
@@ -1109,9 +1140,9 @@ function renderQuotes() {
 
 async function loadQuotes() {
   setQuoteFeedback('Carregando orçamentos...');
-  const { data, error } = await supabaseClient.from('quotes').select('id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, menu_id, clients(id, name), menus(id, name)').order('created_at', { ascending: false });
+  const { data, error } = await supabaseClient.from('quotes').select('id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, clients(id, name)').order('created_at', { ascending: false });
   if (error) {
-    setQuoteFeedback('Não foi possível carregar os orçamentos. Verifique a migração 002.', true);
+    setQuoteFeedback(`Não foi possível carregar os orçamentos: ${error.message}`, true);
     quoteList.innerHTML = '';
     return;
   }
@@ -1123,11 +1154,9 @@ async function loadQuotes() {
 async function loadQuoteReferences() {
   await Promise.all([loadClients(), loadServices(), loadMenus()]);
   quoteClientSelect.innerHTML = '<option value="">Selecione um cliente</option>' + clients.map((client) => `<option value="${client.id}">${escapeHTML(client.name)}</option>`).join('');
-  quoteMenuSelect.innerHTML = '<option value="">Todos os serviços</option>' + menus.filter((menu) => menu.active).map((menu) => `<option value="${menu.id}">${escapeHTML(menu.name)}</option>`).join('');
 }
 
 function renderQuoteServices(selectedItems = []) {
-  const selectedMenuId = quoteMenuSelect.value;
   const selectedByService = new Map(selectedItems.map((item) => [item.service_id, item]));
   const available = services.filter((service) => service.active);
   if (!available.length) {
@@ -1137,8 +1166,19 @@ function renderQuoteServices(selectedItems = []) {
   }
   quoteServicePicker.innerHTML = available.map((service) => {
     const selected = selectedByService.get(service.id);
-    return `<label class="quote-service-option"><input type="checkbox" data-quote-service="${service.id}" ${selected ? 'checked' : ''} /><span class="quote-service-copy"><strong class="quote-service-name">${escapeHTML(service.name)}</strong><small>${escapeHTML(service.category || 'Serviço')}</small></span><span class="quote-service-price">${formatCurrency(service.default_price)}</span><span><label for="qty-${service.id}" class="quote-qty-label">Quant.</label><input type="number" min="0.01" step="0.01" id="qty-${service.id}" value="${selected?.quantity || 1}" data-quote-quantity="${service.id}" /></span><span><label for="price-${service.id}" class="quote-price-label">Preço unit.</label><input type="number" min="0" step="0.01" id="price-${service.id}" value="${selected?.unit_price ?? service.default_price}" data-quote-price="${service.id}" /></span><span class="quote-service-choice">Selecionado</span></label>`;
+    // O cardapio nunca e escolhido: ele acompanha o servico marcado.
+    const linkedMenus = menus.filter((menu) => menu.serviceId === service.id);
+    const menusHtml = linkedMenus.length
+      ? `<span class="quote-service-menus"><span class="quote-service-menus-label">Cardápios</span>${linkedMenus.map((menu) => `
+          <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
+            <i data-lucide="book-open"></i>
+            <span>${escapeHTML(menu.name)}</span>
+          </button>
+        `).join('')}</span>`
+      : '';
+    return `<div class="quote-service-option"><label class="quote-service-check" for="quote-service-${service.id}"><input id="quote-service-${service.id}" type="checkbox" data-quote-service="${service.id}" ${selected ? 'checked' : ''} /></label><span class="quote-service-copy"><label class="quote-service-name" for="quote-service-${service.id}"><strong>${escapeHTML(service.name)}</strong></label><small>${escapeHTML(service.category || 'Serviço')}</small></span><span class="quote-service-price">${formatCurrency(service.default_price)}</span><span><label for="qty-${service.id}" class="quote-qty-label">Quant.</label><input type="number" min="0.01" step="0.01" id="qty-${service.id}" value="${selected?.quantity || 1}" data-quote-quantity="${service.id}" /></span><span><label for="price-${service.id}" class="quote-price-label">Preço unit.</label><input type="number" min="0" step="0.01" id="price-${service.id}" value="${selected?.unit_price ?? service.default_price}" data-quote-price="${service.id}" /></span><span class="quote-service-choice">Selecionado</span>${menusHtml}</div>`;
   }).join('');
+  lucide.createIcons();
   updateQuoteServiceStates();
   updateQuotePreview();
 }
@@ -1173,7 +1213,6 @@ async function openQuoteForm(quote = null) {
   document.querySelector('#quote-id').value = quote?.id || '';
   document.querySelector('#quote-name').value = quote?.name || '';
   const selectedClientId = quote?.client_id || '';
-  const selectedMenuId = quote?.menu_id || '';
   document.querySelector('#quote-date').value = quote?.event_date || '';
   document.querySelector('#quote-time').value = quote?.event_time || '';
   document.querySelector('#quote-venue').value = quote?.venue || '';
@@ -1186,7 +1225,6 @@ async function openQuoteForm(quote = null) {
   quoteFormPanel.hidden = false;
   await loadQuoteReferences();
   quoteClientSelect.value = selectedClientId;
-  quoteMenuSelect.value = selectedMenuId;
   const { data: items } = quote ? await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order') : { data: [] };
   renderQuoteServices(items || []);
   document.querySelector('#quote-name').focus();
@@ -1198,7 +1236,6 @@ document.querySelector('[data-close-quotes]').addEventListener('click', () => { 
 document.querySelector('[data-close-quote-form]').addEventListener('click', () => { quoteFormPanel.hidden = true; });
 quoteSearch.addEventListener('input', renderQuotes);
 quoteStatusFilter.addEventListener('change', renderQuotes);
-quoteMenuSelect.addEventListener('change', () => renderQuoteServices(getQuoteItemsFromForm()));
 quoteServicePicker.addEventListener('input', updateQuotePreview);
 quoteServicePicker.addEventListener('change', () => { updateQuoteServiceStates(); updateQuotePreview(); });
 document.querySelector('#quote-discount').addEventListener('input', updateQuotePreview);
@@ -1208,7 +1245,7 @@ quoteForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = quoteForm.querySelector('button[type="submit"]');
   const quoteId = document.querySelector('#quote-id').value;
-  const payload = { name: document.querySelector('#quote-name').value.trim(), client_id: quoteClientSelect.value, menu_id: quoteMenuSelect.value || null, venue: document.querySelector('#quote-venue').value.trim() || null, event_date: document.querySelector('#quote-date').value || null, event_time: document.querySelector('#quote-time').value || null, status: document.querySelector('#quote-status').value, notes: document.querySelector('#quote-notes').value.trim() || null, discount: Number(document.querySelector('#quote-discount').value || 0), additional_fee: Number(document.querySelector('#quote-fee').value || 0) };
+  const payload = { name: document.querySelector('#quote-name').value.trim(), client_id: quoteClientSelect.value, venue: document.querySelector('#quote-venue').value.trim() || null, event_date: document.querySelector('#quote-date').value || null, event_time: document.querySelector('#quote-time').value || null, status: document.querySelector('#quote-status').value, notes: document.querySelector('#quote-notes').value.trim() || null, discount: Number(document.querySelector('#quote-discount').value || 0), additional_fee: Number(document.querySelector('#quote-fee').value || 0) };
   const items = getQuoteItemsFromForm();
   if (!items.length) { quoteFormFeedback.textContent = 'Selecione pelo menos um serviço.'; return; }
   saveButton.disabled = true;
