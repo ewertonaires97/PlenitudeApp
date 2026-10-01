@@ -2531,6 +2531,10 @@
     const panel = document.getElementById('ceremonial-panel');
     if (!panel) return;
 
+    // Mesmo caminho do restante: o módulo inteiro depende da permissão
+    // 'cerimonial', então quem não a tem não chega a abrir o painel.
+    if (window.plenitudePermissions && !window.plenitudePermissions.allow('cerimonial')) return;
+
     panel.hidden = false;
 
     if (defaultTab) {

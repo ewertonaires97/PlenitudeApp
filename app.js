@@ -25,6 +25,7 @@ const appShell = document.querySelector('.app-shell');
 const loginForm = document.querySelector('#login-form');
 const loginButton = document.querySelector('.login-button');
 const loginFeedback = document.querySelector('#login-feedback');
+const googleLoginButton = document.querySelector('#google-login-button');
 const logoutButton = document.querySelector('#logout-button');
 const clientPanel = document.querySelector('#client-panel');
 const clientFormPanel = document.querySelector('#client-form-panel');
@@ -127,7 +128,43 @@ function showLoginError(message) {
   loginFeedback.textContent = message;
   loginButton.disabled = false;
   loginButton.querySelector('span').textContent = 'Entrar no backoffice';
+  if (googleLoginButton) {
+    googleLoginButton.disabled = false;
+    googleLoginButton.querySelector('span').textContent = 'Entrar com Google';
+  }
 }
+
+// Entrar com a conta Google da pessoa. A configuração do provedor é feita no
+// painel do Supabase e no Google Cloud Console, não aqui: o app só dispara o
+// redirect e o Supabase devolve a sessão no mesmo endereço.
+//
+// A URL de retorno é a da própria página, e não uma rota inventada: o app não
+// tem router, e é esse endereço que precisa estar na lista de Redirect URLs do
+// Supabase.
+googleLoginButton?.addEventListener('click', async () => {
+  loginFeedback.textContent = '';
+  googleLoginButton.disabled = true;
+  googleLoginButton.querySelector('span').textContent = 'Abrindo o Google...';
+
+  const { error } = await supabaseClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.href.split('#')[0] }
+  });
+
+  // Sem este return a execução continuaria e religaria o botão: o redirect é
+  // assíncrono e o erro chega logo em seguida.
+  if (error) {
+    showLoginError('O login com Google ainda não está liberado para este app.');
+    console.error('Falha no login com Google:', error.message);
+    return;
+  }
+
+  // Só chega aqui se o redirect falhar de verdade. Sem isso o botão ficaria
+  // travado em "Abrindo o Google..." para sempre.
+  setTimeout(() => {
+    showLoginError('Não foi possível abrir o Google. Tente novamente.');
+  }, 4000);
+});
 
 supabaseClient.auth.getSession().then(({ data, error }) => {
   if (error) {
@@ -137,8 +174,47 @@ supabaseClient.auth.getSession().then(({ data, error }) => {
   }
 
   setAuthenticated(Boolean(data.session));
+  mostrarErroDoOAuth();
   console.info('Supabase conectado ao projeto Plenitude Realizações.');
 });
+
+// Login social devolve o erro na URL, não no retorno da chamada. Sem tratar
+// isso, quemconfigurou o endereço errado no Supabase voltaria para a tela de
+// login sem nenhuma pista do que aconteceu.
+function mostrarErroDoOAuth() {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const query = new URLSearchParams(window.location.search);
+  const ler = (chave) => hash.get(chave) ?? query.get(chave);
+
+  const codigo = ler('error_code');
+  const descricao = ler('error_description');
+  const erro = ler('error');
+
+  if (!codigo && !erro) return false;
+
+  const detalhe = `${erro || ''} ${codigo || ''} ${descricao || ''}`;
+  let mensagem = 'Não foi possível entrar com o Google.';
+
+  if (codigo === 'access_denied') {
+    mensagem = 'O acesso foi cancelado na tela do Google.';
+  } else if (/redirect|uri_not|invalid_request/i.test(detalhe)) {
+    // É o caso mais comum de verdade: o Site URL ou a Redirect URL não
+    // includes o endereço deste app.
+    mensagem = 'O endereço deste app ainda não foi liberado no painel do Supabase.';
+  } else if (descricao) {
+    mensagem = descricao;
+  }
+
+  console.error('[OAuth] Falha ao voltar do login:', codigo || erro, descricao || '');
+  showLoginError(mensagem);
+  authScreen.hidden = false;
+  if (appShell) appShell.classList.remove('ready');
+
+  // Só limpa a URL no caso de erro: num login bem-sucedido o hash traz o
+  // token, e apagá-lo aqui derrubaria a sessão que acabou de chegar.
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  return true;
+}
 
 supabaseClient.auth.onAuthStateChange((_event, session) => {
   setAuthenticated(Boolean(session));
@@ -170,6 +246,16 @@ logoutButton.addEventListener('click', async () => {
   const { error } = await supabaseClient.auth.signOut();
   if (error) showToast('Não foi possível sair');
 });
+
+// Trava a abertura de uma tela para quem não tem a permissão correspondente.
+// A decisão vem do banco (my_access, resolvido pelo permissions.js); aqui o
+// papel é só não mostrar uma tela que a pessoa não pode usar. A regra de
+// escrita continua sendo a RLS, que nega o salvamento de qualquer forma.
+function permitir(permission) {
+  const access = window.plenitudePermissions;
+  if (!access) return true;
+  return access.allow(permission);
+}
 
 function setClientFeedback(message, isError = false) {
   clientFeedback.textContent = message;
@@ -235,6 +321,7 @@ async function loadClients() {
 }
 
 function openClients() {
+  if (!permitir('clientes')) return;
   clientPanel.hidden = false;
   clientSearch.value = '';
   loadClients();
@@ -406,6 +493,7 @@ function hydrateMenuServiceLinks() {
 }
 
 function openServices() {
+  if (!permitir('servicos')) return;
   servicePanel.hidden = false;
   serviceSearch.value = '';
   serviceMenuFilter.value = '';
@@ -670,6 +758,7 @@ async function loadMenus() {
 }
 
 function openMenus() {
+  if (!permitir('cardapios')) return;
   menuPanel.hidden = false;
   Promise.all([loadMenus(), loadServices()]);
 }
@@ -728,6 +817,7 @@ document.querySelector('[data-open-categories]').addEventListener('click', () =>
 /* dentro de outros módulos.                                                  */
 /* ========================================================================== */
 function openSettings() {
+  if (!permitir('configuracoes')) return;
   settingsPanel.hidden = false;
 }
 
@@ -744,6 +834,14 @@ function fecharPainelDeApoio(panel) {
 }
 
 function abrirDeConfiguracoes(destino) {
+  // As telas de apoio têm permissão própria: quem abre Configurações nem
+  // sempre pode abrir o que está dentro dela.
+  if (destino === 'menus' || destino === 'menu-categories') {
+    if (!permitir('cardapios')) return;
+  }
+  if (destino === 'inventory-categories') {
+    if (!permitir('estoque')) return;
+  }
   settingsFlowAtivo = true;
   settingsPanel.hidden = true;
   if (destino === 'menus') openMenus();
@@ -1065,7 +1163,9 @@ document.querySelectorAll('[data-nav]').forEach((button) => {
       openSettings();
       return;
     }
-    showToast(button.dataset.nav);
+    // "Agenda" nao chega aqui: quem abre o painel de Eventos e o events.js, que
+    // escuta o mesmo botão. Antes ele caía no showToast e pintava "Agenda em
+    // breve" por cima da agenda que acabara de abrir.
   });
 });
 
@@ -1142,6 +1242,7 @@ async function loadInventory() {
 }
 
 function openInventory() {
+  if (!permitir('estoque')) return;
   inventoryPanel.hidden = false;
   inventorySearch.value = '';
   inventoryLowOnly.checked = false;
@@ -1152,6 +1253,7 @@ function openInventory() {
 // atalho de categorias dentro de Cardápios: o painel de baixo continua aberto e
 // o X volta para ele, em vez de fechar direto para a tela inicial.
 function openInventoryCategories() {
+  if (!permitir('estoque')) return;
   inventoryCategoryPanel.hidden = false;
   loadInventoryCategories();
 }
@@ -1612,6 +1714,7 @@ function updateQuotePreview() {
 }
 
 async function openQuotes() {
+  if (!permitir('orcamentos')) return;
   quotePanel.hidden = false;
   quoteSearch.value = '';
   quoteStatusFilter.value = '';

@@ -23,7 +23,7 @@ button { border: 0; font: inherit; cursor: pointer; }
 .auth-screen[hidden] { display: none; }
 .auth-card { width: min(100%, 390px); padding: 36px 28px 32px; border-radius: 6px; background: var(--paper); box-shadow: 0 20px 60px rgba(19, 34, 26, .2); }
 .auth-brand { margin-bottom: 28px; }.auth-brand .brand-mark { width: 44px; height: 44px; font-size: 13px; }
-.auth-card h1 { color: var(--ink); font-size: 31px; line-height: 1.1; }.auth-card h1 span { color: var(--gold); }.auth-intro { margin: 10px 0 27px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.auth-card h1 { color: var(--ink); font-size: 31px; line-height: 1.1; }.auth-card h1 span { color: var(--gold); }.auth-intro { margin: 10px 0 20px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .login-form { display: grid; gap: 8px; }.login-form label { margin-top: 7px; color: var(--ink); font-size: 10px; font-weight: 700; }.login-form input { width: 100%; min-height: 45px; padding: 0 13px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.login-form input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(179, 138, 77, .12); }.login-button { display: flex; align-items: center; justify-content: space-between; min-height: 47px; margin-top: 13px; padding: 0 15px 0 17px; border-radius: 4px; color: var(--paper); background: var(--moss); font-size: 11px; font-weight: 700; }.login-button svg { width: 16px; height: 16px; }.login-button:disabled { cursor: wait; opacity: .65; }.login-feedback { min-height: 16px; margin: 5px 0 0; color: #a0483d; font-size: 11px; line-height: 1.4; }
 .app-shell { display: none; width: min(100%, 520px); min-height: 100vh; margin: 0 auto; overflow: hidden; background: var(--paper); }.app-shell.ready { display: block; }
 .topbar { display: flex; align-items: center; justify-content: space-between; height: 76px; padding: 0 22px; background: var(--paper); }
@@ -918,3 +918,76 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 button:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* ========================================================================== */
+/* CONTROLE DE ACESSO                                                         */
+/* ========================================================================== */
+/* `hidden` sozinho não esconde nada aqui: quase todo elemento marcado com   */
+/* display (os cards, as ações rápidas, a navegação) ignoraria o atributo.    */
+/* Por isso o app-shell só aparece depois que o permissions.js resolveu o   */
+/* perfil — sem isso haveria um piscar da tela completa para quem não pode    */
+/* ver o todo, antes de os cartões sumirem.                                  */
+/* ========================================================================== */
+.app-shell.ready:not(.access-ready) { display: none; }
+[data-permission][hidden] { display: none !important; }
+.access-empty-note { margin: 4px 22px 0; padding: 16px 14px; border: 1px dashed var(--sage); border-radius: 5px; color: var(--muted); background: var(--cream); font-size: 11px; line-height: 1.55; text-align: center; }
+.access-empty-note[hidden] { display: none !important; }
+.card-usuarios { color: #4c4a6b; background: #e0dcec; }
+
+/* Lista de usuários                                                     */
+.user-row .client-details strong { display: flex; align-items: center; gap: 6px; }
+.user-self-tag { padding: 2px 5px; border-radius: 3px; color: var(--moss); background: var(--sage-light); font-family: "DM Sans", sans-serif; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
+.user-permission-summary { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.role-badge { display: inline-block; padding: 4px 7px; border-radius: 3px; color: var(--moss); background: var(--sage-light); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+.role-badge.owner { color: #fff; background: var(--moss); }
+.role-badge.admin { color: #fff; background: var(--gold); }
+.role-badge.off { color: #8a5a52; background: #f2dfda; }
+
+/* Grade de telas dentro do formulário e dos padrões de nível             */
+.permission-grid { display: grid; gap: 4px; }
+.permission-option { align-items: flex-start; margin: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.permission-option:has(input:checked) { border-color: var(--sage); background: var(--cream); }
+.permission-option input { margin-top: 1px; accent-color: var(--moss); }
+.permission-option-copy { min-width: 0; }
+.permission-option-copy strong { display: block; font-size: 11px; }
+.permission-option-copy small { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; font-weight: 400; line-height: 1.45; }
+.permission-option input:disabled + .permission-option-copy { opacity: .55; }
+.permission-inherit { margin: 0 0 10px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--cream); }
+.permission-legend.is-inherited .permission-grid { opacity: .6; }
+
+/* Padrão de telas por nível                                               */
+.role-defaults { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.role-defaults-title { margin: 0 0 6px; font: 600 15px "Playfair Display", serif; }
+.role-defaults > .field-hint { display: block; margin-bottom: 10px; }
+.role-default { margin-bottom: 6px; }
+.role-default > summary { list-style: none; }
+.role-default > summary::-webkit-details-marker { display: none; }
+.role-default > summary .settings-chevron { transition: transform .18s ease; }
+.role-default[open] > summary .settings-chevron { transform: rotate(90deg); }
+.role-default[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.role-default-body { padding: 12px 11px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 4px 4px; background: #fff; }
+.role-default-body > .field-hint { display: block; margin-bottom: 10px; }
+.role-default-body .add-client-button { margin-top: 12px; }
+
+/* ========================================================================== */
+/* LOGIN COM GOOGLE                                                           */
+/* ========================================================================== */
+/* O botão fica acima do formulário porque o Google é o caminho principal e   */
+/* a senha é a alternativa — quem já tem conta Google não deveria precisar    */
+/* procurar o campo de e-mail.                                                */
+/* O logo é o SVG oficial em quatro cores: as regras de marca do Google não    */
+/* permitem redesenhar o "G" em monocromia.                                 */
+/* ========================================================================== */
+.google-button { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 47px; margin-top: 4px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font: inherit; font-size: 11px; font-weight: 700; }
+.google-button:hover { border-color: var(--sage); background: var(--cream); }
+.google-button:disabled { cursor: wait; opacity: .65; }
+.google-mark { flex: 0 0 auto; width: 18px; height: 18px; }
+.auth-divider { position: relative; display: flex; align-items: center; justify-content: center; margin: 20px 0 4px; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
+.auth-divider::before { position: absolute; right: 0; left: 0; height: 1px; background: var(--line); content: ""; }
+.auth-divider span { position: relative; padding: 0 10px; background: var(--paper); }
+
+/* Aviso de configuração pendente (migration de acesso não aplicada). Fica logo
+   abaixo da saudação porque é a única coisa que a pessoa precisa ler antes de
+   qualquer outra. */
+.access-warning { margin: 0 22px 14px; padding: 13px 14px; border: 1px solid #d9b8b0; border-left: 3px solid #a0483d; border-radius: 4px; color: #7d3a30; background: #fbf0ed; font-size: 11px; line-height: 1.55; }
+.access-warning[hidden] { display: none !important; }

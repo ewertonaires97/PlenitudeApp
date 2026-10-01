@@ -13,6 +13,8 @@ Ela inclui:
 - atividades do cerimonial, mesas, convidados e movimentações de estoque;
 - Row Level Security para usuários autenticados.
 
+O controle de acesso por permissões é uma migration separada, a [015](supabase/migrations/015_access_control.sql). Está nesta seção porque muda o que cada usuário enxerga, mas ela **reescreve** as políticas criadas aqui e precisa rodar depois da 001.
+
 ### Como aplicar no Supabase
 
 1. Crie um projeto em [supabase.com](https://supabase.com).
@@ -73,7 +75,7 @@ A partir daí, [realtime.js](realtime.js) mantém um único canal que escuta as 
 Dois pontos que dependem de manutenção futura:
 
 - `app.js` não exportava nada. As funções que o `realtime.js` chama foram expostas em `window.plenitudeApp`. Ao adicionar uma tela nova, inclua o respective loader nessa lista, senão ela não sincroniza.
-- A tabela `profiles` está publicada, mas não é assinada: nenhum módulo a consulta ainda. Quando o cabeçalho passar a exibir o nome do usuário autenticado, acrescente um tópico para ela em `realtime.js`.
+- A tabela `profiles` é lida pelo `permissions.js` e tem um tópico (`acesso`) em `realtime.js`, para que uma mudança de permissão chegue a quem está com o app aberto. Ao adicionar um módulo que depende de `profiles`, inclua o loader dele nesse mesmo tópico.
 
 ### Instalar como PWA
 
@@ -84,3 +86,120 @@ O app agora possui [manifest.webmanifest](manifest.webmanifest), [sw.js](sw.js) 
 3. Toque em **Instalar app** ou **Adicionar à tela inicial**.
 
 O service worker mantém o shell visual disponível quando a rede falha. Login, Supabase e uploads continuam dependendo de internet.
+
+### Usuários, níveis e permissões
+
+Execute [supabase/migrations/015_access_control.sql](supabase/migrations/015_access_control.sql) no SQL Editor. Ela é idempotente e pode ser executada quantas vezes for necessário. **Rode-a depois da 001**, porque reescreve as políticas de acesso que a 001 criou.
+
+Para o **login com Google** e para as **contas fechadas por padrão**, execute também a [016](supabase/migrations/016_login_google_closed_accounts.sql), depois da 015.
+
+Até aqui qualquer conta autenticada enxergava e alterava tudo: as 22 políticas da 001 eram todas `using (true)` e a coluna `profiles.role` (`admin`/`staff`) não era lida nem pelo banco nem pelo app. A 015 transforma a permissão em regra do banco.
+
+O que ela acrescenta:
+
+- **`app_permissions`** — as 10 telas que existem no app, com a mesma chave do atributo `data-permission` do [index.html](index.html);
+- **`app_roles`** — os níveis: `owner` (Proprietário), `admin` (Administrador), `gestor` (Gestor), `operador` (Operador) e `consulta` (Consulta);
+- **`app_role_permissions`** — quais telas cada nível abre por padrão;
+- **`profiles`** — ganha `email`, `whatsapp`, `permissions` e `active`. `permissions` é a lista de telas da pessoa: **nulo** significa "herda do padrão do nível", lista vazia significa "nenhuma tela".
+
+A permissão efetiva é resolvida por `has_permission()`, nesta ordem: `owner`/`admin` passam direto (é o que impede que um erro de configuração tranque o app inteiro), senão vale a lista da pessoa, senão o padrão do nível.
+
+**Quem entra vê o quê é regra do RLS**, não do JavaScript. Cada tabela exige a permissão da tela que a alimenta. Um módulo também lê o que ele precisa: quem tem Cerimonial lê eventos, clientes e orçamentos, porque o módulo monta a operação a partir deles — mas não pode escrever neles.
+
+#### Cadastrar uma pessoa
+
+A conta de login é criada por você em **Authentication > Users** no painel do Supabase. Isso é deliberado: o frontend só tem a chave pública, e a `service_role` jamais pode ir para o navegador. Quando a conta é criada lá, a trigger `handle_new_user` já gera a linha em `profiles` sozinha.
+
+Depois disso, tudo o mais é na tela **Usuários** do app: nome, WhatsApp, nível e as telas. O e-mail informado precisa bater com o da conta criada no painel; se não existir, o banco avisa exatamente isso.
+
+O caminho inverso também existe: `link_profile_by_email()` acha a conta em `auth.users` pelo e-mail e cria o perfil. Isso cobre quem foi criado no painel antes da trigger existir.
+
+#### Se a tela de Usuários não aparecer
+
+Ela fica em **Configurações → Usuários e acessos** (último item) e também como card na tela inicial.
+
+Se nenhum dos dois estiver lá, a migration 015 ainda não foi aplicada. Nesse caso o app mostra um aviso em vermelho logo abaixo da saudação, e a tela de Usuários fica indisponível de propósito: sem as colunas e as políticas, ela não teria o que salvar. Aplique a 015 e o aviso some sozinho.
+
+#### Entrar com Google
+
+Execute [supabase/migrations/016_login_google_closed_accounts.sql](supabase/migrations/016_login_google_closed_accounts.sql) depois da 015. Ela faz duas coisas: cria o perfil com a conta **inativa** e dá ao cadastro a opção de ligar a conta.
+
+O login em si é configurado fora do código, em dois lugares:
+
+1. **Google Cloud Console** → *Credenciais* → *Criar credenciais* → **ID do cliente OAuth**, do tipo **Aplicativo da Web**. Em *URIs de redirecionamento autorizados*:
+   ```
+   https://evhyshjxqnfbabraxafs.supabase.co/auth/v1/callback
+   ```
+2. **Supabase** → *Authentication > Providers > Google*: liga o provedor e cola o Client ID e a Client Secret.
+3. **Supabase** → [*Authentication → URL Configuration*](https://supabase.com/dashboard/project/_/auth/url-configuration). Tem dois campos:
+
+   | Campo | O que colocar |
+   |---|---|
+   | **Site URL** | `https://seu-site.netlify.app` |
+   | **Redirect URLs** | `https://seu-site.netlify.app/**` |
+
+   O **Site URL** vem por padrão como `http://localhost:3000` e precisa mudar: é ele que define para onde o usuário volta quando o app não manda um `redirectTo`, e é o endereço usado nos e-mails de confirmação e de recuperação de senha. Deixando como `localhost`, um e-mail do Supabase levaria a pessoa para a máquina do desenvolvedor.
+
+No Google Cloud, além das *URIs de redirecionamento autorizadas*, vale preencher também **Origens JavaScript autorizadas** com `https://seu-site.netlify.app`. O fluxo implícito do Supabase funciona sem isso, mas o Google usa essa lista em validações e para proteger contra o uso do seu Client ID em outro site.
+
+O endereço do site está no Netlify em **Deploys**, no deploy mais recente, ou em *Site configuration → Domain management*.
+
+A Client Secret do Google **nada disso entra no app**: o Supabase troca o token no servidor. O [supabase-config.js](supabase-config.js) não muda.
+
+Com isso, a pessoa clica em **Entrar com Google** na tela de login e nunca vê senha. Quando o Supabase reconhece o e-mail, ela entra **na mesma conta que já estava cadastrada**, e as permissões são as que você definiu.
+
+Se o endereço estiver errado, o Google volta o erro na URL e o app mostra *"O endereço deste app ainda não foi liberado no painel do Supabase"* em vez de voltar pro login sem explicação. Foi por isso que existe o tratamento de erro em `mostrarErroDoOAuth()`.
+
+> Se a pessoa aparecer duplicada na tela de Usuários depois do primeiro login, é sinal de que o Google não fez o vínculo por e-mail. Aí não é problema de permissão: é a conta no Supabase que precisa ter o mesmo e-mail da que você cadastrou.
+
+#### Contas fechadas por padrão
+
+Publicar o app OAuth no Google significa que **qualquer conta Google que descobrir o endereço do aplicativo consegue entrar**. Sem a 016, essa pessoa receberia um perfil com o nível `consulta` e passaria a ler a agenda, os convidados e o WhatsApp de cada convidado.
+
+Com a 016, a conta nasce **inativa**. Quem entra sozinho pelo Google vê:
+
+> Esta conta está desativada. Fale com um administrador para reativá-la.
+
+Para liberar, você vai na tela de **Usuários** e cadastra a pessoa — e é o próprio cadastro que ativa a conta, com o nível e as telas que você escolher. Nada de conceito novo: é a mesma tela e o mesmo botão de ativar que já existem para suspender alguém.
+
+Se quiser que a pessoa entre cadastrada e **sem** conseguir entrar, desmarque **Conta ativa** no cadastro.
+
+A conta do administrador do app é a exceção: a seção 11 da 015 promove `ewertonaires97@gmail.com` a proprietário **e reativa a conta**, porque sem isso a própria mudança bloquearia a única pessoa capaz de destravar o app.
+
+Se a conta do administrador ainda não existir quando você rodar a 015, o `WARNING` avisa. Rode a 015 de novo depois de criar a conta no Supabase: as duas se corrigem sozinhas.
+
+#### Níveis
+
+| Nível | Telas por padrão |
+|---|---|
+| Proprietário | todas |
+| Administrador | todas |
+| Gestor | todas menos Usuários |
+| Operador | Início, Clientes, Orçamentos, Eventos, Cardápios, Cerimonial |
+| Consulta | Início, Eventos |
+
+O padrão de cada nível se edita na própria tela de Usuários. `owner` e `admin` não são editáveis porque as funções os tratam como acesso total antes de olhar qualquer lista.
+
+Uma pessoa pode ter telas marcadas no cadastro, e aí o padrão do nível é ignorado para ela. Desmarcar "Usar o padrão do nível" volta para a herança.
+
+#### O que o banco recusa
+
+Estas regras valem mesmo que alguém ignore a interface e chame a API direto:
+
+- **Promover-se.** O `UPDATE` em `profiles` é limitado por coluna a `full_name` e `whatsapp`. Nível, telas e situação só mudam pelas funções, que exigem a permissão `usuarios`.
+- **Rebaixar ou desativar a si mesmo.** Não há como ficar sem ninguém capaz de devolver o acesso.
+- **Rebaixar o último proprietário ativo.** É o caminho de volta quando todo mundo já perdeu acesso por engano.
+- **Desligar o dono.** Desligar o acesso de alguém é uma ação legítima e continua permitido. A trava aqui é só para o caso de não sobrar nenhuma conta capaz de abrir a tela de Usuários — que, com o bloqueio de auto-desativação, já não é alcançável pela API e existe como rede de proteção.
+- **Apagar alguém.** Não existe: apagar a linha deixaria a conta do Supabase órfã, sem caminho para dentro do app. Desativar é o caminho reversível.
+- **Apagar ou editar o padrão de `owner`/`admin`.**
+
+A resolução da permissão está em uma função só, `effective_permissions()`, chamada por `has_permission()`, por `my_permissions()` e pela trava do último administrador. Três cópias da mesma condição divergindo é o que deixaria alguém com acesso a mais do que o dono cadastrou sem nenhum erro aparecer.
+
+Uma conta desativada continua conseguindo ler o próprio perfil — é o que permite o app explicar o motivo — mas `has_permission()` responde `false` para tudo, e nenhuma política libera nada.
+
+#### Manutenção
+
+- `profiles` agora é lida pelo [permissions.js](permissions.js) e escutada pelo [realtime.js](realtime.js). Ao mexer em permissões de alguém, a tela da pessoa atualiza sozinha, e as telas que ela perdeu fecham sozinhas.
+- `my_access()` é a única fonte da permissão do usuário logado. Se algum dia a lista que o navegador mostra divergir da que o banco aplica, é porque o `permissions.js` drifted, e não porque a pessoa tem outra regra.
+- A limpeza de políticas da 015 apaga **toda** política permissiva (`using (true)`) das tabelas listadas, e não só as conhecidas pelo nome. Foi preciso porque este banco criou a mesma política com nomes diferentes: `authenticated users can manage ceremonialistas` (espaços, 006/008) e `authenticated_users_can_manage_ceremonialistas` (sublinhados, 009), além de outras na 013. Um `DROP POLICY` pelo nome deixaria três delas valendo.
+- A trigger `handle_new_user` e a função `assert_access_change()` são substituídas pela 015. Se um dia mudar `profiles.role` ou `permissions`, atualize as duas.

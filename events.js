@@ -413,6 +413,10 @@
     const panel = document.getElementById('event-panel');
     if (!panel) return;
 
+    // Quem não tem acesso à agenda não entra no painel. O banco também nega a
+    // leitura, mas chegar aqui mostrava a lista vazia sem explicação.
+    if (window.plenitudePermissions && !window.plenitudePermissions.allow('eventos')) return;
+
     if (filter) {
       state.activeFilter = filter;
       document.querySelectorAll('.event-pill').forEach(btn => {

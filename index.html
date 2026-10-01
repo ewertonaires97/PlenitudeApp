@@ -24,6 +24,16 @@
         <p class="eyebrow">BACKOFFICE</p>
         <h1 id="auth-title">Bem-vinda de volta<span>.</span></h1>
         <p class="auth-intro">Entre para cuidar de cada detalhe da sua realização.</p>
+        <button class="google-button" id="google-login-button" type="button">
+          <svg class="google-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+          </svg>
+          <span>Entrar com Google</span>
+        </button>
+        <p class="auth-divider"><span>ou entre com e-mail e senha</span></p>
         <form id="login-form" class="login-form">
           <label for="login-email">E-mail</label>
           <input id="login-email" name="email" type="email" autocomplete="email" placeholder="seu@email.com" required />
@@ -45,17 +55,17 @@
             <i data-lucide="bell"></i>
             <span class="notification-dot"></span>
           </button>
-          <button class="avatar" type="button" aria-label="Abrir perfil de Ana" data-action="Perfil">AM</button>
+          <button class="avatar" id="profile-avatar" type="button" aria-label="Perfil" data-action="Perfil">PR</button>
           <button class="icon-button" id="logout-button" type="button" aria-label="Sair" title="Sair">
             <i data-lucide="log-out"></i>
           </button>
         </div>
       </header>
 
-      <section class="welcome-panel" id="inicio">
+      <section class="welcome-panel" id="inicio" data-permission="dashboard">
         <div class="welcome-copy">
           <p class="eyebrow">TERÇA-FEIRA, 22 DE SETEMBRO</p>
-          <h1>Bom dia, Ana<span>.</span></h1>
+          <h1 id="welcome-greeting">Bom dia<span>.</span></h1>
           <p>O essencial para realizar cada detalhe com presença.</p>
         </div>
         <div class="welcome-art" aria-hidden="true">
@@ -66,7 +76,12 @@
         </div>
       </section>
 
-      <section class="today-row" aria-label="Resumo do dia">
+        <!-- Só aparece quando a migration de acesso ainda não foi aplicada no
+             banco. Sem ele, o app esconderia todos os módulos sem explicar por
+             quê, e o administrator não teria como sair do beco. -->
+        <p class="access-warning" id="access-warning" role="alert" hidden></p>
+
+      <section class="today-row" aria-label="Resumo do dia" data-permission="dashboard">
         <div>
           <span class="today-label">AGENDA DE HOJE</span>
           <strong>2 compromissos</strong>
@@ -74,16 +89,16 @@
         <button class="text-button" type="button" data-action="Agenda de hoje">Ver agenda <i data-lucide="arrow-up-right"></i></button>
       </section>
 
-      <section class="quick-actions" aria-label="Ações rápidas">
-        <button class="quick-action primary" type="button" data-open-quotes data-new-quote>
+      <section class="quick-actions" aria-label="Ações rápidas" data-permission="dashboard">
+        <button class="quick-action primary" type="button" data-open-quotes data-new-quote data-permission="orcamentos">
           <span class="quick-icon"><i data-lucide="file-plus-2"></i></span>
           <span>Novo orçamento</span>
         </button>
-        <button class="quick-action" type="button" data-open-clients data-new-client>
+        <button class="quick-action" type="button" data-open-clients data-new-client data-permission="clientes">
           <span class="quick-icon"><i data-lucide="user-plus"></i></span>
           <span>Novo cliente</span>
         </button>
-        <button class="quick-action" type="button" data-action="Novo evento">
+        <button class="quick-action" type="button" data-action="Novo evento" data-permission="eventos">
           <span class="quick-icon"><i data-lucide="calendar-plus-2"></i></span>
           <span>Novo evento</span>
         </button>
@@ -99,43 +114,54 @@
         </div>
 
         <div class="module-grid">
-          <button class="module-card card-clientes" type="button" data-open-clients>
+          <button class="module-card card-clientes" type="button" data-permission="clientes" data-open-clients>
             <span class="module-icon"><i data-lucide="users-round"></i></span>
             <span class="module-text"><strong>Clientes</strong><small>Contatos e histórico</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-orcamentos" type="button" data-open-quotes>
+          <button class="module-card card-orcamentos" type="button" data-permission="orcamentos" data-open-quotes>
             <span class="module-icon"><i data-lucide="notebook-tabs"></i></span>
             <span class="module-text"><strong>Orçamentos</strong><small>Propostas e valores</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-servicos" type="button" data-open-services>
+          <button class="module-card card-servicos" type="button" data-permission="servicos" data-open-services>
             <span class="module-icon"><i data-lucide="sparkles"></i></span>
             <span class="module-text"><strong>Serviços</strong><small>Seu catálogo</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-estoque" type="button" data-open-inventory>
+          <button class="module-card card-estoque" type="button" data-permission="estoque" data-open-inventory>
             <span class="module-icon"><i data-lucide="boxes"></i></span>
             <span class="module-text"><strong>Estoque</strong><small>Itens e disponibilidade</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-config" type="button" data-open-settings>
+          <button class="module-card card-config" type="button" data-permission="configuracoes" data-open-settings>
             <span class="module-icon"><i data-lucide="settings"></i></span>
             <span class="module-text"><strong>Configurações</strong><small>Cardápios e categorias</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
-          <button class="module-card card-cerimonial" type="button" data-open-ceremonial data-action="Cerimonial">
+          <button class="module-card card-cerimonial" type="button" data-permission="cerimonial" data-open-ceremonial data-action="Cerimonial">
             <span class="module-icon"><i data-lucide="clipboard-check"></i></span>
             <span class="module-text"><strong>Cerimonial</strong><small>Operação do evento</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
+          <button class="module-card card-usuarios" type="button" data-permission="usuarios" data-open-users>
+            <span class="module-icon"><i data-lucide="shield-check"></i></span>
+            <span class="module-text"><strong>Usuários</strong><small>Acesso e permissões</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
         </div>
+
+        <!-- Fica visível quando o usuário não tem nenhum módulo liberado. Sem
+             isso a grade de módulos apareceria vazia, sem explicação. -->
+        <p class="access-empty-note" id="access-empty-note" role="status" hidden>
+          Você ainda não tem nenhuma tela liberada. Peça a um administrador para abrir o seu acesso na tela de Usuários.
+        </p>
       </section>
 
       <nav class="bottom-nav" aria-label="Navegação principal">
-        <button class="nav-item active" type="button" data-nav="Início"><i data-lucide="house"></i><span>Início</span></button>
-        <button class="nav-item" type="button" data-nav="Agenda"><i data-lucide="calendar-clock"></i><span>Agenda</span></button>
-        <button class="nav-item" type="button" data-nav="Menu"><i data-lucide="layout-grid"></i><span>Menu</span></button>
+        <button class="nav-item active" type="button" data-permission="dashboard" data-nav="Início"><i data-lucide="house"></i><span>Início</span></button>
+        <button class="nav-item" type="button" data-permission="eventos" data-nav="Agenda"><i data-lucide="calendar-clock"></i><span>Agenda</span></button>
+        <button class="nav-item" type="button" data-permission="configuracoes" data-nav="Menu"><i data-lucide="layout-grid"></i><span>Menu</span></button>
       </nav>
     </main>
     <section class="client-panel" id="client-panel" hidden aria-labelledby="clients-title">
@@ -337,25 +363,106 @@
           </div>
           <button class="icon-button" type="button" data-close-settings aria-label="Fechar configurações"><i data-lucide="x"></i></button>
         </header>
-        <p class="field-hint">Telas de apoio do catálogo e do estoque. Tudo aqui também pode ser aberto direto pelo módulo correspondente.</p>
+        <p class="field-hint">Telas de apoio do catálogo, do estoque e do acesso. Tudo aqui também pode ser aberto direto pelo módulo correspondente.</p>
         <div class="client-list settings-list">
-          <button class="client-row settings-item" type="button" data-settings-goto="menus">
+          <button class="client-row settings-item" type="button" data-permission="cardapios" data-settings-goto="menus">
             <span class="client-initial"><i data-lucide="book-open"></i></span>
             <span class="client-details"><strong>Cardápios</strong><span>Catálogo de cardápios e serviços que os usam</span></span>
             <i data-lucide="chevron-right" class="settings-chevron"></i>
           </button>
-          <button class="client-row settings-item" type="button" data-settings-goto="menu-categories">
+          <button class="client-row settings-item" type="button" data-permission="cardapios" data-settings-goto="menu-categories">
             <span class="client-initial"><i data-lucide="tags"></i></span>
             <span class="client-details"><strong>Categorias de cardápio</strong><span>Agrupam cardápios em Doces, Bebidas, Sobremesas…</span></span>
             <i data-lucide="chevron-right" class="settings-chevron"></i>
           </button>
-          <button class="client-row settings-item" type="button" data-settings-goto="inventory-categories">
+          <button class="client-row settings-item" type="button" data-permission="estoque" data-settings-goto="inventory-categories">
             <span class="client-initial"><i data-lucide="boxes"></i></span>
             <span class="client-details"><strong>Categorias de itens</strong><span>Agrupam os itens do estoque, como Louças, Taças e Toalhas</span></span>
             <i data-lucide="chevron-right" class="settings-chevron"></i>
           </button>
+          <button class="client-row settings-item" type="button" data-permission="usuarios" data-open-users>
+            <span class="client-initial"><i data-lucide="shield-check"></i></span>
+            <span class="client-details"><strong>Usuários e acessos</strong><span>Quem entra no app e quais telas cada pessoa abre</span></span>
+            <i data-lucide="chevron-right" class="settings-chevron"></i>
+          </button>
         </div>
       </div>
+    </section>
+
+    <section class="service-panel" id="users-panel" hidden aria-labelledby="users-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ACESSO</p>
+            <h2 id="users-title">Usuários</h2>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-user><i data-lucide="user-plus"></i><span>Novo</span></button>
+            <button class="icon-button" type="button" data-close-users aria-label="Fechar usuários"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="users-search">
+            <i data-lucide="search"></i>
+            <input id="users-search" type="search" placeholder="Buscar por nome, e-mail ou WhatsApp" />
+          </label>
+        </div>
+        <p class="field-hint">A conta de cada pessoa é criada em <strong>Authentication &gt; Users</strong> no painel do Supabase. Depois que a conta existir, cadastre aqui o nome, o WhatsApp, o nível e as telas.</p>
+        <p class="client-feedback" id="users-feedback" role="status"></p>
+        <div class="client-list" id="users-list"></div>
+        <section class="role-defaults" aria-labelledby="role-defaults-title">
+          <h3 id="role-defaults-title" class="role-defaults-title">Padrão de cada nível</h3>
+          <p class="field-hint">As telas que quem entra com aquele nível abre por padrão. Um usuário pode ter telas marcadas no cadastro dele, e aí este padrão é ignorado.</p>
+          <div id="role-defaults"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="client-form-panel" id="user-form-panel" hidden aria-labelledby="user-form-title">
+      <form class="client-form-card" id="user-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ACESSO</p>
+            <h2 id="user-form-title">Novo usuário</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-user-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="user-id" type="hidden" />
+
+        <label for="user-email">E-mail da conta</label>
+        <input id="user-email" name="email" type="email" autocomplete="off" placeholder="pessoa@plenitude.com" required />
+        <span class="field-hint" id="user-email-hint"></span>
+
+        <label for="user-name">Nome</label>
+        <input id="user-name" name="name" type="text" placeholder="Como essa pessoa deve aparecer no app" required />
+
+        <label for="user-whatsapp">WhatsApp</label>
+        <input id="user-whatsapp" name="whatsapp" type="tel" autocomplete="off" placeholder="11 98888 7777" />
+
+        <label for="user-role">Nível de acesso</label>
+        <select id="user-role" name="role"></select>
+        <span class="field-hint" id="user-role-description"></span>
+
+        <fieldset class="menu-checkboxes permission-legend">
+          <legend>Telas liberadas</legend>
+          <label class="menu-option permission-inherit">
+            <input id="user-inherit-role" type="checkbox" checked />
+            <span class="permission-option-copy">
+              <strong>Usar o padrão do nível</strong>
+              <small>Desmarque para escolher as telas uma a uma só para esta pessoa.</small>
+            </span>
+          </label>
+          <div id="user-permission-options"></div>
+        </fieldset>
+
+        <label class="service-active-field" id="user-active-field" for="user-active">
+          <input id="user-active" name="active" type="checkbox" checked /> Conta ativa
+        </label>
+        <span class="field-hint" id="user-active-hint">Desmarque para deixar a pessoa cadastrada, mas sem conseguir entrar. Ela vera a tela avisando que esta desativada, e voce liga aqui a qualquer momento.</span>
+
+        <p class="client-form-feedback" id="user-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar acesso</span><i data-lucide="check"></i></button>
+      </form>
     </section>
 
     <section class="service-panel" id="inventory-category-panel" hidden aria-labelledby="inventory-categories-title">
@@ -881,6 +988,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase-config.js"></script>
     <script src="realtime.js"></script>
+    <script src="permissions.js"></script>
     <script src="app.js"></script>
     <script src="events.js"></script>
     <script src="ceremonial.js"></script>

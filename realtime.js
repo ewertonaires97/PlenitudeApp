@@ -61,15 +61,32 @@
   const app = () => window.plenitudeApp;
   const events = () => window.plenitudeEvents;
   const ceremonial = () => window.plenitudeCeremonial;
+  const permissions = () => window.plenitudePermissions;
 
   // Cada tópico agrupa as tabelas que alimentam a mesma tela. Um tópico
   // pendente é executado uma única vez, depois de DEBOUNCE_MS sem novas
   // alterações.
   //
-  // A tabela `profiles` está publicada na migration 012 mas não é assinada
-  // aqui: nenhum módulo a consulta ainda. Quando o cabeçalho passar a ler o
-  // nome do usuário autenticado, basta acrescentar um tópico para ela.
+  // A tabela `profiles` é assinada aqui. Ela é publicada na migration 012 desde
+  // o começo, mas nenhuma tela a consultava: o nome do usuário no cabeçalho era
+  // fixo no HTML e o nível de acesso não existia. Agora ela é lida pelo
+  // permissions.js, e este tópico é o que faz uma mudança de permissão chegar
+  // sem precisar recarregar a página.
   const TOPICS = [
+    {
+      // Accesso muda o que a pessoa vê na tela inteira, então recarrega os
+      // dados do usuário logado mesmo com o app em qualquer tela. A lista de
+      // usuários só é refeita para quem pode vê-la, e apenas com o painel
+      // aberto.
+      name: 'acesso',
+      tables: ['profiles', 'app_roles', 'app_role_permissions'],
+      reload() {
+        return Promise.all([
+          permissions()?.reloadAccess(),
+          whenVisible('#users-panel', () => permissions()?.loadUsers())
+        ]);
+      }
+    },
     {
       // A lista de clientes também alimenta os seletes de Eventos/Cerimonial.
       // Um item novo no orçamento pode ser o serviço de Cerimonial, o que
