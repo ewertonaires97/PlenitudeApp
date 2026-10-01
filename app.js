@@ -821,16 +821,12 @@ function openSettings() {
   settingsPanel.hidden = false;
 }
 
-// Enquanto o usuario navega a partir das Configuracoes, o X das telas de apoio
-// devolve para Configuracoes em vez de fechar direto para a tela inicial.
-let settingsFlowAtivo = false;
-
+// Configurações é só um índice: as telas de apoio saem de cima dela. O
+// navigation.js registra que Configurações continua na pilha enquanto uma delas
+// estiver aberta, e é ele quem traz Configurações de volta quando a tela de
+// apoio fecha, tanto pelo X quanto pelo botão de voltar.
 function fecharPainelDeApoio(panel) {
-  const voltarParaConfiguracoes = settingsFlowAtivo;
   panel.hidden = true;
-  settingsFlowAtivo = false;
-  // Aberto pelo modulo, o X fecha direto para a tela inicial.
-  settingsPanel.hidden = !voltarParaConfiguracoes;
 }
 
 function abrirDeConfiguracoes(destino) {
@@ -842,7 +838,7 @@ function abrirDeConfiguracoes(destino) {
   if (destino === 'inventory-categories') {
     if (!permitir('estoque')) return;
   }
-  settingsFlowAtivo = true;
+  window.plenitudeNav.cover(settingsPanel);
   settingsPanel.hidden = true;
   if (destino === 'menus') openMenus();
   if (destino === 'menu-categories') { categoryPanel.hidden = false; loadMenus(); }
@@ -851,11 +847,10 @@ function abrirDeConfiguracoes(destino) {
 
 document.querySelectorAll('[data-open-settings]').forEach((button) => button.addEventListener('click', openSettings));
 document.querySelectorAll('[data-close-settings]').forEach((button) => button.addEventListener('click', () => {
-  settingsFlowAtivo = false;
   settingsPanel.hidden = true;
 }));
 settingsPanel.addEventListener('click', (event) => {
-  if (event.target === settingsPanel) { settingsFlowAtivo = false; settingsPanel.hidden = true; return; }
+  if (event.target === settingsPanel) { settingsPanel.hidden = true; return; }
   const item = event.target.closest('[data-settings-goto]');
   if (!item) return;
   abrirDeConfiguracoes(item.dataset.settingsGoto);

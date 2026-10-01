@@ -77,6 +77,21 @@ Dois pontos que dependem de manutenção futura:
 - `app.js` não exportava nada. As funções que o `realtime.js` chama foram expostas em `window.plenitudeApp`. Ao adicionar uma tela nova, inclua o respective loader nessa lista, senão ela não sincroniza.
 - A tabela `profiles` é lida pelo `permissions.js` e tem um tópico (`acesso`) em `realtime.js`, para que uma mudança de permissão chegue a quem está com o app aberto. Ao adicionar um módulo que depende de `profiles`, inclua o loader dele nesse mesmo tópico.
 
+### Navegação entre telas
+
+O app não tem router: cada tela é uma `<section>` fixa que aparece e some pelo atributo `hidden`. A pilha dessas telas mora em [navigation.js](navigation.js), que observa esse atributo por `MutationObserver` em vez de ser avisado por cada abertura. Nenhum módulo precisa chamar nada para participar: basta a tela existir e ter o botão que a fecha.
+
+Todo cabeçalho de tela recebe dois botões à esquerda do título — **voltar** (fecha a última tela e devolve para a anterior) e **início** (fecha tudo de uma vez) — e o visualizador de imagem recebe os dois no canto, para não ser um beco sem saída.
+
+O botão físico de voltar do Android e do iPhone funciona porque a pilha é espelhada no `history` do navegador. Abrir uma tela empurra uma entrada; fechar uma consome a entrada. Quando o app fecha uma tela sozinho (o X, o envio de um formulário, o fim de uma etapa), a entrada sai junto: sem isso o aparelho teria uma entrada sem tela nenhuma para fechar e o primeiro toque não faria nada.
+
+Dois pontos que dependem de manutenção futura:
+
+- **Tela nova precisa entrar em `SCREENS`** no [navigation.js](navigation.js), com o seletor do painel e o atributo do botão que a fecha. Uma tela fora dessa lista aparece, mas não entra na pilha: não tem botão de voltar e o do aparelho não age nela. O nome do atributo segue o padrão `data-close-*`.
+- **A brand do topo apontava para `#inicio`**, o que empurrava uma entrada de histórico a cada toque e desalinhava o botão do aparelho. Ela agora passa pelo mesmo caminho do botão de início, sem mexer no histórico.
+
+`window.plenitudeNav` expõe `back()`, `home()`, `stack()` e `cover(panel)`. O `cover()` é para quando uma tela abre **por cima** de outra em vez de por baixo: a de baixo continua na pilha e volta a aparecer quando a de cima fecha. É o que faz Configurações devolver em vez de sumir quando se volta de Usuários, Cardápios ou Categorias.
+
 ### Instalar como PWA
 
 O app agora possui [manifest.webmanifest](manifest.webmanifest), [sw.js](sw.js) e ícones em [icons](icons). Depois do deploy no Netlify:

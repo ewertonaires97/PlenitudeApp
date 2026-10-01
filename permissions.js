@@ -395,9 +395,13 @@
     if (!allow('usuarios')) return;
     // Configurações também é uma tela de apoio sobre a tela inicial e os dois
     // painéis dividem o mesmo z-index: sem isso, Configurações ficaria aberto
-    // atrás de Usuários.
+    // atrás de Usuários. O navigation.js fica sabendo que Configurações segue
+    // na pilha, para o voltar devolver para lá em vez de pular para o início.
     const settingsPanel = document.querySelector('#settings-panel');
-    if (settingsPanel) settingsPanel.hidden = true;
+    if (settingsPanel) {
+      if (window.plenitudeNav && !settingsPanel.hidden) window.plenitudeNav.cover(settingsPanel);
+      settingsPanel.hidden = true;
+    }
     usersPanel.hidden = false;
     if (usersSearch) usersSearch.value = '';
     loadUsers();
