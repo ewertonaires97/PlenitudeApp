@@ -349,6 +349,7 @@ function renderServices() {
         ${service.description ? `<span class="service-description">${escapeHTML(service.description)}</span>` : ''}
         <span class="service-price">${formatCurrency(service.default_price)}</span>
         <span class="service-status${service.active ? '' : ' inactive'}">${service.active ? 'Ativo' : 'Inativo'}</span>
+        ${service.is_ceremonial ? '<span class="service-status ceremonial">Cerimonial</span>' : ''}
       </div>
       <div class="client-actions">
         <button class="client-action service-toggle" type="button" data-toggle-service="${service.id}" aria-label="${service.active ? 'Desativar' : 'Ativar'} ${escapeHTML(service.name)}" title="${service.active ? 'Desativar' : 'Ativar'}">${service.active ? 'Desativar' : 'Ativar'}</button>
@@ -362,7 +363,7 @@ function renderServices() {
 
 async function loadServices() {
   setServiceFeedback('Carregando serviços...');
-  const { data, error } = await supabaseClient.from('services').select('id, name, description, category, default_price, active, created_at').order('name');
+  const { data, error } = await supabaseClient.from('services').select('id, name, description, category, default_price, active, is_ceremonial, created_at').order('name');
   if (error) {
     setServiceFeedback('Não foi possível carregar os serviços. Verifique seu acesso.', true);
     serviceList.innerHTML = '';
@@ -452,6 +453,7 @@ async function openServiceForm(service = null) {
   document.querySelector('#service-price').value = service?.default_price ?? '';
   document.querySelector('#service-description').value = service?.description || '';
   document.querySelector('#service-active').checked = service?.active ?? true;
+  document.querySelector('#service-is-ceremonial').checked = service?.is_ceremonial ?? false;
   serviceFormTitle.textContent = service ? 'Editar serviço' : 'Novo serviço';
   serviceFormFeedback.textContent = '';
   serviceFormPanel.hidden = false;
@@ -478,7 +480,8 @@ serviceForm.addEventListener('submit', async (event) => {
     category: document.querySelector('#service-category').value.trim() || null,
     default_price: Number(document.querySelector('#service-price').value),
     description: document.querySelector('#service-description').value.trim() || null,
-    active: document.querySelector('#service-active').checked
+    active: document.querySelector('#service-active').checked,
+    is_ceremonial: document.querySelector('#service-is-ceremonial').checked
   };
   saveButton.disabled = true;
   saveButton.querySelector('span').textContent = 'Salvando...';
@@ -1145,6 +1148,14 @@ function openInventory() {
   loadInventory();
 }
 
+// Atalho do cabeçalho de Estoque para as categorias de itens. Mesmo caminho do
+// atalho de categorias dentro de Cardápios: o painel de baixo continua aberto e
+// o X volta para ele, em vez de fechar direto para a tela inicial.
+function openInventoryCategories() {
+  inventoryCategoryPanel.hidden = false;
+  loadInventoryCategories();
+}
+
 function openInventoryForm(item = null) {
   inventoryForm.reset();
   pendingInventoryImages = [];
@@ -1180,6 +1191,7 @@ function openMovementForm(item) {
 }
 
 document.querySelector('[data-open-inventory]').addEventListener('click', openInventory);
+document.querySelector('[data-open-inventory-categories]').addEventListener('click', openInventoryCategories);
 document.querySelector('[data-close-inventory]').addEventListener('click', () => { inventoryPanel.hidden = true; });
 document.querySelector('[data-new-inventory]').addEventListener('click', () => openInventoryForm());
 document.querySelector('[data-close-inventory-form]').addEventListener('click', () => { inventoryFormPanel.hidden = true; });
@@ -1827,5 +1839,10 @@ window.plenitudeApp = {
   loadInventory,
   loadInventoryCategories,
   loadQuotes,
-  loadQuoteReferences
+  loadQuoteReferences,
+  // O módulo de Cerimonial precisa saber quais serviços estão marcados como
+  // "serviço de cerimonial" para filtrar o seletor de evento ativo. A lista
+  // só é buscada se o app já tiver carregado os serviços; caso contrário o
+  // cerimonial cai no fallback e mostra todos os eventos.
+  getCeremonialServiceIds: () => services.filter((service) => service.is_ceremonial).map((service) => service.id)
 };

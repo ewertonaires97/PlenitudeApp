@@ -72,6 +72,8 @@
   const TOPICS = [
     {
       // A lista de clientes também alimenta os seletes de Eventos/Cerimonial.
+      // Um item novo no orçamento pode ser o serviço de Cerimonial, o que
+      // muda quem aparece no seletor de evento do cerimonial.
       name: 'clientes',
       tables: ['clients'],
       reload() {
@@ -84,6 +86,7 @@
     },
     {
       // Renomear um serviço muda o rótulo dele nos cardápios e nos orçamentos.
+      // Marcar ou desmarcar is_ceremonial muda o filtro do seletor de evento.
       name: 'servicos',
       tables: ['services', 'service_materials'],
       reload() {
@@ -91,7 +94,8 @@
           whenVisible('#service-panel', () => app()?.loadServices()),
           whenVisible('#menu-panel', () => app()?.loadMenus()),
           whenVisible('#category-panel', () => app()?.loadMenus()),
-          whenVisible('#quote-form-panel', () => app()?.loadQuoteReferences())
+          whenVisible('#quote-form-panel', () => app()?.loadQuoteReferences()),
+          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadCeremonialFilter())
         ]);
       }
     },
@@ -112,12 +116,14 @@
     {
       // A trigger recalculate_quote_totals roda um UPDATE em quotes a cada
       // linha de quote_items alterada: sem o debounce isso viraria uma rajada.
+      // quote_items também define se o evento tem serviço de Cerimonial.
       name: 'orcamentos',
       tables: ['quotes', 'quote_items'],
       reload() {
         return Promise.all([
           whenVisible('#quote-panel', () => app()?.loadQuotes()),
-          whenVisible('#event-panel', () => events()?.reloadLookups())
+          whenVisible('#event-panel', () => events()?.reloadLookups()),
+          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadEventsList())
         ]);
       }
     },
@@ -151,6 +157,17 @@
         return Promise.all([
           whenVisible('#ceremonial-panel', () => ceremonial()?.reloadCeremonial()),
           whenVisible('#event-panel', () => events()?.reloadEventDetail())
+        ]);
+      }
+    },
+    {
+      // Modelos padrão de roteiro são compartilhados por toda a equipe, então
+      // o painel de modelos acompanha as alterações dos outros usuários.
+      name: 'modelos-padrao',
+      tables: ['ceremonial_templates', 'ceremonial_template_activities'],
+      reload() {
+        return Promise.all([
+          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadTemplates())
         ]);
       }
     }

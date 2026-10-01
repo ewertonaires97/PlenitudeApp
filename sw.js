@@ -1,4 +1,9 @@
-const CACHE_NAME = 'plenitude-static-v3';
+// Sobe a cada mudança no app shell. Sem isso, um PWA já instalado continua
+// servindo o app.js antigo: o fetch é network-first, mas o HTTP cache do
+// navegador pode responder com uma cópia velha antes da rede, e o service
+// worker aceita essa resposta como válida. O nome novo força a instalação de
+// um service worker novo, que repopula o cache e apaga o antigo.
+const CACHE_NAME = 'plenitude-static-v4';
 const APP_SHELL = [
   './',
   './index.html',

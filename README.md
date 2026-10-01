@@ -48,6 +48,22 @@ Para habilitar as movimentações de estoque, execute [supabase/migrations/004_i
 
 Para categorias e imagens dos itens, execute [supabase/migrations/005_inventory_categories_images.sql](supabase/migrations/005_inventory_categories_images.sql). As imagens ficam no bucket `inventory-images`, podem ser múltiplas e abrem em tela cheia ao toque. O mesmo visualizador é usado nas imagens dos cardápios.
 
+### Cerimonial
+
+Execute [supabase/migrations/013_ceremonial_templates_reorder.sql](supabase/migrations/013_ceremonial_templates_reorder.sql) no SQL Editor. Ela é idempotente e faz quatro coisas:
+
+**1. `services.is_ceremonial`** — coluna booleana que marca quais serviços o módulo de Cerimonial atende. A marcação aparece como uma caixa no cadastro de serviço. A migração já preenche automaticamente os serviços existentes cujo nome ou categoria contenham a palavra "cerimonial" ("Cerimonial Completo", "Recepção / Cerimonial", "CERIMONIAL PREMIUM"); "Cerimônia" não entra, por ser outra palavra. O seletor de evento do Cerimonial só lista eventos cujo orçamento tenha algum item apontando para um serviço marcado. A caixa *"Somente eventos com serviço de Cerimonial"* liga e desliga esse filtro, e se nenhum serviço estiver marcado o filtro é ignorado para o módulo não ficar inutilizável.
+
+**2. Modelos padrão** — tabelas `ceremonial_templates` e `ceremonial_template_activities`. Em Roteiro, o botão **Modelo padrão** abre o cadastro: crie tantos modelos quiser, monte o roteiro de cada um e depois **Copiar para o evento**. A cópia pode *anexar* ao roteiro existente (padrão) ou *substituir* tudo, com confirmação.
+
+**3. Reordenação** — a coluna `unique (event_id, position)` de `ceremonial_activities` impedia a reordenação: trocar duas atividades de lugar exige dois `UPDATE`s e o primeiro esbarra na posição que a segunda ainda ocupa. Como o `supabase-js` resolve com `{ error }` em vez de lançar exceção, o botão de seta recarregava a lista sem mudar nada. As funções `reorder_ceremonial_activities` e `pack_ceremonial_activities` resolvem dentro do banco, em duas fases e de forma atômica.
+
+**4. `copy_ceremonial_template`** — copia as atividades de um modelo para um evento numa transação só, respeitando o `append` ou o `replace`.
+
+Execute [supabase/migrations/014_reorder_ceremonial_template_activities.sql](supabase/migrations/014_reorder_ceremonial_template_activities.sql) no SQL Editor. Ela cria a função `reorder_ceremonial_template_activities`, que faz o mesmo pelos momentos de um modelo padrão. Sem ela, arrastar os momentos do modelo falha: a coluna `unique (template_id, position)` não deixa gravar a nova ordem em `UPDATE`s avulsos, e o movimento funciona com a reordenação do roteiro e não com o do modelo.
+
+O roteiro se reordena arrastando pelo punho `⠿`. O arraste usa Pointer Events, então funciona com dedo no celular e com mouse, já que a API nativa de drag-and-drop não funciona em touchscreen. Funciona tanto no roteiro do evento quanto nos momentos de cada modelo padrão.
+
 ### Sincronização em tempo real
 
 Execute [supabase/migrations/012_realtime_publication.sql](supabase/migrations/012_realtime_publication.sql) no SQL Editor. **Sem ela nada sincroniza**, mesmo com o frontend correto: a publication `supabase_realtime` do Supabase é criada vazia e cada tabela precisa ser adicionada a ela explicitamente. As subscriptions do navegador respondem `SUBSCRIBED` mesmo quando a tabela não está publicada, então o sintoma é o app "parecer" sincronizado e nunca receber nada. A migração é idempotenta e emite um `NOTICE` com o resultado da verificação ao final.

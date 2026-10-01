@@ -27,7 +27,21 @@
     editingActivityId: null,
     editingStaffId: null,
     editingGuestId: null,
-    editingTableId: null
+    editingTableId: null,
+    // Filtro do seletor de evento: só eventos com serviço de Cerimonial no
+    // orçamento. Não pode desligar o módulo: sem nenhum serviço marcado o
+    // filtro é ignorado e todos os eventos aparecem.
+    onlyCeremonialEvents: true,
+    ceremonialServiceIds: new Set(),
+    // Modelos padrão de roteiro cadastrados pelo usuário
+    templates: [],
+    templateActivities: [],
+    editingTemplateId: null,
+    // Arraste em andamento (drag and drop do roteiro)
+    drag: { activityId: null, beforeId: null, started: false, card: null, pointerY: 0 },
+    // Arraste em andamento nos momentos do modelo padrão. State separado do
+    // roteiro porque a lista alvo é outra e o commit é outro.
+    templateDrag: { activityId: null, beforeId: null, started: false, row: null, pointerY: 0 }
   };
 
   // Modelos pré-definidos de momentos para o cerimonial (templates rápidos)
@@ -221,6 +235,10 @@
   // Carregamento de Dados do Supabase
   // ==========================================================================
 
+  // Um evento só aparece no seletor do cerimonial quando o seu orçamento
+  // tem pelo menos um item apontando para um serviço marcado com
+  // services.is_ceremonial. A ligação é sempre through quote_items:
+  //   events.quote_id -> quotes.id -> quote_items.quote_id -> quote_items.service_id
   async function loadEventsList() {
     const sb = getSupabase();
     const feedbackEl = document.getElementById('ceremonial-feedback');
@@ -240,26 +258,33 @@
           event_time,
           status,
           notes,
-          clients ( id, name, whatsapp, email )
+          clients ( id, name, whatsapp, email ),
+          quotes ( id, quote_items ( service_id ) )
         `)
         .order('event_date', { ascending: true });
 
       if (error) throw error;
       state.events = data || [];
+      state.events.forEach(event => {
+        const items = event.quotes?.quote_items || [];
+        event.hasCeremonial = items.some(item => state.ceremonialServiceIds.has(item.service_id));
+      });
       populateEventSelector();
 
       // O evento selecionado pode ter sido excluído por outro usuário desde a
-      // última carga: nesse caso a seleção é refeita a partir da lista atual.
-      if (state.selectedEventId && !state.events.some(e => e.id === state.selectedEventId)) {
+      // última carga, ou ter deixado de ter serviço de cerimonial. Nos dois
+      // casos a seleção é refeita a partir da lista visível.
+      const visible = visibleEvents();
+      if (state.selectedEventId && !visible.some(e => e.id === state.selectedEventId)) {
         state.selectedEventId = null;
         state.selectedEvent = null;
       }
 
       // Se nenhum evento foi selecionado ainda, seleciona o mais próximo de hoje
-      if (!state.selectedEventId && state.events.length > 0) {
+      if (!state.selectedEventId && visible.length > 0) {
         const todayStr = new Date().toISOString().split('T')[0];
-        const upcoming = state.events.find(e => e.event_date >= todayStr && e.status !== 'cancelled');
-        const defaultEvt = upcoming || state.events[0];
+        const upcoming = visible.find(e => e.event_date >= todayStr && e.status !== 'cancelled');
+        const defaultEvt = upcoming || visible[0];
         selectEvent(defaultEvt.id);
       } else if (state.selectedEventId) {
         await loadSelectedEventDetails(state.selectedEventId);
@@ -275,25 +300,145 @@
     }
   }
 
+  // O filtro só vale quando existe algum serviço marcado. Sem nenhum, mostrar
+  // uma lista vazia deixaria o módulo inteiro inutilizável, então o seletor
+  // cai para todos os eventos e avisa o que falta configurar.
+  function ceremonialFilterIsActive() {
+    return state.onlyCeremonialEvents && state.ceremonialServiceIds.size > 0;
+  }
+
+  function visibleEvents() {
+    if (!ceremonialFilterIsActive()) return state.events;
+    return state.events.filter(event => event.hasCeremonial);
+  }
+
   function populateEventSelector() {
     const select = document.getElementById('ceremonial-event-select');
     if (!select) return;
 
     if (state.events.length === 0) {
       select.innerHTML = '<option value="">Nenhum evento cadastrado no sistema</option>';
+      renderCeremonialFilterHint();
       return;
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
+    const visible = visibleEvents();
 
-    select.innerHTML = state.events.map(ev => {
+    if (visible.length === 0) {
+      select.innerHTML = '<option value="">Nenhum evento com serviço de Cerimonial</option>';
+      renderCeremonialFilterHint();
+      return;
+    }
+
+    const options = visible.map(ev => {
       const d = parseDateOnly(ev.event_date);
       const dateFmt = d ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` : 'Data indefinida';
       const isToday = ev.event_date === todayStr;
       const prefix = isToday ? '⭐ [HOJE] ' : '';
       const clientName = ev.clients ? ` (${ev.clients.name})` : '';
       return `<option value="${ev.id}" ${ev.id === state.selectedEventId ? 'selected' : ''}>${prefix}${dateFmt} - ${sanitizeHtml(ev.name)}${sanitizeHtml(clientName)}</option>`;
-    }).join('');
+    });
+
+    // Eventos fora do filtro ficam visíveis, porém desabilitados e agrupados.
+    // Assim o usuário descobre que eles existem e pode desligar o filtro
+    // sem precisar sair do módulo.
+    if (ceremonialFilterIsActive()) {
+      const others = state.events.filter(event => !event.hasCeremonial);
+      if (others.length) {
+        options.push('<optgroup label="Sem serviço de Cerimonial" disabled>');
+        others.forEach(ev => {
+          const d = parseDateOnly(ev.event_date);
+          const dateFmt = d ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` : 'Data indefinida';
+          const clientName = ev.clients ? ` (${ev.clients.name})` : '';
+          options.push(`<option value="" disabled>${dateFmt} - ${sanitizeHtml(ev.name)}${sanitizeHtml(clientName)}</option>`);
+        });
+        options.push('</optgroup>');
+      }
+    }
+
+    select.innerHTML = options.join('');
+    renderCeremonialFilterHint();
+  }
+
+  // Explica por que a lista está vazia ou por que está filtrada. Sem isso o
+  // usuário não tem como saber se o problema é no filtro ou nos cadastros.
+  function renderCeremonialFilterHint() {
+    const hint = document.getElementById('ceremonial-filter-hint');
+    if (!hint) return;
+
+    if (state.ceremonialServiceIds.size === 0) {
+      hint.hidden = false;
+      hint.innerHTML = '<i data-lucide="info"></i> Nenhum serviço está marcado como <strong>serviço de Cerimonial</strong>. Marque a caixa no cadastro do serviço para o filtro funcionar. Enquanto isso, todos os eventos aparecem.';
+      refreshIcons();
+      return;
+    }
+
+    if (!state.onlyCeremonialEvents) {
+      hint.hidden = true;
+      return;
+    }
+
+    const withCeremonial = state.events.filter(event => event.hasCeremonial).length;
+    if (withCeremonial === 0) {
+      hint.hidden = false;
+      hint.innerHTML = '<i data-lucide="info"></i> Nenhum dos ' + state.events.length + ' eventos tem serviço de Cerimonial no orçamento. Desligue o filtro para ver todos.';
+      refreshIcons();
+      return;
+    }
+
+    hint.hidden = true;
+  }
+
+  async function loadCeremonialServiceIds() {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    try {
+      const { data, error } = await sb
+        .from('services')
+        .select('id')
+        .eq('is_ceremonial', true);
+      if (error) throw error;
+      state.ceremonialServiceIds = new Set((data || []).map(row => row.id));
+    } catch (err) {
+      console.warn('Não foi possível ler os serviços de cerimonial:', err);
+      state.ceremonialServiceIds = new Set();
+    }
+  }
+
+  async function toggleCeremonialFilter(onlyWithCeremonial) {
+    state.onlyCeremonialEvents = onlyWithCeremonial;
+
+    // A lista foi carregada antes de o filtro mudar, então a marcação
+    // hasCeremonial precisa ser recalculada antes de redesenhar.
+    if (onlyWithCeremonial && state.ceremonialServiceIds.size > 0) {
+      state.events.forEach(event => {
+        const items = event.quotes?.quote_items || [];
+        event.hasCeremonial = items.some(item => state.ceremonialServiceIds.has(item.service_id));
+      });
+    }
+
+    populateEventSelector();
+
+    const visible = visibleEvents();
+    if (state.selectedEventId && !visible.some(e => e.id === state.selectedEventId)) {
+      state.selectedEventId = null;
+      state.selectedEvent = null;
+      const todayStr = new Date().toISOString().split('T')[0];
+      const upcoming = visible.find(e => e.event_date >= todayStr && e.status !== 'cancelled');
+      const fallback = upcoming || visible[0];
+      if (fallback) {
+        await selectEvent(fallback.id);
+        return;
+      }
+    }
+
+    if (state.selectedEventId) {
+      await loadSelectedEventDetails(state.selectedEventId);
+    } else {
+      renderEmptyState();
+    }
   }
 
   async function selectEvent(eventId) {
@@ -567,6 +712,9 @@
           <p class="section-subtitle">${completed} de ${total} momentos concluídos</p>
         </div>
         <div class="section-actions-right">
+          <button class="text-button template-open-btn" type="button" data-open-templates-modal>
+            <i data-lucide="copy-check"></i><span>Modelo padrão</span>
+          </button>
           <button class="add-client-button" type="button" data-open-activity-modal>
             <i data-lucide="plus"></i><span>Novo momento</span>
           </button>
@@ -614,15 +762,10 @@
           return `
             <article class="timeline-activity-card ${act.status}" data-activity-id="${act.id}">
               <div class="activity-drag-order">
+                <button class="activity-grip" type="button" data-drag-grip="${act.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
+                  <i data-lucide="grip-vertical"></i>
+                </button>
                 <span class="activity-pos-badge">${act.position || index + 1}</span>
-                <div class="order-buttons">
-                  <button class="order-btn" type="button" data-move-activity-up="${act.id}" title="Mover para cima" ${index === 0 ? 'disabled' : ''}>
-                    <i data-lucide="chevron-up"></i>
-                  </button>
-                  <button class="order-btn" type="button" data-move-activity-down="${act.id}" title="Mover para baixo" ${index === filtered.length - 1 ? 'disabled' : ''}>
-                    <i data-lucide="chevron-down"></i>
-                  </button>
-                </div>
               </div>
 
               <div class="activity-check-col">
@@ -1216,33 +1359,624 @@
     }
   }
 
-  async function moveActivity(actId, direction) {
+  // A ordem canônica do roteiro é sempre state.activities (ordenada por
+  // position no banco), nunca a lista já filtrada da tela. Reordenar a partir
+  // do filtro trocaria o item pela posição que o usuário não está vendo.
+  function orderedActivityIds() {
+    return state.activities.map(a => a.id);
+  }
+
+  // nextPosition precisa ser max(position) + 1, e não activities.length + 1.
+  // Excluir um momento do meio deixa um buraco na sequência (1, 2, 4): o
+  // length daria 3 e o INSERT colidiria com a posição 4 já ocupada, falhando
+  // com unique_violation.
+  function nextActivityPosition() {
+    return state.activities.reduce((max, a) => Math.max(max, a.position || 0), 0) + 1;
+  }
+
+  async function persistActivityOrder(orderedIds) {
+    const sb = getSupabase();
+    if (!sb || !state.selectedEventId) return;
+
+    const { error } = await sb.rpc('reorder_ceremonial_activities', {
+      target_event_id: state.selectedEventId,
+      ordered_ids: orderedIds
+    });
+
+    if (error) {
+      console.error('Erro ao reordenar o roteiro:', error);
+      notify('Não foi possível reordenar o roteiro.');
+      await loadSelectedEventDetails(state.selectedEventId);
+      return;
+    }
+
+    await loadSelectedEventDetails(state.selectedEventId);
+  }
+
+  // Reordena movendo actId para a posição de beforeId na ordem atual.
+  // beforeId null significa "colocar no fim".
+  async function moveActivityTo(actId, beforeId) {
+    const list = [...state.activities];
+    const from = list.findIndex(a => a.id === actId);
+    if (from === -1) return;
+
+    const [moved] = list.splice(from, 1);
+    let to = beforeId ? list.findIndex(a => a.id === beforeId) : list.length;
+    if (to === -1) to = list.length;
+    list.splice(to, 0, moved);
+
+    if (list.every((a, i) => a.id === state.activities[i].id)) return; // nada mudou
+    await persistActivityOrder(list.map(a => a.id));
+  }
+
+  // ==========================================================================
+  // DRAG AND DROP DO ROTEIRO (Pointer Events)
+  // ==========================================================================
+  // Usa Pointer Events em vez da API nativa drag-and-drop porque a API nativa
+  // não funciona em touchscreen, e o app é um PWA usado no celular. Com
+  // pointerdown/pointermove/pointerup o mesmo código serve para dedo e mouse.
+
+  const DRAG_THRESHOLD_PX = 6;   // abaixo disso é clique, não arrasto
+
+  function timelineList() {
+    return document.getElementById('timeline-activities-list');
+  }
+
+  function activityCards() {
+    const list = timelineList();
+    return list ? Array.from(list.querySelectorAll('.timeline-activity-card')) : [];
+  }
+
+  // Decide em que posição o card arrastado deve cair, comparando o ponteiro com
+  // o centro de cada card. Retorna o id do card anterior, que é o que
+  // moveActivityTo espera, ou null para "colocar no fim".
+  function dropTargetBeforeId(pointerY) {
+    const cards = activityCards().filter(card => card.dataset.activityId !== state.drag.activityId);
+    for (const card of cards) {
+      const box = card.getBoundingClientRect();
+      if (pointerY < box.top + box.height / 2) return card.dataset.activityId;
+    }
+    return null;
+  }
+
+  function clearDropMarkers() {
+    activityCards().forEach(card => card.classList.remove('drag-over-top', 'drag-over-bottom'));
+  }
+
+  function paintDropTarget(beforeId) {
+    clearDropMarkers();
+    const others = activityCards().filter(c => c.dataset.activityId !== state.drag.activityId);
+    if (!beforeId) {
+      others[others.length - 1]?.classList.add('drag-over-bottom');
+    } else {
+      others.find(c => c.dataset.activityId === beforeId)?.classList.add('drag-over-top');
+    }
+  }
+
+  function endDrag(commit) {
+    const { activityId, beforeId, started, card } = state.drag;
+    if (!activityId) return;
+
+    clearDropMarkers();
+    card?.classList.remove('dragging');
+    document.body.classList.remove('is-dragging-activity');
+
+    state.drag = emptyDragState();
+    if (commit && started) moveActivityTo(activityId, beforeId);
+  }
+
+  function emptyDragState() {
+    return { activityId: null, beforeId: null, started: false, card: null, pointerY: 0 };
+  }
+
+  function onGripPointerDown(event) {
+    // Só o botão principal; o clique direito não deve iniciar arraste.
+    if (event.button !== undefined && event.button !== 0) return;
+
+    const grip = event.target.closest('[data-drag-grip]');
+    if (!grip || !state.selectedEventId) return;
+
+    const card = grip.closest('.timeline-activity-card');
+    if (!card) return;
+
+    // Impede a rolagem da página enquanto o dedo arrasta o card.
+    event.preventDefault();
+
+    state.drag = {
+      activityId: card.dataset.activityId,
+      beforeId: null,
+      started: false,
+      card,
+      pointerY: event.clientY
+    };
+
+    const startY = event.clientY;
+
+    const onMove = (moveEvent) => {
+      // Um toque no punho sem deslocar é um clique, não um arraste.
+      if (!state.drag.started && Math.abs(moveEvent.clientY - startY) < DRAG_THRESHOLD_PX) return;
+
+      if (!state.drag.started) {
+        state.drag.started = true;
+        state.drag.card?.classList.add('dragging');
+        document.body.classList.add('is-dragging-activity');
+      }
+
+      state.drag.pointerY = moveEvent.clientY;
+      state.drag.beforeId = dropTargetBeforeId(moveEvent.clientY);
+      paintDropTarget(state.drag.beforeId);
+    };
+
+    const finish = (commit) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      endDrag(commit);
+    };
+
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+  }
+
+  // ==========================================================================
+  // MODELOS PADRÃO DE ROTEIRO
+  // ==========================================================================
+  // Um modelo é um roteiro sem evento, guardado pelo usuário e reaproveitado.
+  // As atividades vivem em ceremonial_template_activities e são copiadas para
+  // o evento pela função copy_ceremonial_template, que faz tudo em uma
+  // transação no banco.
+
+  function setTemplatesFeedback(message, isError = false) {
+    const el = document.getElementById('ceremonial-templates-feedback');
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = isError ? '#a0483d' : '';
+  }
+
+  async function loadTemplates() {
     const sb = getSupabase();
     if (!sb) return;
 
-    const list = [...state.activities];
-    const index = list.findIndex(a => a.id === actId);
-    if (index === -1) return;
-
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= list.length) return;
-
-    // Troca as posições
-    const currentAct = list[index];
-    const targetAct = list[targetIndex];
-
-    const currentPos = currentAct.position || index + 1;
-    const targetPos = targetAct.position || targetIndex + 1;
-
     try {
-      // Atualiza no banco
-      await sb.from('ceremonial_activities').update({ position: targetPos }).eq('id', currentAct.id);
-      await sb.from('ceremonial_activities').update({ position: currentPos }).eq('id', targetAct.id);
+      const [templatesResult, activitiesResult] = await Promise.all([
+        sb.from('ceremonial_templates').select('id, name, description, created_at').order('name'),
+        sb.from('ceremonial_template_activities').select('id, template_id, position, title, description, responsible, scheduled_time').order('position')
+      ]);
 
-      await loadSelectedEventDetails(state.selectedEventId);
+      if (templatesResult.error) throw templatesResult.error;
+
+      state.templates = templatesResult.data || [];
+      state.templateActivities = activitiesResult.data || [];
     } catch (err) {
-      console.error('Erro ao reordenar:', err);
+      console.error('Erro ao carregar modelos padrão:', err);
+      setTemplatesFeedback('Não foi possível carregar os modelos padrão.', true);
     }
+  }
+
+  function selectedTemplate() {
+    return state.templates.find(t => t.id === state.editingTemplateId) || null;
+  }
+
+  function templateActivities(templateId) {
+    return state.templateActivities
+      .filter(item => item.template_id === templateId)
+      .sort((a, b) => a.position - b.position);
+  }
+
+  function openTemplatesModal() {
+    const panel = document.getElementById('ceremonial-templates-modal');
+    if (!panel) return;
+
+    setTemplatesFeedback('');
+    if (!state.editingTemplateId && state.templates.length) {
+      state.editingTemplateId = state.templates[0].id;
+    }
+
+    panel.hidden = false;
+    loadTemplates().then(renderTemplatesModal);
+    refreshIcons();
+  }
+
+  function closeTemplatesModal() {
+    const panel = document.getElementById('ceremonial-templates-modal');
+    if (panel) panel.hidden = true;
+  }
+
+  function renderTemplatesModal() {
+    const list = document.getElementById('templates-list');
+    const detail = document.getElementById('templates-detail');
+    if (!list || !detail) return;
+
+    if (!state.templates.length) {
+      list.innerHTML = '<p class="templates-list-empty">Nenhum modelo ainda. Crie o primeiro ao lado.</p>';
+      detail.innerHTML = '<div class="templates-empty-detail">Crie um modelo padrão com os momentos que você sempre repete nos eventos.</div>';
+      refreshIcons();
+      return;
+    }
+
+    list.innerHTML = state.templates.map(template => {
+      const count = templateActivities(template.id).length;
+      return `
+        <button class="templates-list-item${template.id === state.editingTemplateId ? ' active' : ''}" type="button" data-select-template="${template.id}">
+          <span>${sanitizeHtml(template.name)}<small>${count} ${count === 1 ? 'momento' : 'momentos'}</small></span>
+          <i data-lucide="chevron-right"></i>
+        </button>
+      `;
+    }).join('');
+
+    renderTemplateDetail();
+    refreshIcons();
+  }
+
+  function renderTemplateDetail() {
+    const detail = document.getElementById('templates-detail');
+    if (!detail) return;
+
+    const template = selectedTemplate();
+    if (!template) {
+      detail.innerHTML = '<div class="templates-empty-detail">Escolha um modelo à esquerda ou crie um novo.</div>';
+      return;
+    }
+
+    const activities = templateActivities(template.id);
+
+    detail.innerHTML = `
+      <div class="templates-detail-head">
+        <h5>${sanitizeHtml(template.name)}</h5>
+        <div class="activity-mini-actions">
+          <button class="client-action" type="button" data-rename-template="${template.id}" title="Renomear modelo"><i data-lucide="pencil"></i></button>
+          <button class="client-action" type="button" data-delete-template="${template.id}" title="Excluir modelo"><i data-lucide="trash-2"></i></button>
+        </div>
+      </div>
+
+      <form id="template-activity-form" class="templates-create-form" style="flex-wrap: wrap;">
+        <input id="template-act-time" type="time" style="flex: 0 0 96px;" />
+        <input id="template-act-title" type="text" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required style="flex: 1 1 130px;" />
+        <input id="template-act-resp" type="text" placeholder="Responsável" style="flex: 1 1 100px;" />
+        <button class="inline-create-button" type="submit"><i data-lucide="plus"></i><span>Adicionar</span></button>
+      </form>
+
+      <div class="templates-activity-list" style="margin-top: 9px;">
+        ${activities.length === 0
+          ? '<p class="templates-list-empty">Este modelo ainda não tem momentos. Use o campo acima para começar.</p>'
+          : activities.map((item, index) => `
+              <div class="templates-activity-row" data-template-act-id="${item.id}">
+                <button class="templates-act-grip" type="button" data-template-drag-grip="${item.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
+                  <i data-lucide="grip-vertical"></i>
+                </button>
+                <span class="templates-activity-index">${index + 1}</span>
+                <div class="templates-activity-body">
+                  <strong>${sanitizeHtml(item.title)}</strong>
+                  <span>${item.scheduled_time ? sanitizeHtml(item.scheduled_time.slice(0, 5)) + ' · ' : ''}${item.responsible ? sanitizeHtml(item.responsible) : ''}</span>
+                </div>
+                <button class="order-btn templates-act-delete" type="button" data-template-act-delete="${item.id}" title="Remover do modelo"><i data-lucide="trash-2"></i></button>
+              </div>
+            `).join('')}
+      </div>
+
+      ${state.selectedEventId ? `
+        <div class="templates-apply-box">
+          <div>
+            <label>
+              <input id="template-replace" type="checkbox" />
+              <span>Substituir o roteiro atual em vez de anexar</span>
+            </label>
+            <p class="field-hint" style="margin-top: 4px;">O evento <strong>${sanitizeHtml(state.selectedEvent?.name || '')}</strong> tem ${state.activities.length} ${state.activities.length === 1 ? 'momento' : 'momentos'}.</p>
+          </div>
+          <button class="add-client-button" type="button" data-apply-template="${template.id}">
+            <i data-lucide="copy-check"></i><span>Copiar para o evento</span>
+          </button>
+        </div>
+      ` : '<p class="field-hint" style="margin-top: 10px;">Selecione um evento acima para poder copiar o modelo.</p>'}
+    `;
+
+    const form = document.getElementById('template-activity-form');
+    if (form) form.addEventListener('submit', handleTemplateActivitySubmit);
+  }
+
+  async function createTemplate(event) {
+    event.preventDefault();
+    const sb = getSupabase();
+    const input = document.getElementById('template-new-name');
+    if (!sb || !input) return;
+
+    const name = input.value.trim();
+    if (!name) return;
+
+    setTemplatesFeedback('');
+    const { data, error } = await sb
+      .from('ceremonial_templates')
+      .insert({ name })
+      .select('id, name, description, created_at')
+      .single();
+
+    if (error) {
+      setTemplatesFeedback('Não foi possível criar o modelo: ' + error.message, true);
+      return;
+    }
+
+    input.value = '';
+    state.editingTemplateId = data.id;
+    state.templates.push(data);
+    renderTemplatesModal();
+    notify(`Modelo "${data.name}" criado.`);
+  }
+
+  async function renameTemplate(templateId) {
+    const sb = getSupabase();
+    const template = state.templates.find(t => t.id === templateId);
+    if (!sb || !template) return;
+
+    const name = window.prompt('Novo nome do modelo:', template.name);
+    if (!name || !name.trim()) return;
+
+    const { error } = await sb.from('ceremonial_templates').update({ name: name.trim() }).eq('id', templateId);
+    if (error) {
+      setTemplatesFeedback('Não foi possível renomear: ' + error.message, true);
+      return;
+    }
+
+    template.name = name.trim();
+    renderTemplatesModal();
+  }
+
+  async function deleteTemplate(templateId) {
+    const sb = getSupabase();
+    const template = state.templates.find(t => t.id === templateId);
+    if (!sb || !template) return;
+
+    const count = templateActivities(templateId).length;
+    if (!confirm(`Excluir o modelo "${template.name}"${count ? ` e seus ${count} momentos` : ''}?`)) return;
+
+    // As atividades do modelo caem por cascade, então uma chamada basta.
+    const { error } = await sb.from('ceremonial_templates').delete().eq('id', templateId);
+    if (error) {
+      setTemplatesFeedback('Não foi possível excluir: ' + error.message, true);
+      return;
+    }
+
+    state.templates = state.templates.filter(t => t.id !== templateId);
+    state.templateActivities = state.templateActivities.filter(item => item.template_id !== templateId);
+    if (state.editingTemplateId === templateId) {
+      state.editingTemplateId = state.templates.length ? state.templates[0].id : null;
+    }
+    renderTemplatesModal();
+    notify('Modelo excluído.');
+  }
+
+  async function handleTemplateActivitySubmit(event) {
+    event.preventDefault();
+    const sb = getSupabase();
+    const template = selectedTemplate();
+    if (!sb || !template) return;
+
+    const title = document.getElementById('template-act-title').value.trim();
+    if (!title) return;
+
+    const time = document.getElementById('template-act-time').value || null;
+    const responsible = document.getElementById('template-act-resp').value.trim() || null;
+
+    // max(position) + 1 e não length + 1: excluir um momento do meio deixa
+    // buraco na sequência e o length colidiria com a posição ocupada.
+    const current = templateActivities(template.id);
+    const nextPosition = current.reduce((max, item) => Math.max(max, item.position || 0), 0) + 1;
+
+    const { data, error } = await sb
+      .from('ceremonial_template_activities')
+      .insert({ template_id: template.id, position: nextPosition, title, scheduled_time: time, responsible })
+      .select('id, template_id, position, title, description, responsible, scheduled_time')
+      .single();
+
+    if (error) {
+      setTemplatesFeedback('Não foi possível adicionar ao modelo: ' + error.message, true);
+      return;
+    }
+
+    state.templateActivities.push(data);
+    renderTemplatesModal();
+    document.getElementById('template-act-title').value = '';
+    document.getElementById('template-act-resp').value = '';
+  }
+
+  async function removeTemplateActivity(activityId) {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    const { error } = await sb.from('ceremonial_template_activities').delete().eq('id', activityId);
+    if (error) {
+      setTemplatesFeedback('Não foi possível remover do modelo: ' + error.message, true);
+      return;
+    }
+
+    state.templateActivities = state.templateActivities.filter(item => item.id !== activityId);
+    renderTemplatesModal();
+  }
+
+  // Reordena gravando a ordem inteira no banco, o mesmo caminho do roteiro.
+  // Um movimento de drag pode cruzar meia lista, então a troca de vizinhos não
+  // bastaria: `unique (template_id, position)` não deixa gravar a ordem final
+  // em UPDATEs avulsos, porque o primeiro esbarraria na posição que o vizinho
+  // ainda ocupa. A RPC faz as duas fases dentro de uma transação.
+  async function persistTemplateActivityOrder(orderedIds) {
+    const sb = getSupabase();
+    const template = selectedTemplate();
+    if (!sb || !template) return;
+
+    setTemplatesFeedback('');
+
+    const { error } = await sb.rpc('reorder_ceremonial_template_activities', {
+      target_template_id: template.id,
+      ordered_ids: orderedIds
+    });
+
+    if (error) {
+      console.error('Erro ao reordenar os momentos do modelo:', error);
+      setTemplatesFeedback('Não foi possível reordenar: ' + error.message, true);
+    }
+
+    await loadTemplates();
+    renderTemplatesModal();
+  }
+
+  // Reordena movendo activityId para a posição de beforeId na ordem atual.
+  // beforeId null significa "colocar no fim".
+  async function moveTemplateActivityTo(activityId, beforeId) {
+    const template = selectedTemplate();
+    if (!template) return;
+
+    const current = templateActivities(template.id);
+    const list = [...current];
+    const from = list.findIndex(item => item.id === activityId);
+    if (from === -1) return;
+
+    const [moved] = list.splice(from, 1);
+    let to = beforeId ? list.findIndex(item => item.id === beforeId) : list.length;
+    if (to === -1) to = list.length;
+    list.splice(to, 0, moved);
+
+    if (list.every((item, i) => item.id === current[i].id)) return; // nada mudou
+    await persistTemplateActivityOrder(list.map(item => item.id));
+  }
+
+  // ==========================================================================
+  // DRAG AND DROP DOS MOMENTOS DO MODELO PADRÃO (Pointer Events)
+  // ==========================================================================
+  // Mesmo desenho do roteiro, em um state separado porque a lista alvo e o
+  // commit são outros: aqui o destino é reorder_ceremonial_template_activities.
+
+  function emptyTemplateDragState() {
+    return { activityId: null, beforeId: null, started: false, row: null, pointerY: 0 };
+  }
+
+  function templateActivityRows() {
+    const list = document.querySelector('#ceremonial-templates-modal .templates-activity-list');
+    return list ? Array.from(list.querySelectorAll('.templates-activity-row')) : [];
+  }
+
+  function templateDropTargetBeforeId(pointerY) {
+    const rows = templateActivityRows().filter(row => row.dataset.templateActId !== state.templateDrag.activityId);
+    for (const row of rows) {
+      const box = row.getBoundingClientRect();
+      if (pointerY < box.top + box.height / 2) return row.dataset.templateActId;
+    }
+    return null;
+  }
+
+  function clearTemplateDropMarkers() {
+    templateActivityRows().forEach(row => row.classList.remove('drag-over-top', 'drag-over-bottom'));
+  }
+
+  function paintTemplateDropTarget(beforeId) {
+    clearTemplateDropMarkers();
+    const others = templateActivityRows().filter(row => row.dataset.templateActId !== state.templateDrag.activityId);
+    if (!beforeId) {
+      others[others.length - 1]?.classList.add('drag-over-bottom');
+    } else {
+      others.find(row => row.dataset.templateActId === beforeId)?.classList.add('drag-over-top');
+    }
+  }
+
+  function endTemplateDrag(commit) {
+    const { activityId, beforeId, started, row } = state.templateDrag;
+    if (!activityId) return;
+
+    clearTemplateDropMarkers();
+    row?.classList.remove('dragging');
+    document.body.classList.remove('is-dragging-activity');
+
+    state.templateDrag = emptyTemplateDragState();
+    if (commit && started) moveTemplateActivityTo(activityId, beforeId);
+  }
+
+  function onTemplateGripPointerDown(event) {
+    // Só o botão principal; o clique direito não deve iniciar arraste.
+    if (event.button !== undefined && event.button !== 0) return;
+
+    const grip = event.target.closest('[data-template-drag-grip]');
+    if (!grip) return;
+
+    const row = grip.closest('.templates-activity-row');
+    if (!row) return;
+
+    // Impede a rolagem da página enquanto o dedo arrasta a linha.
+    event.preventDefault();
+
+    state.templateDrag = {
+      activityId: row.dataset.templateActId,
+      beforeId: null,
+      started: false,
+      row,
+      pointerY: event.clientY
+    };
+
+    const startY = event.clientY;
+
+    const onMove = (moveEvent) => {
+      // Um toque no punho sem deslocar é um clique, não um arraste.
+      if (!state.templateDrag.started && Math.abs(moveEvent.clientY - startY) < DRAG_THRESHOLD_PX) return;
+
+      if (!state.templateDrag.started) {
+        state.templateDrag.started = true;
+        state.templateDrag.row?.classList.add('dragging');
+        document.body.classList.add('is-dragging-activity');
+      }
+
+      state.templateDrag.pointerY = moveEvent.clientY;
+      state.templateDrag.beforeId = templateDropTargetBeforeId(moveEvent.clientY);
+      paintTemplateDropTarget(state.templateDrag.beforeId);
+    };
+
+    const finish = (commit) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      endTemplateDrag(commit);
+    };
+
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+  }
+
+  async function applyTemplateToEvent(templateId) {
+    const sb = getSupabase();
+    const template = state.templates.find(t => t.id === templateId);
+    if (!sb || !template || !state.selectedEventId) return;
+
+    const replace = document.getElementById('template-replace')?.checked === true;
+    const count = templateActivities(templateId).length;
+    if (!count) {
+      setTemplatesFeedback('Este modelo ainda não tem momentos para copiar.', true);
+      return;
+    }
+
+    if (replace && state.activities.length && !confirm(`Isso apaga os ${state.activities.length} momentos do roteiro atual e coloca os ${count} do modelo. Continuar?`)) {
+      return;
+    }
+
+    setTemplatesFeedback('');
+    const { data, error } = await sb.rpc('copy_ceremonial_template', {
+      source_template_id: templateId,
+      target_event_id: state.selectedEventId,
+      replace_activity: replace
+    });
+
+    if (error) {
+      setTemplatesFeedback('Não foi possível copiar o modelo: ' + error.message, true);
+      return;
+    }
+
+    const copied = Array.isArray(data) ? data[0] : data;
+    closeTemplatesModal();
+    await loadSelectedEventDetails(state.selectedEventId);
+    notify(`${copied || count} momentos do modelo "${template.name}" copiados para o roteiro.`, 4000);
   }
 
   async function deleteActivity(actId) {
@@ -1257,6 +1991,11 @@
     try {
       const { error } = await sb.from('ceremonial_activities').delete().eq('id', actId);
       if (error) throw error;
+
+      // Renumera para 1..N. Sem isso sobraria um buraco na sequência e o
+      // próximo momento criado colidiria com a posição ocupada.
+      await sb.rpc('pack_ceremonial_activities', { target_event_id: state.selectedEventId });
+
       notify('Momento excluído do cronograma.');
       await loadSelectedEventDetails(state.selectedEventId);
     } catch (err) {
@@ -1273,7 +2012,7 @@
     if (!sb) return;
 
     try {
-      const nextPos = state.activities.length + 1;
+      const nextPos = nextActivityPosition();
 
       // Calcula horário estimado se houver horário no evento
       let scheduledTime = null;
@@ -1600,7 +2339,7 @@
         if (error) throw error;
         notify('Momento atualizado com sucesso!');
       } else {
-        payload.position = state.activities.length + 1;
+        payload.position = nextActivityPosition();
         const { error } = await sb.from('ceremonial_activities').insert(payload);
         if (error) throw error;
         notify('Momento adicionado ao cronograma!');
@@ -1629,7 +2368,7 @@
     try {
       const { error } = await sb.from('ceremonial_activities').insert({
         event_id: state.selectedEventId,
-        position: state.activities.length + 1,
+        position: nextActivityPosition(),
         title,
         scheduled_time: time,
         responsible: resp,
@@ -1798,11 +2537,18 @@
       state.currentTab = defaultTab;
     }
 
-    loadEventsList().then(() => {
-      if (targetEventId) {
-        selectEvent(targetEventId);
-      }
-    });
+    const filterToggle = document.getElementById('ceremonial-only-toggle');
+    if (filterToggle) filterToggle.checked = state.onlyCeremonialEvents;
+
+    // Os serviços marcados decidem o filtro, então precisam ser lidos antes
+    // de a lista de eventos ser desenhada.
+    loadCeremonialServiceIds()
+      .then(() => loadEventsList())
+      .then(() => {
+        if (targetEventId) {
+          selectEvent(targetEventId);
+        }
+      });
 
     refreshIcons();
   }
@@ -1877,22 +2623,10 @@
         return;
       }
 
-      // Ações do Cronograma (Checkbox, Up, Down, Edit, Delete, Preset)
+      // Ações do Cronograma (Checkbox, Edit, Delete, Preset)
       if (target.hasAttribute('data-toggle-activity-check')) {
         e.preventDefault();
         toggleActivityCheck(target.dataset.toggleActivityCheck);
-        return;
-      }
-
-      if (target.hasAttribute('data-move-activity-up')) {
-        e.preventDefault();
-        moveActivity(target.dataset.moveActivityUp, 'up');
-        return;
-      }
-
-      if (target.hasAttribute('data-move-activity-down')) {
-        e.preventDefault();
-        moveActivity(target.dataset.moveActivityDown, 'down');
         return;
       }
 
@@ -1912,6 +2646,45 @@
       if (target.hasAttribute('data-delete-activity')) {
         e.preventDefault();
         deleteActivity(target.dataset.deleteActivity);
+        return;
+      }
+
+      // Ações dos modelos padrão
+      if (target.closest('[data-open-templates-modal]')) {
+        e.preventDefault();
+        openTemplatesModal();
+        return;
+      }
+
+      if (target.hasAttribute('data-select-template')) {
+        e.preventDefault();
+        state.editingTemplateId = target.dataset.selectTemplate;
+        setTemplatesFeedback('');
+        renderTemplatesModal();
+        return;
+      }
+
+      if (target.hasAttribute('data-rename-template')) {
+        e.preventDefault();
+        renameTemplate(target.dataset.renameTemplate);
+        return;
+      }
+
+      if (target.hasAttribute('data-delete-template')) {
+        e.preventDefault();
+        deleteTemplate(target.dataset.deleteTemplate);
+        return;
+      }
+
+      if (target.hasAttribute('data-template-act-delete')) {
+        e.preventDefault();
+        removeTemplateActivity(target.dataset.templateActDelete);
+        return;
+      }
+
+      if (target.hasAttribute('data-apply-template')) {
+        e.preventDefault();
+        applyTemplateToEvent(target.dataset.applyTemplate);
         return;
       }
 
@@ -2032,6 +2805,22 @@
       });
     }
 
+    // 2b. Filtro "somente eventos com serviço de Cerimonial"
+    const onlyToggle = document.getElementById('ceremonial-only-toggle');
+    if (onlyToggle) {
+      onlyToggle.addEventListener('change', e => {
+        toggleCeremonialFilter(e.target.checked);
+      });
+    }
+
+    // 2c. Arraste do roteiro. Delegado porque os cards são redesenhados a
+    // cada recarga e um listener direto seria perdido.
+    document.addEventListener('pointerdown', onGripPointerDown);
+
+    // 2d. Arraste dos momentos do modelo padrão, mesma técnica e pelo mesmo
+    // motivo: as linhas são redesenhadas a cada render do modal.
+    document.addEventListener('pointerdown', onTemplateGripPointerDown);
+
     // 3. Mudança rápida de status da atividade no select inline
     document.addEventListener('change', e => {
       if (e.target.hasAttribute('data-change-activity-status')) {
@@ -2056,6 +2845,13 @@
 
     const tableForm = document.getElementById('ceremonial-table-form');
     if (tableForm) tableForm.addEventListener('submit', handleTableSubmit);
+
+    const templateCreateForm = document.getElementById('template-create-form');
+    if (templateCreateForm) templateCreateForm.addEventListener('submit', createTemplate);
+
+    document.querySelectorAll('[data-close-templates-modal]').forEach(button => {
+      button.addEventListener('click', closeTemplatesModal);
+    });
   }
 
   // ==========================================================================
@@ -2071,7 +2867,24 @@
     reloadCeremonial: () => {
       if (state.selectedEventId) loadSelectedEventDetails(state.selectedEventId);
     },
-    reloadEventsList: loadEventsList
+    reloadEventsList: loadEventsList,
+    // Realtime: os modelos padrão são compartilhados pela equipe, então uma
+    // alteração feita por outro usuário precisa chegar aqui.
+    reloadTemplates: async () => {
+      await loadTemplates();
+      const modal = document.getElementById('ceremonial-templates-modal');
+      if (modal && !modal.hidden) renderTemplatesModal();
+    },
+    // Realtime: marcar um serviço como "de cerimonial" muda o filtro do
+    // seletor de evento, então a lista precisa ser redesenhada.
+    reloadCeremonialFilter: async () => {
+      await loadCeremonialServiceIds();
+      state.events.forEach(event => {
+        const items = event.quotes?.quote_items || [];
+        event.hasCeremonial = items.some(item => state.ceremonialServiceIds.has(item.service_id));
+      });
+      populateEventSelector();
+    }
   };
 
   if (document.readyState === 'loading') {

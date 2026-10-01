@@ -165,7 +165,10 @@
             <p class="eyebrow">CONTROLE</p>
             <h2 id="inventory-title">Estoque</h2>
           </div>
-          <button class="icon-button" type="button" data-close-inventory aria-label="Fechar estoque"><i data-lucide="x"></i></button>
+          <div class="panel-header-actions">
+            <button class="icon-button" type="button" data-open-inventory-categories aria-label="Gerenciar categorias" title="Categorias"><i data-lucide="tags"></i></button>
+            <button class="icon-button" type="button" data-close-inventory aria-label="Fechar estoque"><i data-lucide="x"></i></button>
+          </div>
         </header>
         <div class="client-toolbar">
           <label class="search-field" for="inventory-search">
@@ -446,6 +449,8 @@
           <button class="inline-create-button" type="button" data-new-menu-from-service><i data-lucide="plus"></i><span>Criar cardápio para este serviço</span></button>
         </fieldset>
         <label class="service-active-field" for="service-active"><input id="service-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
+        <label class="service-active-field" for="service-is-ceremonial"><input id="service-is-ceremonial" name="is_ceremonial" type="checkbox" /> Serviço de Cerimonial</label>
+        <p class="field-hint" style="margin-top: -6px;">Marque aqui os serviços que o módulo de Cerimonial atende. Só os eventos com pelo menos um destes serviços aparecem no seletor do cerimonial.</p>
         <p class="client-form-feedback" id="service-form-feedback" role="alert"></p>
         <button class="login-button" type="submit"><span>Salvar serviço</span><i data-lucide="check"></i></button>
       </form>
@@ -617,6 +622,11 @@
             <span>Evento ativo:</span>
           </label>
           <select id="ceremonial-event-select" class="movement-select ceremonial-select" aria-label="Selecionar Evento"></select>
+          <label class="ceremonial-filter-toggle" for="ceremonial-only-toggle">
+            <input id="ceremonial-only-toggle" type="checkbox" checked />
+            <span>Somente eventos com serviço de Cerimonial</span>
+          </label>
+          <p class="ceremonial-filter-hint" id="ceremonial-filter-hint" hidden></p>
         </div>
 
         <!-- Resumo Hero do Evento -->
@@ -697,6 +707,36 @@
         <p class="client-form-feedback" id="ceremonial-activity-feedback" role="alert"></p>
         <button class="login-button" type="submit"><span>Salvar momento no roteiro</span><i data-lucide="check"></i></button>
       </form>
+    </section>
+
+    <!-- Modal: Modelos padrão de roteiro -->
+    <section class="client-form-panel" id="ceremonial-templates-modal" hidden aria-labelledby="ceremonial-templates-modal-title">
+      <div class="client-form-card templates-modal-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ROTEIRO</p>
+            <h2 id="ceremonial-templates-modal-title">Modelos padrão</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-templates-modal aria-label="Fechar modelos padrão"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">Cadastre um roteiro uma vez e copie para qualquer evento novo, sem redigitar cada momento.</p>
+
+        <div class="templates-columns">
+          <div class="templates-list-col">
+            <label class="templates-subtitle" for="template-new-name">Novo modelo</label>
+            <form id="template-create-form" class="templates-create-form">
+              <input id="template-new-name" type="text" placeholder="Ex.: Modelo Padrão 1" required />
+              <button class="inline-create-button" type="submit"><i data-lucide="plus"></i><span>Criar</span></button>
+            </form>
+            <div class="templates-list" id="templates-list"></div>
+          </div>
+
+          <div class="templates-detail-col">
+            <p class="client-form-feedback" id="ceremonial-templates-feedback" role="alert"></p>
+            <div id="templates-detail"></div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- Modal: Adicionar/Editar Convidado (Recepção) -->

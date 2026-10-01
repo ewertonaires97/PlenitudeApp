@@ -62,6 +62,7 @@ BEGIN
     'profiles',
     'clients',
     'services',
+    'service_materials',
     -- Catálogo de menus
     'menus',
     'menu_services',

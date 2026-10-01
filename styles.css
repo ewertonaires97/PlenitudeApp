@@ -1,5 +1,5 @@
 .whatsapp-action { color: #4d9361; }.whatsapp-action:hover { color: #287b42; }
-.service-panel { position: fixed; z-index: 8; inset: 0; display: flex; justify-content: center; padding: 22px; overflow-y: auto; background: rgba(36, 56, 46, .55); backdrop-filter: blur(4px); }.service-panel[hidden] { display: none; }.service-panel-card { width: min(100%, 480px); min-height: calc(100vh - 44px); margin: auto; padding: 25px 21px 92px; background: var(--paper); }.service-row { align-items: flex-start; }.service-row .client-details { padding-top: 1px; }.service-description { display: block !important; white-space: normal !important; overflow: visible !important; }.service-price { display: block; margin-top: 6px; color: var(--moss); font-size: 11px; font-weight: 700; }.service-status { display: inline-block; width: fit-content; margin-top: 5px; padding: 3px 6px; border-radius: 3px; color: #4d7b58; background: #e1eee1; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }.service-status.inactive { color: #8b7450; background: #f1e6d1; }.service-active-field input { accent-color: var(--moss); }
+.service-panel { position: fixed; z-index: 8; inset: 0; display: flex; justify-content: center; padding: 22px; overflow-y: auto; background: rgba(36, 56, 46, .55); backdrop-filter: blur(4px); }.service-panel[hidden] { display: none; }.service-panel-card { width: min(100%, 480px); min-height: calc(100vh - 44px); margin: auto; padding: 25px 21px 92px; background: var(--paper); }.service-row { align-items: flex-start; }.service-row .client-details { padding-top: 1px; }.service-description { display: block !important; white-space: normal !important; overflow: visible !important; }.service-price { display: block; margin-top: 6px; color: var(--moss); font-size: 11px; font-weight: 700; }.service-status { display: inline-block; width: fit-content; margin-top: 5px; padding: 3px 6px; border-radius: 3px; color: #4d7b58; background: #e1eee1; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }.service-status.inactive { color: #8b7450; background: #f1e6d1; }.service-status.ceremonial { margin-top: 5px; color: #fff; background: var(--moss); }.service-active-field input { accent-color: var(--moss); }
 :root {
   --moss: #31483b;
   --moss-deep: #24382e;
@@ -258,6 +258,11 @@ h1 span { color: var(--gold); }
 .ceremonial-selector-label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .ceremonial-selector-label svg { width: 14px; height: 14px; color: var(--gold); }
 .ceremonial-select { width: 100%; min-height: 40px; border-color: var(--line); font-size: 11.5px; font-weight: 600; color: var(--ink); background: var(--paper); }
+.ceremonial-filter-toggle { display: flex; align-items: center; gap: 7px; margin-top: 2px; color: var(--muted); font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.ceremonial-filter-toggle input { width: 14px; height: 14px; accent-color: var(--moss); cursor: pointer; }
+.ceremonial-filter-hint { display: flex; align-items: flex-start; gap: 6px; margin: 2px 0 0; padding: 7px 9px; border-radius: 4px; background: #fdf9f1; color: #7a6236; font-size: 10px; line-height: 1.45; }
+.ceremonial-filter-hint svg { flex: 0 0 13px; width: 13px; height: 13px; margin-top: 1px; color: var(--gold); }
+.ceremonial-filter-hint strong { color: #5d4a25; }
 
 /* Hero do Cerimonial */
 .ceremonial-hero-card { position: relative; padding: 16px; margin-bottom: 16px; border-radius: 6px; color: var(--paper); background: linear-gradient(135deg, var(--moss) 0%, #1e2e26 100%); overflow: hidden; }
@@ -323,19 +328,69 @@ h1 span { color: var(--gold); }
 .timeline-activity-card.in_progress { border-left: 3px solid var(--gold); background: #fdfbf7; }
 .timeline-activity-card.skipped { opacity: .6; background: #f8f8f8; }
 
-.activity-drag-order { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; flex: 0 0 24px; min-width: 24px; max-width: 24px; }
-.activity-pos-badge { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: var(--moss-deep); background: var(--sage-light); font-size: 10px; font-weight: 700; }
-.order-buttons { display: flex; flex-direction: column; gap: 1px; }
-.order-btn { display: grid; place-items: center; width: 16px; height: 12px; padding: 0; border: 0; color: var(--muted); background: transparent; cursor: pointer; }
-.order-btn svg { width: 10px; height: 10px; }
+/* A coluna da esquerda é a que dita a altura do card. Antes de o drag and drop
+   existir, ela empilhava alça, número e as duas setas e deixava o card com
+   124px no desktop. Hoje são só a alça e o número lado a lado. */
+.activity-drag-order { display: grid; grid-template-columns: auto auto; align-content: center; justify-content: center; gap: 2px; flex: 0 0 auto; }
+.activity-grip { grid-area: 1 / 1; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 3px; color: var(--muted); background: transparent; cursor: grab; touch-action: none; }
+.activity-grip:hover { color: var(--moss); background: var(--cream); }
+.activity-grip:active { cursor: grabbing; }
+.activity-grip svg { width: 15px; height: 15px; }
+.activity-pos-badge { grid-area: 1 / 2; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--moss-deep); background: var(--sage-light); font-size: 10px; font-weight: 700; }
+.order-btn { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 3px; color: var(--muted); background: transparent; cursor: pointer; }
+.order-btn svg { width: 13px; height: 13px; }
 .order-btn:hover:not(:disabled) { color: var(--moss); }
 .order-btn:disabled { opacity: .2; cursor: default; }
 
+/* Arraste do roteiro. O punho é a alça; o card segue o dedo via transform. */
+body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.timeline-activity-card.dragging { opacity: .55; border-color: var(--gold); box-shadow: 0 8px 20px rgba(37, 49, 41, .16); }
+.timeline-activity-card.drag-over-top { box-shadow: inset 0 3px 0 0 var(--gold); }
+.timeline-activity-card.drag-over-bottom { box-shadow: inset 0 -3px 0 0 var(--gold); }
+
+/* Modelos padrão de roteiro */
+.templates-modal-card { width: min(100%, 760px); }
+.templates-columns { display: grid; grid-template-columns: 240px 1fr; gap: 14px; margin-top: 12px; }
+.templates-list-col, .templates-detail-col { min-width: 0; }
+.templates-subtitle { display: block; margin-bottom: 6px; color: var(--muted); font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
+.templates-create-form { display: flex; gap: 5px; margin-bottom: 9px; }
+.templates-create-form input { flex: 1 1 auto; min-width: 0; }
+.templates-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+.templates-list-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-height: 40px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font-size: 11px; font-weight: 600; text-align: left; cursor: pointer; }
+.templates-list-item:hover { border-color: var(--gold); }
+.templates-list-item.active { border-color: var(--moss); background: var(--sage-light); }
+.templates-list-item small { display: block; margin-top: 1px; color: var(--muted); font-size: 9.5px; font-weight: 500; }
+.templates-list-empty { padding: 14px 10px; border: 1px dashed var(--line); border-radius: 4px; color: var(--muted); font-size: 10px; text-align: center; }
+.templates-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.templates-detail-head h5 { margin: 0; font: 600 14px "Playfair Display", serif; color: var(--moss-deep); }
+.templates-activity-row { display: flex; align-items: flex-start; gap: 7px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.templates-activity-row + .templates-activity-row { margin-top: 4px; }
+/* Alça de arraste dos momentos do modelo. Tem a mesma pegada do círculo da
+   posição para os dois ficarem alinhados na primeira linha da linha. */
+.templates-act-grip { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; color: var(--muted); background: transparent; cursor: grab; touch-action: none; }
+.templates-act-grip:hover { color: var(--moss); background: var(--cream); }
+.templates-act-grip:active { cursor: grabbing; }
+.templates-act-grip svg { width: 14px; height: 14px; }
+.templates-activity-row.dragging { opacity: .55; border-color: var(--gold); box-shadow: 0 8px 20px rgba(37, 49, 41, .16); }
+.templates-activity-row.drag-over-top { box-shadow: inset 0 3px 0 0 var(--gold); }
+.templates-activity-row.drag-over-bottom { box-shadow: inset 0 -3px 0 0 var(--gold); }
+.templates-activity-index { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; color: var(--moss-deep); background: var(--sage-light); font-size: 9.5px; font-weight: 700; }
+.templates-activity-body { flex: 1 1 auto; min-width: 0; }
+.templates-activity-body strong { display: block; font-size: 11px; color: var(--ink); }
+.templates-activity-body span { display: block; margin-top: 2px; color: var(--muted); font-size: 9.5px; }
+.templates-apply-box { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: 11px; padding: 10px; border-radius: 5px; background: var(--cream); flex-wrap: wrap; }
+.templates-apply-box label { display: flex; align-items: center; gap: 6px; color: #7a5c2e; font-size: 10px; font-weight: 600; cursor: pointer; }
+.templates-apply-box label input { width: 13px; height: 13px; accent-color: #a0483d; }
+.templates-empty-detail { padding: 22px 12px; border: 1px dashed var(--line); border-radius: 4px; color: var(--muted); font-size: 10.5px; text-align: center; }
+.template-open-btn { display: inline-flex; align-items: center; gap: 5px; margin-right: 6px; color: var(--moss); font-size: 10px; font-weight: 700; }
+.template-open-btn svg { width: 13px; height: 13px; }
+@media (max-width: 720px) { .templates-columns { grid-template-columns: 1fr; } .templates-list { max-height: 160px; } }
+
 .activity-check-col { display: flex; align-items: center; justify-content: center; flex: 0 0 24px; min-width: 24px; max-width: 24px; }
-.activity-checkbox-btn { display: grid; place-items: center; width: 20px; height: 20px; border: 1.5px solid var(--sage); border-radius: 4px; background: #fff; color: white; cursor: pointer; transition: all .15s; }
+.activity-checkbox-btn { display: grid; place-items: center; width: 24px; height: 24px; border: 1.5px solid var(--sage); border-radius: 4px; background: #fff; color: white; cursor: pointer; transition: all .15s; }
 .activity-checkbox-btn:hover { border-color: var(--moss); }
 .activity-checkbox-btn.checked { background: var(--moss); border-color: var(--moss); }
-.activity-checkbox-btn svg { width: 12px; height: 12px; stroke-width: 3; }
+.activity-checkbox-btn svg { width: 13px; height: 13px; stroke-width: 3; }
 
 .activity-main-col { flex: 1; min-width: 0; max-width: 100%; }
 .activity-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; flex-wrap: wrap; }
@@ -355,8 +410,8 @@ h1 span { color: var(--gold); }
 
 .activity-actions-col { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 4px; flex: 0 0 auto; max-width: 100px; }
 .activity-mini-actions { display: flex; gap: 2px; }
-.activity-mini-actions .client-action { width: 22px; height: 22px; }
-.activity-mini-actions .client-action svg { width: 12px; height: 12px; }
+.activity-mini-actions .client-action { width: 24px; height: 24px; }
+.activity-mini-actions .client-action svg { width: 13px; height: 13px; }
 
 /* Recepção & Controle de Chegada */
 .arrival-stats-card { display: flex; align-items: center; justify-content: space-around; padding: 12px 14px; border: 1px solid var(--line); border-radius: 5px; background: #fff; text-align: center; }
@@ -528,14 +583,13 @@ h1 span { color: var(--gold); }
   .timeline-activity-card { max-width: 100%; box-sizing: border-box; flex-wrap: nowrap; padding: 9px 7px; gap: 7px; }
   .activity-drag-order { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; flex: 0 0 22px; min-width: 22px; max-width: 22px; }
   .activity-pos-badge { width: 17px; height: 17px; font-size: 10px; }
-  .order-buttons { gap: 0; }
   .order-btn { width: 13px; height: 10px; }
   .order-btn svg { width: 8px; height: 8px; }
   .activity-check-col { display: flex; align-items: center; justify-content: center; flex: 0 0 22px; min-width: 22px; max-width: 22px; }
   .activity-checkbox-btn { width: 18px; height: 18px; }
   .activity-checkbox-btn svg { width: 11px; height: 11px; }
 .activity-main-col { flex: 1; min-width: 0; max-width: 100%; }
-   .activity-title { font-size: 10.5px; }
+   .activity-title { font-size: 12px; }
    .activity-time-tag { font-size: 10px; padding: 1px 4px; white-space: nowrap; }
    .activity-time-tag svg { width: 8px; height: 8px; }
    .activity-description { font-size: 10px; margin: 3px 0 4px; }
@@ -731,6 +785,104 @@ h1 span { color: var(--gold); }
 .pd-notes-label { display: block; margin-bottom: 4px; font-size: 7.5pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
 .pd-notes-text { font-size: 9.5pt; color: var(--ink); white-space: pre-line; }
 .pd-foot { margin-top: 26px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; font-size: 8pt; color: var(--muted); }
+
+/* ========================================================================== */
+/* ALVOS DE TOQUE NO CERIMONIAL                                              */
+/* ========================================================================== */
+/*
+ * Alvos com 44px para dedo e para tela estreita. A regra dispara em duas
+ * situações porque nenhuma das duas cobre tudo sozinha:
+ *
+ *   pointer: coarse  cobre o celular em qualquer largura.
+ *   max-width: 560px cobre a tela estreita com mouse — janela pequena de
+ *               desktop, tablet com mouse conectado (que reporta pointer:
+ *               fine) e devtools em modo de dispositivo.
+ *
+ * Só usar largura pegaria desktop estreito e perderia um celular em paisagem
+ * larga. Só usar pointer pegaria o celular, mas deixaria o tablet com mouse
+ * com alvos de 10px.
+ *
+ * Os breakpoints por largura acima encolhem os botões para caber na linha (o
+ * de 480px chega a 13x10px nas setas). Esta regra vem depois no arquivo e
+ * desfaz esse encolhimento.
+ *
+ * Este bloco precisa continuar depois das media queries por largura.
+ */
+@media (pointer: coarse), (max-width: 560px) {
+  /* Duas linhas: concluir + título em cima, alça e setas de um lado e
+     editar/excluir do outro embaixo. Usa wrap em vez de grid de propósito —
+     com o cluster da alça atravessando duas colunas do grid ele estourava o
+     card em 320px, enquanto o wrap apenas empurra editar/excluir para uma
+     terceira linha, sem cortar nenhum alvo. */
+  /* gap de 9px em vez de 10px: a linha de controle fica a 2px de estourar
+     em 360px, e o arredondamento de sub-pixel já fazia o par editar/excluir
+     cair para uma terceira linha. O aperto é só em espaçamento — nenhum
+     alvo de toque encolhe. */
+  .timeline-activity-card { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 9px; padding: 12px 11px; }
+
+  /* O botão de concluir divide a linha com o título, e a alça de arraste fica
+     espremida entre os dois. */
+  .activity-check-col { order: 1; flex: 0 0 44px; min-width: 44px; max-width: 44px; }
+  .activity-main-col { order: 2; flex: 1 1 130px; }
+
+  /* O cluster da alça precisa de display: flex aqui. A regra base é um grid
+     2x2 compacto para não esticar a altura do card no desktop, e grid não
+     aceita flex-direction nem margin-bottom.
+     O breakpoint de 480px acima também fixa este container em flex: 0 0 22px;
+     sem zerar, a alça e o número ficam espremidos em 2px. */
+  .activity-drag-order { order: 3; display: flex; flex: 0 1 auto; flex-direction: row; align-items: center; gap: 4px; min-width: 0; max-width: none; margin-bottom: 0; }
+  .activity-actions-col { order: 4; flex: 0 0 auto; max-width: none; margin-left: auto; justify-content: flex-end; }
+
+  /* Nenhum alvo encolhe: abaixo de 44px eles deixam de ser tocáveis. */
+  .activity-grip, .order-btn, .activity-pos-badge, .activity-checkbox-btn,
+  .activity-mini-actions .client-action { flex-shrink: 0; }
+  .order-btn { width: 44px; height: 44px; touch-action: manipulation; }
+  .order-btn svg { width: 20px; height: 20px; }
+  .order-btn:active:not(:disabled) { background: var(--cream); }
+
+  .activity-grip { width: 44px; height: 44px; }
+  .activity-grip svg { width: 22px; height: 22px; }
+  .activity-grip:active { background: var(--cream); }
+
+  .activity-pos-badge { width: 24px; height: 24px; font-size: 11px; }
+
+  .activity-check-col { flex: 0 0 44px; min-width: 44px; max-width: 44px; }
+  .activity-checkbox-btn { width: 44px; height: 44px; border-width: 2px; }
+  .activity-checkbox-btn svg { width: 20px; height: 20px; }
+
+  .activity-actions-col { max-width: none; flex: 0 0 auto; }
+  .activity-mini-actions { gap: 2px; }
+  .activity-mini-actions .client-action { width: 44px; height: 44px; touch-action: manipulation; }
+  .activity-mini-actions .client-action svg { width: 20px; height: 20px; }
+
+  /* Demais cartões do módulo: equipe, mesas e momentos do modelo padrão */
+  .staff-card-actions { top: 8px; right: 8px; gap: 4px; }
+  .staff-card-actions .client-action { width: 44px; height: 44px; }
+  .staff-card-actions .client-action svg { width: 19px; height: 19px; }
+
+  .table-actions { gap: 4px; }
+  .table-actions .client-action { width: 44px; height: 44px; }
+  .table-actions .client-action svg { width: 19px; height: 19px; }
+
+  /* A alça é o único alvo de arraste dos momentos do modelo, então precisa do
+     mesmo tamanho dos outros controles do modal. */
+  .templates-activity-row { align-items: center; }
+  .templates-act-grip { flex: 0 0 44px; width: 44px; height: 44px; }
+  .templates-act-grip svg { width: 20px; height: 20px; }
+  .templates-activity-row .order-btn { width: 44px; height: 44px; }
+  .templates-detail-head .client-action { width: 44px; height: 44px; }
+  .templates-detail-head .client-action svg { width: 19px; height: 19px; }
+  .templates-activity-index { width: 26px; height: 26px; flex-basis: 26px; font-size: 11px; }
+  .templates-list-item { min-height: 44px; }
+
+  /* O X de fechar os modais do módulo também é um alvo de toque frequente */
+  .ceremonial-panel .icon-button,
+  #ceremonial-templates-modal .icon-button,
+  #ceremonial-activity-modal .icon-button { width: 44px; height: 44px; }
+  .ceremonial-panel .icon-button svg,
+  #ceremonial-templates-modal .icon-button svg,
+  #ceremonial-activity-modal .icon-button svg { width: 22px; height: 22px; }
+}
 
 @media print {
   @page { size: A4; margin: 14mm 12mm; }
