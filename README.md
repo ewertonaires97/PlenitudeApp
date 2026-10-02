@@ -181,7 +181,7 @@ Se quiser que a pessoa entre cadastrada e **sem** conseguir entrar, desmarque **
 
 ### Financeiro
 
-Execute [supabase/migrations/017_finance_module.sql](supabase/migrations/017_finance_module.sql) no SQL Editor depois das migrations `009_ceremonial_schema.sql` e `015_access_control.sql`, e em seguida [018_finance_costs.sql](supabase/migrations/018_finance_costs.sql). A migration 018 adiciona o cadastro de custos e atualiza o cálculo/validação do rateio. O módulo é restrito a Proprietário, Administrador e Gestor também pela RLS; a permissão `financeiro` é incluída no padrão de Gestor.
+Execute [supabase/migrations/017_finance_module.sql](supabase/migrations/017_finance_module.sql) no SQL Editor depois das migrations `009_ceremonial_schema.sql` e `015_access_control.sql`, e em seguida [018_finance_costs.sql](supabase/migrations/018_finance_costs.sql) e [019_finance_receipts_crud.sql](supabase/migrations/019_finance_receipts_crud.sql). A migration 018 adiciona o cadastro de custos e atualiza o cálculo/validação do rateio; a 019 habilita a edição e exclusão segura de recebimentos. O módulo é restrito a Proprietário, Administrador e Gestor também pela RLS; a permissão `financeiro` é incluída no padrão de Gestor.
 
 O valor contratado vem do orçamento confirmado. Para representar dinheiro efetivamente recebido, registre cada recebimento no evento. Os custos podem ser adicionados, editados e removidos no detalhe de cada evento. O filtro mensal agrupa pela data do evento. O cálculo é: receita recebida menos custos; do resultado, separa-se o dízimo; o saldo é dividido entre os cerimonialistas vinculados ao evento, por percentual ou valor fixo. O lucro líquido mostrado é o que resta após esses itens e pode ser negativo se os custos superarem as receitas.
 
