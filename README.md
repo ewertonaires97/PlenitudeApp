@@ -112,7 +112,7 @@ Até aqui qualquer conta autenticada enxergava e alterava tudo: as 22 políticas
 
 O que ela acrescenta:
 
-- **`app_permissions`** — as 10 telas que existem no app, com a mesma chave do atributo `data-permission` do [index.html](index.html);
+- **`app_permissions`** — as 11 telas que existem no app, com a mesma chave do atributo `data-permission` do [index.html](index.html);
 - **`app_roles`** — os níveis: `owner` (Proprietário), `admin` (Administrador), `gestor` (Gestor), `operador` (Operador) e `consulta` (Consulta);
 - **`app_role_permissions`** — quais telas cada nível abre por padrão;
 - **`profiles`** — ganha `email`, `whatsapp`, `permissions` e `active`. `permissions` é a lista de telas da pessoa: **nulo** significa "herda do padrão do nível", lista vazia significa "nenhuma tela".
@@ -178,6 +178,12 @@ Com a 016, a conta nasce **inativa**. Quem entra sozinho pelo Google vê:
 Para liberar, você vai na tela de **Usuários** e cadastra a pessoa — e é o próprio cadastro que ativa a conta, com o nível e as telas que você escolher. Nada de conceito novo: é a mesma tela e o mesmo botão de ativar que já existem para suspender alguém.
 
 Se quiser que a pessoa entre cadastrada e **sem** conseguir entrar, desmarque **Conta ativa** no cadastro.
+
+### Financeiro
+
+Execute [supabase/migrations/017_finance_module.sql](supabase/migrations/017_finance_module.sql) no SQL Editor depois das migrations `009_ceremonial_schema.sql` e `015_access_control.sql`, e em seguida [018_finance_costs.sql](supabase/migrations/018_finance_costs.sql). A migration 018 adiciona o cadastro de custos e atualiza o cálculo/validação do rateio. O módulo é restrito a Proprietário, Administrador e Gestor também pela RLS; a permissão `financeiro` é incluída no padrão de Gestor.
+
+O valor contratado vem do orçamento confirmado. Para representar dinheiro efetivamente recebido, registre cada recebimento no evento. Os custos podem ser adicionados, editados e removidos no detalhe de cada evento. O filtro mensal agrupa pela data do evento. O cálculo é: receita recebida menos custos; do resultado, separa-se o dízimo; o saldo é dividido entre os cerimonialistas vinculados ao evento, por percentual ou valor fixo. O lucro líquido mostrado é o que resta após esses itens e pode ser negativo se os custos superarem as receitas.
 
 A conta do administrador do app é a exceção: a seção 11 da 015 promove `ewertonaires97@gmail.com` a proprietário **e reativa a conta**, porque sem isso a própria mudança bloquearia a única pessoa capaz de destravar o app.
 

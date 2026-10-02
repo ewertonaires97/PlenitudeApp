@@ -144,6 +144,11 @@
             <span class="module-text"><strong>Cerimonial</strong><small>Operação do evento</small></span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
+          <button class="module-card card-financeiro" type="button" data-permission="financeiro" data-open-finance>
+            <span class="module-icon"><i data-lucide="landmark"></i></span>
+            <span class="module-text"><strong>Financeiro</strong><small>Recebimentos e divisão</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
           <button class="module-card card-usuarios" type="button" data-permission="usuarios" data-open-users>
             <span class="module-icon"><i data-lucide="shield-check"></i></span>
             <span class="module-text"><strong>Usuários</strong><small>Acesso e permissões</small></span>
@@ -702,6 +707,87 @@
         <div id="detail-view-content"></div>
       </div>
     </section>
+    <section class="service-panel" id="finance-panel" hidden aria-labelledby="finance-title">
+      <div class="service-panel-card finance-panel-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow">GESTÃO</p><h2 id="finance-title">Financeiro</h2></div>
+          <button class="icon-button" type="button" data-close-finance aria-label="Fechar financeiro"><i data-lucide="x"></i></button>
+        </header>
+        <div class="finance-toolbar">
+          <label for="finance-month">Mês do evento</label>
+          <input id="finance-month" type="month" />
+          <label class="finance-all-periods"><input id="finance-all-periods" type="checkbox" /> Todo o período</label>
+        </div>
+        <div class="finance-kpis">
+          <article><span>Receita recebida</span><strong id="finance-total-received">R$ 0,00</strong></article>
+          <article><span>Custos</span><strong id="finance-total-costs">R$ 0,00</strong></article>
+          <article><span>Dízimo</span><strong id="finance-total-tithe">R$ 0,00</strong></article>
+          <article><span>Repasses à equipe</span><strong id="finance-total-allocated">R$ 0,00</strong></article>
+          <article><span>Lucro líquido</span><strong id="finance-total-balance">R$ 0,00</strong></article>
+        </div>
+        <p class="finance-cost-note"><i data-lucide="info"></i> Lucro líquido = receita recebida menos custos, dízimo e repasses da equipe.</p>
+        <p class="client-feedback" id="finance-feedback" role="status"></p>
+        <div class="finance-event-list" id="finance-event-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel finance-event-panel" id="finance-event-panel" hidden aria-labelledby="finance-event-title">
+      <div class="client-form-card finance-event-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow">RATEIO DO EVENTO</p><h2 id="finance-event-title">Evento</h2><span class="field-hint" id="finance-event-subtitle"></span></div>
+          <button class="icon-button" type="button" data-close-finance-event aria-label="Fechar detalhes financeiros"><i data-lucide="x"></i></button>
+        </header>
+        <div class="finance-event-summary">
+          <div><span>Valor contratado</span><strong id="finance-event-contracted">R$ 0,00</strong></div>
+          <div><span>Recebido</span><strong id="finance-event-received">R$ 0,00</strong></div>
+          <div><span>Custos</span><strong id="finance-event-costs">R$ 0,00</strong></div>
+          <div><span>Resultado após custos</span><strong id="finance-event-operating-result">R$ 0,00</strong></div>
+          <div><span>Dízimo</span><strong id="finance-event-tithe">R$ 0,00</strong></div>
+          <div><span>Repasses</span><strong id="finance-event-allocated">R$ 0,00</strong></div>
+          <div><span>Lucro líquido</span><strong id="finance-event-balance">R$ 0,00</strong></div>
+        </div>
+        <form id="finance-allocation-form">
+          <h3>Dízimo para a igreja</h3>
+          <div class="finance-tithe-fields">
+            <label for="finance-tithe-mode">Forma de cálculo</label>
+            <select id="finance-tithe-mode" class="movement-select"><option value="percentage">Percentual da receita</option><option value="fixed">Valor direto</option></select>
+            <label for="finance-tithe-percent">Percentual (%)</label>
+            <input id="finance-tithe-percent" type="number" min="0" max="100" step="0.01" value="10" />
+            <label for="finance-tithe-fixed">Valor do dízimo (R$)</label>
+            <input id="finance-tithe-fixed" type="number" min="0" step="0.01" value="0" />
+          </div>
+          <div class="finance-section-heading"><h3>Divisão entre a equipe</h3><button class="add-client-button" type="button" data-add-finance-share><i data-lucide="user-plus"></i><span>Adicionar pessoa</span></button></div>
+          <p class="field-hint">Custos são descontados da receita; o dízimo é separado em seguida. Percentuais da equipe incidem sobre o saldo após custos e dízimo. Também é possível definir valor fixo.</p>
+          <div class="finance-share-list" id="finance-share-rows"></div>
+          <p class="client-form-feedback" id="finance-allocation-feedback" role="alert"></p>
+          <button class="login-button" type="submit"><span>Salvar divisão</span><i data-lucide="check"></i></button>
+        </form>
+        <section class="finance-receipts-section">
+          <h3>Recebimentos</h3>
+          <div id="finance-receipts-list" class="finance-receipts-list"></div>
+          <form id="finance-receipt-form" class="finance-receipt-form">
+            <label for="finance-receipt-amount">Novo recebimento (R$)</label><input id="finance-receipt-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required />
+            <label for="finance-receipt-date">Data do recebimento</label><input id="finance-receipt-date" type="date" required />
+            <label for="finance-receipt-method">Forma de pagamento</label><select id="finance-receipt-method" class="movement-select"><option value="pix">Pix</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="transfer">Transferência</option><option value="other">Outra</option></select>
+            <label for="finance-receipt-notes">Observação</label><input id="finance-receipt-notes" type="text" placeholder="Ex.: sinal ou parcela final" />
+            <p class="client-form-feedback" id="finance-receipt-feedback" role="alert"></p>
+            <button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Registrar recebimento</span></button>
+          </form>
+        </section>
+        <section class="finance-costs-section">
+          <div class="finance-section-heading"><h3>Custos do evento</h3><span id="finance-costs-total" class="finance-costs-total">R$ 0,00</span></div>
+          <div id="finance-costs-list" class="finance-costs-list"></div>
+          <form id="finance-cost-form" class="finance-cost-form">
+            <input id="finance-cost-id" type="hidden" />
+            <label for="finance-cost-name">Nome do custo</label><input id="finance-cost-name" type="text" placeholder="Ex.: aluguel do espaço" required />
+            <label for="finance-cost-amount">Valor (R$)</label><input id="finance-cost-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required />
+            <label for="finance-cost-date">Data</label><input id="finance-cost-date" type="date" required />
+            <label for="finance-cost-notes">Observação</label><input id="finance-cost-notes" type="text" placeholder="Fornecedor ou comprovante" />
+            <p class="client-form-feedback" id="finance-cost-feedback" role="alert"></p>
+            <div class="finance-cost-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-cost-submit-label">Registrar custo</span></button><button class="text-button" type="button" data-cancel-finance-cost hidden>Cancelar edição</button></div>
+          </form>
+        </section>
+      </div>
+    </section>
 
     <!-- ====================================================================== -->
     <!-- MÓDULO DE CERIMONIAL & OPERAÇÃO                                        -->
@@ -993,5 +1079,6 @@
     <script src="app.js"></script>
     <script src="events.js"></script>
     <script src="ceremonial.js"></script>
+    <script src="financial.js"></script>
   </body>
 </html>

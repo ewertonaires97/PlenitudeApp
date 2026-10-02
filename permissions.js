@@ -36,6 +36,7 @@
     { key: 'estoque', label: 'Estoque', hint: 'Itens, quantidades e movimentações.' },
     { key: 'configuracoes', label: 'Configurações', hint: 'Telas de apoio do catálogo e do estoque.' },
     { key: 'cerimonial', label: 'Cerimonial', hint: 'Roteiro, recepção, equipe, mesas e ao vivo.' },
+    { key: 'financeiro', label: 'Financeiro', hint: 'Recebimentos, dízimo e divisão financeira dos eventos.' },
     { key: 'usuarios', label: 'Usuários', hint: 'Quem entra no app e quais telas cada pessoa abre.' }
   ];
 
@@ -58,6 +59,8 @@
     { selector: '#event-panel', permission: 'eventos' },
     { selector: '#event-detail-panel', permission: 'eventos' },
     { selector: '#ceremonial-panel', permission: 'cerimonial' },
+    { selector: '#finance-panel', permission: 'financeiro' },
+    { selector: '#finance-event-panel', permission: 'financeiro' },
     { selector: '#settings-panel', permission: 'configuracoes' },
     // O painel e o formulário de acesso entram aqui também: perdurar a tela de
     // quem acabou de perder o acesso a ela mostraria botões que o banco já

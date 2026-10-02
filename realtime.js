@@ -178,6 +178,13 @@
       }
     },
     {
+      name: 'financeiro',
+      tables: ['event_finance_settings', 'event_finance_receipts', 'event_finance_allocations', 'event_finance_costs', 'ceremonialistas'],
+      reload() {
+        return whenVisible('#finance-panel', () => window.plenitudeFinance?.reload());
+      }
+    },
+    {
       // Modelos padrão de roteiro são compartilhados por toda a equipe, então
       // o painel de modelos acompanha as alterações dos outros usuários.
       name: 'modelos-padrao',
