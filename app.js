@@ -103,6 +103,9 @@ const menuServiceOptions = document.querySelector('#menu-service-options');
 const quoteClientSelect = document.querySelector('#quote-client');
 const quoteSubtotalPreview = document.querySelector('#quote-subtotal-preview');
 const quoteTotalPreview = document.querySelector('#quote-total-preview');
+const quoteDepositPercentInput = document.querySelector('#quote-deposit-percent');
+const quoteValidUntilInput = document.querySelector('#quote-valid-until');
+const quoteDepositPreview = document.querySelector('#quote-deposit-preview');
 let clients = [];
 let services = [];
 let menus = [];
@@ -337,7 +340,6 @@ function openClientForm(client = null) {
   clientFormTitle.textContent = client ? 'Editar cliente' : 'Novo cliente';
   clientFormFeedback.textContent = '';
   clientFormPanel.hidden = false;
-  document.querySelector('#client-name').focus();
 }
 
 document.querySelectorAll('[data-open-clients]').forEach((button) => button.addEventListener('click', openClients));
@@ -549,7 +551,6 @@ async function openServiceForm(service = null) {
   serviceMenusBefore = service ? menus.filter((menu) => menu.serviceIds.includes(service.id)).map((menu) => menu.id) : [];
   renderServiceMenuOptions(service?.id || '');
   serviceMenuCreate.hidden = !service;
-  document.querySelector('#service-name').focus();
 }
 
 document.querySelectorAll('[data-open-services]').forEach((button) => button.addEventListener('click', openServices));
@@ -795,7 +796,6 @@ async function openMenuForm(menu = null, presetServiceId = '') {
   renderMenuServiceOptions(menu ? menu.serviceIds : (presetServiceId ? [presetServiceId] : []));
   renderMenuCategoryOptions(menu ? menuCategoryLinks.filter((link) => link.menu_id === menu.id).map((link) => link.category_id) : []);
   renderMenuImagePreviews(menu?.id || null);
-  document.querySelector('#menu-name').focus();
 }
 
 document.querySelectorAll('[data-open-menus]').forEach((button) => button.addEventListener('click', openMenus));
@@ -1274,7 +1274,6 @@ function openInventoryForm(item = null) {
   inventoryFormPanel.hidden = false;
   renderInventoryCategoryOptions(item?.categoryIds || []);
   renderInventoryImagePreviews(item?.id || null);
-  document.querySelector('#inventory-name').focus();
 }
 
 function openMovementForm(item) {
@@ -1284,7 +1283,6 @@ function openMovementForm(item) {
   movementItemName.textContent = `${item.name} · saldo atual: ${item.quantity} ${item.unit}`;
   movementFormFeedback.textContent = '';
   movementFormPanel.hidden = false;
-  document.querySelector('#movement-quantity').focus();
 }
 
 document.querySelector('[data-open-inventory]').addEventListener('click', openInventory);
@@ -1415,12 +1413,23 @@ async function openDetail(type, id) {
         servicesHtml = `<div class="detail-box"><strong class="detail-box-title">SERVIÇOS SELECIONADOS</strong>${rowsHtml}<div class="detail-total-line"><span>TOTAL</span><span>${formatCurrency(quote.total)}</span></div></div>`;
       }
     } catch (e) { /* ignore */ }
-    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${servicesHtml}${detailRow('Total', formatCurrency(quote.total))}${detailRow('Observações', quote.notes)}`;
+    // Validade e sinal entram no detalhe porque é dali que se decide o que fazer
+    // com a proposta: cobrar o sinal, estender o prazo ou encerrar.
+    const signalRow = Number(quote.deposit_amount) > 0
+      ? `${detailRow('Sinal exigido', `${formatCurrency(quote.deposit_amount)} (${formatNumber(quote.deposit_percent)}%)`)}${detailRow('Sinal recebido', formatCurrency(quote.deposited_amount || 0))}${detailRow('Validade', quoteValidityNote(quote))}`
+      : '';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${servicesHtml}${detailRow('Total', formatCurrency(quote.total))}${signalRow}${detailRow('Observações', quote.notes)}`;
   }
   detailViewTitle.textContent = title;
   detailViewEyebrow.textContent = eyebrow;
+  // O botão de sinal acompanha o mesmo critério do painel pós-salvo: existe
+  // valor a cobrar e o orçamento não está cancelado.
+  const detailQuote = actionQuoteId ? quotes.find((item) => item.id === actionQuoteId) : null;
+  const depositButton = actionQuoteId && detailQuote && Number(detailQuote.deposit_amount) > 0 && detailQuote.status !== 'cancelled'
+    ? `<button class="client-action-button quote-deposit-action" type="button" data-quote-deposit-row="${actionQuoteId}"><i data-lucide="hand-coins"></i><span>Registrar sinal</span></button>`
+    : '';
   detailViewContent.innerHTML = actionQuoteId
-    ? `${content}<div class="quote-saved-actions"><button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
+    ? `${content}<div class="quote-saved-actions">${depositButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
     : content;
   detailView.hidden = false;
   lucide.createIcons();
@@ -1454,9 +1463,11 @@ document.addEventListener('keydown', (event) => { if (event.key === 'Escape') cl
 document.querySelector('[data-close-detail]').addEventListener('click', closeDetail);
 detailView.addEventListener('click', (event) => { if (event.target === detailView) closeDetail(); });
 detailView.addEventListener('click', async (event) => {
+  const depositButton = event.target.closest('[data-quote-deposit-row]');
   const pdfButton = event.target.closest('[data-quote-pdf-row]');
   const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
   const shareButton = event.target.closest('[data-quote-share-row]');
+  if (depositButton) { closeDetail(); await openQuoteDepositPanel(depositButton.dataset.quoteDepositRow); return; }
   if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
   if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
   if (shareButton) { await shareQuote(shareButton.dataset.quoteShareRow); }
@@ -1470,6 +1481,72 @@ function setQuoteFeedback(message, isError = false) {
 
 function quoteStatusLabel(status) {
   return { draft: 'Rascunho', sent: 'Enviado', confirmed: 'Confirmado', cancelled: 'Cancelado', expired: 'Expirado' }[status] || status;
+}
+
+// Prazo padrão de uma proposta: 20 dias contados da emissão.
+const QUOTE_VALIDITY_DAYS = 20;
+const QUOTE_DEFAULT_DEPOSIT_PERCENT = 30;
+
+function localToday() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+function addDaysToLocalDate(value, days) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function daysUntilLocalDate(value) {
+  if (!value) return null;
+  const target = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date(`${localToday()}T12:00:00`);
+  return Math.round((target - today) / 86400000);
+}
+
+// Um orçamento só expira quando foi enviado e ainda não recebeu o sinal inteiro.
+// Rascunho é material de trabalho interno; confirmado e cancelado não vencem.
+function quoteRequiresSignal(quote) {
+  return Number(quote?.deposit_amount || 0) > 0;
+}
+
+function quoteSignalComplete(quote) {
+  return quoteRequiresSignal(quote) && Number(quote?.deposited_amount || 0) + 0.01 >= Number(quote.deposit_amount);
+}
+
+// Frase curta que resume a situação do sinal, usada na lista, no detalhe, no PDF
+// e na mensagem: um texto só evita cada tela inventar sua própria redação.
+function quoteValidityNote(quote) {
+  if (!quote) return '';
+  if (quote.status === 'confirmed') {
+    return quoteSignalComplete(quote)
+      ? `Sinal de ${formatCurrency(quote.deposited_amount)} recebido`
+      : 'Confirmado';
+  }
+  if (!quoteRequiresSignal(quote)) return 'Sem sinal';
+  const remaining = Math.max(0, Number(quote.deposit_amount) - Number(quote.deposited_amount || 0));
+  const days = daysUntilLocalDate(quote.valid_until);
+  const deadline = quote.valid_until ? ` até ${formatDateBR(quote.valid_until)}` : '';
+  if (days !== null && days < 0) return `Vencido${deadline} · falta ${formatCurrency(remaining)}`;
+  if (days === 0) return `Vence hoje${deadline} · falta ${formatCurrency(remaining)}`;
+  if (days !== null && days <= 5) return `Vence em ${days} ${days === 1 ? 'dia' : 'dias'}${deadline} · falta ${formatCurrency(remaining)}`;
+  return `Sinal de ${formatCurrency(quote.deposit_amount)}${deadline} · falta ${formatCurrency(remaining)}`;
+}
+
+function quoteValidityTone(quote) {
+  if (!quote || quote.status === 'confirmed') return 'done';
+  if (!quoteRequiresSignal(quote)) return 'none';
+  if (quote.status === 'expired' || quote.status === 'cancelled') return 'late';
+  const days = daysUntilLocalDate(quote.valid_until);
+  if (days !== null && days < 0) return 'late';
+  if (days !== null && days <= 5) return 'soon';
+  return 'pending';
 }
 
 function renderQuotes() {
@@ -1493,16 +1570,28 @@ function renderQuotes() {
   for (const [clientName, groupQuotes] of Object.entries(grouped)) {
     html += `<div style="margin-bottom:6px;padding:0 4px;"><strong style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">${escapeHTML(clientName)}</strong></div>`;
     for (const quote of groupQuotes) {
-      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span></div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+      // A linha de validade só aparece quando existe prazo ou sinal a cobrar;
+      // orçamento confirmado mostra o sinal recebido, os demais, o que falta.
+      const tone = quoteValidityTone(quote);
+      const validity = quote.status === 'confirmed' && !quoteRequiresSignal(quote) ? '' : `<span class="quote-validity-tag ${tone}"><i data-lucide="${tone === 'done' ? 'circle-check' : tone === 'late' ? 'triangle-alert' : 'clock'}"></i>${escapeHTML(quoteValidityNote(quote))}</span>`;
+      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
     }
   }
   quoteList.innerHTML = html;
+  refreshQuoteDepositButtons();
   lucide.createIcons();
 }
 
+// Colunas usadas pelas telas de orçamento, listas uma vez para o select não
+// divergir entre a lista, o detalhe, o PDF e a mensagem.
+const QUOTE_COLUMNS = 'id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, valid_until, deposit_percent, deposit_amount, deposited_amount, confirmed_by_deposit';
+
 async function loadQuotes() {
   setQuoteFeedback('Carregando orçamentos...');
-  const { data, error } = await supabaseClient.from('quotes').select('id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, clients(id, name)').order('created_at', { ascending: false });
+  // A expiração é derivada da data de corte, então é resolvida aqui em vez de
+  // depender de um job no servidor: quem abrir a lista já vê o estado real.
+  await supabaseClient.rpc('expire_overdue_quotes');
+  const { data, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name)`).order('created_at', { ascending: false });
   if (error) {
     setQuoteFeedback(`Não foi possível carregar os orçamentos: ${error.message}`, true);
     quoteList.innerHTML = '';
@@ -1525,6 +1614,19 @@ const quoteSavedFeedback = document.querySelector('#quote-saved-feedback');
 const quoteSavedTitle = document.querySelector('#quote-saved-title');
 let quoteSavedId = '';
 
+// Erro de PDF, sinal e compartilhamento acontece com o painel pós-salvo na frente
+// da tela, então a mensagem vai para o painel que o usuário está vendo. Sem isso o
+// texto cai no feedback da lista, que fica atrás do overlay, e o clique parece não
+// ter feito nada.
+function setQuoteOutputFeedback(message, isError = false) {
+  if (!quoteSavedPanel.hidden) {
+    quoteSavedFeedback.textContent = message;
+    quoteSavedFeedback.style.color = isError ? '#a0483d' : '';
+    return;
+  }
+  setQuoteFeedback(message, isError);
+}
+
 function formatDateBR(value) {
   if (!value) return '';
   const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
@@ -1534,7 +1636,7 @@ function formatDateBR(value) {
 // Busca o orcamento e seus itens direto do banco, para o PDF e a mensagem
 // refletirem o estado mais recente e nao a copia guardada em memoria.
 async function loadQuoteForOutput(quoteId) {
-  const { data: quote, error } = await supabaseClient.from('quotes').select('id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, clients(id, name, whatsapp, email)').eq('id', quoteId).single();
+  const { data: quote, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name, whatsapp, email)`).eq('id', quoteId).single();
   if (error) throw new Error(error.message);
   const { data: items, error: itemsError } = await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quoteId).order('sort_order');
   if (itemsError) throw new Error(itemsError.message);
@@ -1554,6 +1656,9 @@ function renderQuotePrint({ quote, items, menusByService }) {
       : '';
     return `<tr><td><span class="pd-item-name">${escapeHTML(item.description || 'Serviço')}</span>${menusCell}</td><td class="pd-num">${formatNumber(item.quantity)}</td><td class="pd-num">${formatCurrency(item.unit_price)}</td><td class="pd-num">${formatCurrency(Number(item.quantity) * Number(item.unit_price))}</td></tr>`;
   }).join('');
+  // O sinal aparece uma vez só, na condição de validade no fim do documento. No
+  // cabeçalho ele competia com local e data, e na conta ele se confundia com
+  // mais uma parcela do total.
   quotePrint.innerHTML = `
     <header class="pd-head">
       <div class="pd-brand"><span class="pd-brand-mark">PR</span><span><span class="pd-brand-name">Plenitude</span><span class="pd-brand-sub">Realizações</span></span></div>
@@ -1572,6 +1677,7 @@ function renderQuotePrint({ quote, items, menusByService }) {
       ${Number(quote.additional_fee) > 0 ? `<div class="pd-total-line"><span>Taxa adicional</span><strong>+ ${formatCurrency(quote.additional_fee)}</strong></div>` : ''}
       <div class="pd-total-line pd-grand"><span>Total</span><strong>${formatCurrency(quote.total)}</strong></div>
     </div></div>
+    ${Number(quote.deposit_amount) > 0 && quote.status !== 'confirmed' ? `<div class="pd-signal-note"><span class="pd-notes-label">Condição de validade</span><span class="pd-notes-text">Esta proposta é válida até <strong>${escapeHTML(formatDateBR(quote.valid_until) || 'data a definir')}</strong>. O serviço fica reservado mediante o pagamento de ${formatCurrency(quote.deposit_amount)} (${formatNumber(quote.deposit_percent)}% do total). Sem o pagamento do sinal até essa data, a proposta perde a validade e a data do evento é liberada para outros clientes.</span></div>` : ''}
     ${quote.notes ? `<div class="pd-notes"><span class="pd-notes-label">Observações</span><span class="pd-notes-text">${escapeHTML(quote.notes)}</span></div>` : ''}
     <footer class="pd-foot"><span>Plenitude Realizações</span><span>Emitido em ${formatDateBR(new Date().toISOString())}</span></footer>`;
 }
@@ -1607,6 +1713,17 @@ function quoteWhatsappText({ quote, items, menusByService }) {
   lines.push(`*Total: ${formatCurrency(quote.total)}*`);
   const details = [formatDateBR(quote.event_date), quote.venue].filter(Boolean);
   if (details.length) lines.push(`Evento: ${details.join(' · ')}`);
+  // A validade e o sinal vão na mensagem porque e a condicao que faz a proposta
+  // valer: e dela que sai a confirmacao do contrato.
+  if (Number(quote.deposit_amount) > 0) {
+    lines.push('');
+    if (quote.status === 'confirmed') {
+      lines.push(`✅ *Sinal recebido:* ${formatCurrency(quote.deposited_amount)} de ${formatCurrency(quote.deposit_amount)} (${formatNumber(quote.deposit_percent)}%)`);
+    } else {
+      lines.push(`*Para reservar a data:* sinal de ${formatCurrency(quote.deposit_amount)} (${formatNumber(quote.deposit_percent)}% do total)`);
+      if (quote.valid_until) lines.push(`*Proposta válida até ${formatDateBR(quote.valid_until)}.*`);
+    }
+  }
   if (quote.notes) lines.push('', `Observações: ${quote.notes}`);
   lines.push('', 'Enviado por Plenitude Realizações');
   return lines.join('\n');
@@ -1617,13 +1734,12 @@ async function sendQuoteOnWhatsapp(quoteId) {
     const payload = await loadQuoteForOutput(quoteId);
     const number = whatsappNumber(payload.quote.clients?.whatsapp);
     if (!number) {
-      if (quoteSavedPanel.contains(document.activeElement) || !quoteSavedPanel.hidden) quoteSavedFeedback.textContent = 'Cadastre o WhatsApp do cliente para enviar.';
-      else setQuoteFeedback('Cadastre o WhatsApp do cliente para enviar.', true);
+      setQuoteOutputFeedback('Cadastre o WhatsApp do cliente para enviar.', true);
       return;
     }
     window.open(`https://wa.me/${number}?text=${encodeURIComponent(quoteWhatsappText(payload))}`, '_blank', 'noopener,noreferrer');
   } catch (error) {
-    setQuoteFeedback(`Não foi possível preparar o envio: ${error.message}`, true);
+    setQuoteOutputFeedback(`Não foi possível preparar o envio: ${error.message}`, true);
   }
 }
 
@@ -1636,10 +1752,10 @@ async function shareQuote(quoteId) {
       return;
     }
     await navigator.clipboard.writeText(shareData.text);
-    setQuoteFeedback('Orçamento copiado. Cole no WhatsApp do cliente.');
+    setQuoteOutputFeedback('Orçamento copiado. Cole no WhatsApp do cliente.');
   } catch (error) {
     if (error?.name === 'AbortError') return;
-    setQuoteFeedback('Não foi possível compartilhar o orçamento.', true);
+    setQuoteOutputFeedback('Não foi possível compartilhar o orçamento.', true);
   }
 }
 
@@ -1648,6 +1764,7 @@ function openQuoteSavedPanel(quoteId, message) {
   quoteSavedFeedback.textContent = '';
   quoteSavedTitle.textContent = message;
   quoteSavedPanel.hidden = false;
+  refreshQuoteDepositButtons();
 }
 
 document.querySelectorAll('[data-close-quote-saved]').forEach((button) => button.addEventListener('click', () => { quoteSavedPanel.hidden = true; quoteSavedId = ''; }));
@@ -1656,6 +1773,122 @@ quoteSavedPanel.addEventListener('click', (event) => {
   if (event.target.closest('[data-quote-pdf]')) printQuotePdf(quoteSavedId);
   if (event.target.closest('[data-quote-whatsapp]')) sendQuoteOnWhatsapp(quoteSavedId);
   if (event.target.closest('[data-quote-share]')) shareQuote(quoteSavedId);
+  if (event.target.closest('[data-quote-deposit]')) openQuoteDepositPanel(quoteSavedId);
+});
+
+// O botão de sinal só aparece onde faz sentido: quando existe valor a cobrar e
+// o orçamento ainda não foi confirmado pelo pagamento.
+function refreshQuoteDepositButtons() {
+  document.querySelectorAll('[data-quote-deposit]').forEach((button) => {
+    const quote = quotes.find((item) => item.id === (button.dataset.quoteDepositId || quoteSavedId));
+    const visible = Boolean(quote) && Number(quote.deposit_amount) > 0 && quote.status !== 'cancelled';
+    button.hidden = !visible;
+  });
+}
+
+// Painel do sinal: mostra o que era, o que já entrou e o que falta, para o
+// registro ser uma conferência e não um cálculo no olho.
+const quoteDepositPanel = document.querySelector('#quote-deposit-panel');
+const quoteDepositForm = document.querySelector('#quote-deposit-form');
+const quoteDepositHistory = document.querySelector('#quote-deposit-history');
+const quoteDepositFeedback = document.querySelector('#quote-deposit-feedback');
+
+async function loadQuoteDeposit(quoteId) {
+  const { data: quote, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name)`).eq('id', quoteId).single();
+  if (error) throw new Error(error.message);
+  const { data: deposits } = await supabaseClient.from('quote_deposits').select('id, amount, paid_on, payment_method, notes, voided_at, posted_at').eq('quote_id', quoteId).order('paid_on', { ascending: false });
+  return { quote, deposits: deposits || [] };
+}
+
+function renderQuoteDepositHistory(deposits) {
+  if (!deposits.length) {
+    quoteDepositHistory.innerHTML = '<p class="quote-deposit-history-empty">Nenhum sinal registrado ainda.</p>';
+    return;
+  }
+  quoteDepositHistory.innerHTML = `<span class="quote-deposit-history-title">Sinais registrados</span>${deposits.map((deposit) => `<div class="quote-deposit-row ${deposit.voided_at ? 'voided' : ''}">
+    <div><strong>${formatCurrency(deposit.amount)}</strong><span>${formatDateBR(deposit.paid_on)}${deposit.notes ? ` · ${escapeHTML(deposit.notes)}` : ''}</span></div>
+    ${deposit.voided_at ? '<span class="quote-deposit-void-tag">Estornado</span>' : `<button class="client-action" type="button" data-void-quote-deposit="${deposit.id}" aria-label="Estornar sinal de ${formatCurrency(deposit.amount)}" title="Estornar"><i data-lucide="rotate-ccw"></i></button>`}
+  </div>`).join('')}`;
+  window.lucide?.createIcons();
+}
+
+async function openQuoteDepositPanel(quoteId) {
+  if (!quoteId || !quoteDepositPanel) return;
+  try {
+    const { quote, deposits } = await loadQuoteDeposit(quoteId);
+    const paid = deposits.filter((deposit) => !deposit.voided_at).reduce((sum, deposit) => sum + Number(deposit.amount), 0);
+    const required = Number(quote.deposit_amount || 0);
+    const remaining = Math.max(0, required - paid);
+    document.querySelector('#quote-deposit-quote-id').value = quote.id;
+    document.querySelector('#quote-deposit-context').textContent = `${quote.name} · ${quote.clients?.name || 'Sem cliente'} · total ${formatCurrency(quote.total)}`;
+    document.querySelector('#quote-deposit-required').textContent = formatCurrency(required);
+    document.querySelector('#quote-deposit-paid').textContent = formatCurrency(paid);
+    document.querySelector('#quote-deposit-remaining').textContent = remaining > 0 ? formatCurrency(remaining) : 'Quitado';
+    document.querySelector('#quote-deposit-amount').value = remaining > 0 ? remaining : '';
+    document.querySelector('#quote-deposit-date').value = localToday();
+    document.querySelector('#quote-deposit-notes').value = '';
+    quoteDepositFeedback.textContent = '';
+    renderQuoteDepositHistory(deposits);
+    quoteDepositPanel.hidden = false;
+  } catch (error) {
+    // O painel não abriu, então o aviso vai para quem chamou o botão e um toast
+    // fecha o recado: sem os dois, o clique não deixa marca nenhuma na tela.
+    setQuoteOutputFeedback(`Não foi possível abrir o sinal: ${error.message}`, true);
+    showToast('Não foi possível abrir o sinal');
+  }
+}
+
+// Os três lados do painel do sinal são ligados com ?. de propósito: o painel é
+// a única parte opcional do módulo e, se ele faltar no markup, o que cai fora é
+// só o registro de sinal — não a lista, nem o formulário, nem o PDF.
+document.querySelector('[data-close-quote-deposit]')?.addEventListener('click', () => { quoteDepositPanel.hidden = true; });
+
+quoteDepositForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const submitButton = quoteDepositForm.querySelector('button[type="submit"]');
+  const quoteId = document.querySelector('#quote-deposit-quote-id').value;
+  const amount = Number(document.querySelector('#quote-deposit-amount').value);
+  const label = submitButton.querySelector('span');
+  if (!Number.isFinite(amount) || amount <= 0) { quoteDepositFeedback.textContent = 'Informe um valor maior que zero.'; return; }
+  submitButton.disabled = true;
+  label.textContent = 'Registrando...';
+  const { error } = await supabaseClient.rpc('register_quote_deposit', {
+    target_quote_id: quoteId,
+    target_amount: amount,
+    target_paid_on: document.querySelector('#quote-deposit-date').value,
+    target_payment_method: document.querySelector('#quote-deposit-method').value,
+    target_notes: document.querySelector('#quote-deposit-notes').value
+  });
+  submitButton.disabled = false;
+  label.textContent = 'Registrar sinal';
+  if (error) {
+    quoteDepositFeedback.textContent = error.message || 'Não foi possível registrar o sinal.';
+    return;
+  }
+  await loadQuotes();
+  const { quote, deposits } = await loadQuoteDeposit(quoteId);
+  const paid = deposits.filter((deposit) => !deposit.voided_at).reduce((sum, deposit) => sum + Number(deposit.amount), 0);
+  const remaining = Math.max(0, Number(quote.deposit_amount || 0) - paid);
+  document.querySelector('#quote-deposit-paid').textContent = formatCurrency(paid);
+  document.querySelector('#quote-deposit-remaining').textContent = remaining > 0 ? formatCurrency(remaining) : 'Quitado';
+  document.querySelector('#quote-deposit-amount').value = remaining > 0 ? remaining : '';
+  renderQuoteDepositHistory(deposits);
+  refreshQuoteDepositButtons();
+  showToast(quote.status === 'confirmed' ? 'Sinal recebido. Orçamento confirmado.' : 'Sinal registrado');
+});
+
+quoteDepositHistory?.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-void-quote-deposit]');
+  if (!button) return;
+  const depositId = button.dataset.voidQuoteDeposit;
+  if (!window.confirm('Estornar este sinal? O recebimento correspondente no Financeiro também será estornado.')) return;
+  button.disabled = true;
+  const { error } = await supabaseClient.rpc('void_quote_deposit', { target_deposit_id: depositId });
+  button.disabled = false;
+  if (error) { quoteDepositFeedback.textContent = error.message || 'Não foi possível estornar o sinal.'; return; }
+  await loadQuotes();
+  await openQuoteDepositPanel(document.querySelector('#quote-deposit-quote-id').value);
+  showToast('Sinal estornado');
 });
 
 async function loadQuoteReferences() {
@@ -1704,8 +1937,35 @@ function updateQuotePreview() {
   const subtotal = getQuoteItemsFromForm().reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
   const discount = Number(document.querySelector('#quote-discount').value || 0);
   const fee = Number(document.querySelector('#quote-fee').value || 0);
+  const total = Math.max(0, subtotal - discount + fee);
   quoteSubtotalPreview.textContent = formatCurrency(subtotal);
-  quoteTotalPreview.textContent = formatCurrency(Math.max(0, subtotal - discount + fee));
+  quoteTotalPreview.textContent = formatCurrency(total);
+  updateQuoteValidityPreview(total);
+}
+
+// Traduz os dois campos de validade no que o usuário precisa decidir: quanto é
+// o sinal, até quando e o que a data de corte significa.
+function updateQuoteValidityPreview(total = null) {
+  const percentInput = quoteDepositPercentInput;
+  const validUntilInput = quoteValidUntilInput;
+  const preview = quoteDepositPreview;
+  if (!percentInput || !validUntilInput || !preview) return;
+  const percent = Math.min(100, Math.max(0, Number(percentInput.value) || 0));
+  const resolvedTotal = total === null ? Math.max(0, getQuoteItemsFromForm().reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - Number(document.querySelector('#quote-discount').value || 0) + Number(document.querySelector('#quote-fee').value || 0)) : total;
+  const deposit = Math.round(resolvedTotal * percent / 100 * 100) / 100;
+  const validUntil = validUntilInput.value;
+  const days = daysUntilLocalDate(validUntil);
+  if (percent <= 0) {
+    preview.innerHTML = '<i data-lucide="info"></i><span>Sem sinal, o orçamento não expira. Confirme manualmente quando o cliente aceitar.</span>';
+  } else if (!validUntil) {
+    preview.innerHTML = `<i data-lucide="triangle-alert"></i><span>Sinal de <strong>${formatCurrency(deposit)}</strong> (${formatNumber(percent)}%), mas sem data de corte: a proposta não expira. Defina a validade.</span>`;
+  } else if (days !== null && days < 0) {
+    preview.innerHTML = `<i data-lucide="triangle-alert"></i><span>A validade venceu em ${formatDateBR(validUntil)}. O orçamento expira ao salvar.</span>`;
+  } else {
+    const when = days === 0 ? 'hoje' : days === 1 ? 'amanhã' : `em ${days} dias`;
+    preview.innerHTML = `<i data-lucide="clock"></i><span>Para reservar a data, o cliente paga <strong>${formatCurrency(deposit)}</strong> (${formatNumber(percent)}%) até <strong>${formatDateBR(validUntil)}</strong> — ${when}. O sinal confirma o orçamento e entra como recebimento no Financeiro.</span>`;
+  }
+  lucide.createIcons();
 }
 
 async function openQuotes() {
@@ -1728,6 +1988,11 @@ async function openQuoteForm(quote = null) {
   document.querySelector('#quote-fee').value = quote?.additional_fee || 0;
   document.querySelector('#quote-status').value = quote?.status || 'draft';
   document.querySelector('#quote-notes').value = quote?.notes || '';
+  // Orçamento novo já nasce com o prazo padrão de 20 dias, para a validade nunca
+  // depender de o usuário lembrar de preencher. Os dois campos são opcionais no
+  // markup: sem eles a proposta só não expira, o formulário continua abrindo.
+  if (quoteValidUntilInput) quoteValidUntilInput.value = quote?.valid_until || addDaysToLocalDate(localToday(), QUOTE_VALIDITY_DAYS);
+  if (quoteDepositPercentInput) quoteDepositPercentInput.value = quote?.deposit_percent ?? QUOTE_DEFAULT_DEPOSIT_PERCENT;
   quoteFormTitle.textContent = quote ? 'Editar orçamento' : 'Novo orçamento';
   quoteFormFeedback.textContent = '';
   quoteFormPanel.hidden = false;
@@ -1735,7 +2000,6 @@ async function openQuoteForm(quote = null) {
   quoteClientSelect.value = selectedClientId;
   const { data: items } = quote ? await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order') : { data: [] };
   renderQuoteServices(items || []);
-  document.querySelector('#quote-name').focus();
 }
 
 document.querySelectorAll('[data-open-quotes]').forEach((button) => button.addEventListener('click', openQuotes));
@@ -1748,14 +2012,19 @@ quoteServicePicker.addEventListener('input', updateQuotePreview);
 quoteServicePicker.addEventListener('change', () => { updateQuoteServiceStates(); updateQuotePreview(); });
 document.querySelector('#quote-discount').addEventListener('input', updateQuotePreview);
 document.querySelector('#quote-fee').addEventListener('input', updateQuotePreview);
+quoteDepositPercentInput?.addEventListener('input', () => updateQuoteValidityPreview());
+quoteValidUntilInput?.addEventListener('input', () => updateQuoteValidityPreview());
+quoteValidUntilInput?.addEventListener('change', () => updateQuoteValidityPreview());
 
 quoteForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = quoteForm.querySelector('button[type="submit"]');
   const quoteId = document.querySelector('#quote-id').value;
-  const payload = { name: document.querySelector('#quote-name').value.trim(), client_id: quoteClientSelect.value, venue: document.querySelector('#quote-venue').value.trim() || null, event_date: document.querySelector('#quote-date').value || null, event_time: document.querySelector('#quote-time').value || null, status: document.querySelector('#quote-status').value, notes: document.querySelector('#quote-notes').value.trim() || null, discount: Number(document.querySelector('#quote-discount').value || 0), additional_fee: Number(document.querySelector('#quote-fee').value || 0) };
+  const depositPercent = Math.min(100, Math.max(0, Number(quoteDepositPercentInput?.value || 0)));
+  const payload = { name: document.querySelector('#quote-name').value.trim(), client_id: quoteClientSelect.value, venue: document.querySelector('#quote-venue').value.trim() || null, event_date: document.querySelector('#quote-date').value || null, event_time: document.querySelector('#quote-time').value || null, status: document.querySelector('#quote-status').value, notes: document.querySelector('#quote-notes').value.trim() || null, discount: Number(document.querySelector('#quote-discount').value || 0), additional_fee: Number(document.querySelector('#quote-fee').value || 0), valid_until: depositPercent > 0 ? (quoteValidUntilInput?.value || null) : null, deposit_percent: depositPercent };
   const items = getQuoteItemsFromForm();
   if (!items.length) { quoteFormFeedback.textContent = 'Selecione pelo menos um serviço.'; return; }
+  if (depositPercent > 0 && payload.status === 'sent' && !payload.valid_until) { quoteFormFeedback.textContent = 'Defina a data de validade do orçamento ou use 0% de sinal.'; return; }
   saveButton.disabled = true;
   saveButton.querySelector('span').textContent = 'Salvando...';
   const result = quoteId ? await supabaseClient.from('quotes').update(payload).eq('id', quoteId).select('id').single() : await supabaseClient.from('quotes').insert(payload).select('id').single();

@@ -184,17 +184,6 @@
         return whenVisible('#finance-panel', () => window.plenitudeFinance?.reload());
       }
     },
-    {
-      // Modelos padrão de roteiro são compartilhados por toda a equipe, então
-      // o painel de modelos acompanha as alterações dos outros usuários.
-      name: 'modelos-padrao',
-      tables: ['ceremonial_templates', 'ceremonial_template_activities'],
-      reload() {
-        return Promise.all([
-          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadTemplates())
-        ]);
-      }
-    }
   ];
 
   const TOPIC_BY_TABLE = (() => {

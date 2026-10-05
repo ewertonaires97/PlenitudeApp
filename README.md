@@ -52,19 +52,17 @@ Para categorias e imagens dos itens, execute [supabase/migrations/005_inventory_
 
 ### Cerimonial
 
-Execute [supabase/migrations/013_ceremonial_templates_reorder.sql](supabase/migrations/013_ceremonial_templates_reorder.sql) no SQL Editor. Ela é idempotente e faz quatro coisas:
+Execute [supabase/migrations/013_ceremonial_templates_reorder.sql](supabase/migrations/013_ceremonial_templates_reorder.sql) no SQL Editor. Ela é idempotente e faz três coisas:
 
 **1. `services.is_ceremonial`** — coluna booleana que marca quais serviços o módulo de Cerimonial atende. A marcação aparece como uma caixa no cadastro de serviço. A migração já preenche automaticamente os serviços existentes cujo nome ou categoria contenham a palavra "cerimonial" ("Cerimonial Completo", "Recepção / Cerimonial", "CERIMONIAL PREMIUM"); "Cerimônia" não entra, por ser outra palavra. O seletor de evento do Cerimonial só lista eventos cujo orçamento tenha algum item apontando para um serviço marcado. A caixa *"Somente eventos com serviço de Cerimonial"* liga e desliga esse filtro, e se nenhum serviço estiver marcado o filtro é ignorado para o módulo não ficar inutilizável.
 
-**2. Modelos padrão** — tabelas `ceremonial_templates` e `ceremonial_template_activities`. Em Roteiro, o botão **Modelo padrão** abre o cadastro: crie tantos modelos quiser, monte o roteiro de cada um e depois **Copiar para o evento**. A cópia pode *anexar* ao roteiro existente (padrão) ou *substituir* tudo, com confirmação.
+**2. Reordenação** — a coluna `unique (event_id, position)` de `ceremonial_activities` impedia a reordenação: trocar duas atividades de lugar exige dois `UPDATE`s e o primeiro esbarra na posição que a segunda ainda ocupa. Como o `supabase-js` resolve com `{ error }` em vez de lançar exceção, o botão de seta recarregava a lista sem mudar nada. As funções `reorder_ceremonial_activities` e `pack_ceremonial_activities` resolvem dentro do banco, em duas fases e de forma atômica.
 
-**3. Reordenação** — a coluna `unique (event_id, position)` de `ceremonial_activities` impedia a reordenação: trocar duas atividades de lugar exige dois `UPDATE`s e o primeiro esbarra na posição que a segunda ainda ocupa. Como o `supabase-js` resolve com `{ error }` em vez de lançar exceção, o botão de seta recarregava a lista sem mudar nada. As funções `reorder_ceremonial_activities` e `pack_ceremonial_activities` resolvem dentro do banco, em duas fases e de forma atômica.
+**3. `copy_ceremonial_template`** — mantida no banco por compatibilidade, mas o recurso de *Modelos padrão* foi removido do app: não existe mais tela, estado nem evento que a chame.
 
-**4. `copy_ceremonial_template`** — copia as atividades de um modelo para um evento numa transação só, respeitando o `append` ou o `replace`.
+As tabelas `ceremonial_templates` e `ceremonial_template_activities` continuam existindo no banco. Nenhuma migration as derruba — remover dados de produção é decisão sua, e as migrations deste projeto são sempre aditivas.
 
-Execute [supabase/migrations/014_reorder_ceremonial_template_activities.sql](supabase/migrations/014_reorder_ceremonial_template_activities.sql) no SQL Editor. Ela cria a função `reorder_ceremonial_template_activities`, que faz o mesmo pelos momentos de um modelo padrão. Sem ela, arrastar os momentos do modelo falha: a coluna `unique (template_id, position)` não deixa gravar a nova ordem em `UPDATE`s avulsos, e o movimento funciona com a reordenação do roteiro e não com o do modelo.
-
-O roteiro se reordena arrastando pelo punho `⠿`. O arraste usa Pointer Events, então funciona com dedo no celular e com mouse, já que a API nativa de drag-and-drop não funciona em touchscreen. Funciona tanto no roteiro do evento quanto nos momentos de cada modelo padrão.
+O roteiro se reordena arrastando pelo punho `⠿`. O arraste usa Pointer Events, então funciona com dedo no celular e com mouse, já que a API nativa de drag-and-drop não funciona em touchscreen.
 
 ### Sincronização em tempo real
 
@@ -181,7 +179,7 @@ Se quiser que a pessoa entre cadastrada e **sem** conseguir entrar, desmarque **
 
 ### Financeiro
 
-Execute [supabase/migrations/017_finance_module.sql](supabase/migrations/017_finance_module.sql) no SQL Editor depois das migrations `009_ceremonial_schema.sql` e `015_access_control.sql`, e em seguida [018_finance_costs.sql](supabase/migrations/018_finance_costs.sql) e [019_finance_receipts_crud.sql](supabase/migrations/019_finance_receipts_crud.sql). A migration 018 adiciona o cadastro de custos e atualiza o cálculo/validação do rateio; a 019 habilita a edição e exclusão segura de recebimentos. O módulo é restrito a Proprietário, Administrador e Gestor também pela RLS; a permissão `financeiro` é incluída no padrão de Gestor.
+Execute [supabase/migrations/017_finance_module.sql](supabase/migrations/017_finance_module.sql) no SQL Editor depois das migrations `009_ceremonial_schema.sql` e `015_access_control.sql`, e em seguida [018_finance_costs.sql](supabase/migrations/018_finance_costs.sql). A migration 018 adiciona o cadastro de custos e atualiza o cálculo/validação do rateio. O módulo é restrito a Proprietário, Administrador e Gestor também pela RLS; a permissão `financeiro` é incluída no padrão de Gestor.
 
 O valor contratado vem do orçamento confirmado. Para representar dinheiro efetivamente recebido, registre cada recebimento no evento. Os custos podem ser adicionados, editados e removidos no detalhe de cada evento. O filtro mensal agrupa pela data do evento. O cálculo é: receita recebida menos custos; do resultado, separa-se o dízimo; o saldo é dividido entre os cerimonialistas vinculados ao evento, por percentual ou valor fixo. O lucro líquido mostrado é o que resta após esses itens e pode ser negativo se os custos superarem as receitas.
 

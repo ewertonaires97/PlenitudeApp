@@ -15,7 +15,6 @@
   const receiptForm = document.querySelector('#finance-receipt-form');
   const receiptFeedback = document.querySelector('#finance-receipt-feedback');
   const receiptsList = document.querySelector('#finance-receipts-list');
-  const receiptSubmitLabel = document.querySelector('#finance-receipt-submit-label');
   const costForm = document.querySelector('#finance-cost-form');
   const costFeedback = document.querySelector('#finance-cost-feedback');
   const costsList = document.querySelector('#finance-costs-list');
@@ -129,6 +128,7 @@
     }
     state.events = events || [];
     const ids = state.events.map((event) => event.id);
+    let partial = false;
     if (ids.length) {
       const [settingsResult, receiptsResult, sharesResult, staffResult, costsResult] = await Promise.all([
         sb().from('event_finance_settings').select('*').in('event_id', ids),
@@ -137,22 +137,31 @@
         sb().from('ceremonialistas').select('id, event_id, name, specialty').in('event_id', ids).order('name'),
         sb().from('event_finance_costs').select('*').in('event_id', ids).order('incurred_on', { ascending: false })
       ]);
-      const failed = [settingsResult, receiptsResult, sharesResult, staffResult, costsResult].find((result) => result.error);
-      if (failed) {
-        setFeedback('Não foi possível carregar recebimentos, custos, rateios ou equipe. Confira as migrations 017 e 018 e a permissão Financeiro.', true);
-        eventList.innerHTML = '';
-        return;
+      // Cada tabela do rateio é lida por conta própria. Antes, uma única query
+      // que falhasse (a de custos, que depende da migration 018) esvaziava
+      // eventList — e é justamente da lista que o rateio abre, então o botão
+      // sumia da tela sem nenhuma pista. Agora o que falta vira aviso e o resto
+      // do rateio continua carregando.
+      const missing = [];
+      if (settingsResult.error) missing.push('configuração');
+      if (receiptsResult.error) missing.push('recebimentos');
+      if (sharesResult.error) missing.push('divisão da equipe');
+      if (staffResult.error) missing.push('cerimonialistas');
+      if (costsResult.error) missing.push('custos');
+      partial = missing.length > 0;
+      if (partial) {
+        setFeedback(`Rateio parcial: não foi possível carregar ${missing.join(', ')}. Confira as migrations 017 e 018 e a permissão Financeiro.`, true);
       }
-      state.settings = new Map((settingsResult.data || []).map((item) => [item.event_id, item]));
-      state.receipts = receiptsResult.data || [];
-      state.costs = costsResult.data || [];
+      state.settings = new Map(((settingsResult.error ? [] : settingsResult.data) || []).map((item) => [item.event_id, item]));
+      state.receipts = (receiptsResult.error ? [] : receiptsResult.data) || [];
+      state.costs = (costsResult.error ? [] : costsResult.data) || [];
       state.allocations = new Map();
-      (sharesResult.data || []).forEach((item) => {
+      ((sharesResult.error ? [] : sharesResult.data) || []).forEach((item) => {
         if (!state.allocations.has(item.event_id)) state.allocations.set(item.event_id, []);
         state.allocations.get(item.event_id).push(item);
       });
       state.staff = new Map();
-      (staffResult.data || []).forEach((member) => {
+      ((staffResult.error ? [] : staffResult.data) || []).forEach((member) => {
         if (!state.staff.has(member.event_id)) state.staff.set(member.event_id, []);
         state.staff.get(member.event_id).push(member);
       });
@@ -163,7 +172,11 @@
       state.allocations = new Map();
       state.staff = new Map();
     }
-    setFeedback(`${state.events.length} ${state.events.length === 1 ? 'evento confirmado' : 'eventos confirmados'}`);
+    // O aviso de rateio parcial fica na tela; a contagem de eventos só ocupa o
+    // lugar dele quando deu para ler tudo.
+    if (!partial) {
+      setFeedback(`${state.events.length} ${state.events.length === 1 ? 'evento confirmado' : 'eventos confirmados'}`);
+    }
     renderDashboard();
   }
 
@@ -233,8 +246,6 @@
 
   function renderReceipts(eventId) {
     const receipts = state.receipts.filter((receipt) => receipt.event_id === eventId);
-    const total = receipts.reduce((sum, receipt) => sum + (receipt.voided_at ? 0 : Number(receipt.amount)), 0);
-    document.querySelector('#finance-receipts-total').textContent = formatMoney(total);
     if (!receipts.length) {
       receiptsList.innerHTML = '<p class="field-hint">Ainda não há recebimentos registrados.</p>';
       return;
@@ -242,31 +253,9 @@
     const methodLabels = { pix: 'Pix', cash: 'Dinheiro', card: 'Cartão', transfer: 'Transferência', other: 'Outra' };
     receiptsList.innerHTML = receipts.map((receipt) => `<div class="finance-receipt-row ${receipt.voided_at ? 'voided' : ''}">
       <div><strong>${formatMoney(receipt.amount)}</strong><span>${new Date(`${receipt.received_on}T12:00:00`).toLocaleDateString('pt-BR')} · ${methodLabels[receipt.payment_method] || 'Outra'}${receipt.notes ? ` · ${escapeHTML(receipt.notes)}` : ''}</span></div>
-      ${receipt.voided_at ? '<span class="finance-void-tag">Estornado</span>' : `<div class="finance-receipt-row-actions"><button class="client-action" type="button" data-edit-finance-receipt="${receipt.id}" aria-label="Editar recebimento" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-finance-receipt="${receipt.id}" aria-label="Excluir recebimento" title="Excluir"><i data-lucide="trash-2"></i></button></div>`}
+      ${receipt.voided_at ? '<span class="finance-void-tag">Estornado</span>' : `<button class="client-action" type="button" data-void-receipt="${receipt.id}" aria-label="Estornar recebimento"><i data-lucide="rotate-ccw"></i></button>`}
     </div>`).join('');
     window.lucide?.createIcons();
-  }
-
-  function resetReceiptForm() {
-    receiptForm.reset();
-    document.querySelector('#finance-receipt-id').value = '';
-    document.querySelector('#finance-receipt-date').value = localDateString();
-    receiptSubmitLabel.textContent = 'Registrar recebimento';
-    document.querySelector('[data-cancel-finance-receipt]').hidden = true;
-    receiptFeedback.textContent = '';
-  }
-
-  function editReceipt(receiptId) {
-    const receipt = state.receipts.find((item) => item.id === receiptId && item.event_id === state.activeEventId && !item.voided_at);
-    if (!receipt) return;
-    document.querySelector('#finance-receipt-id').value = receipt.id;
-    document.querySelector('#finance-receipt-amount').value = receipt.amount;
-    document.querySelector('#finance-receipt-date').value = receipt.received_on;
-    document.querySelector('#finance-receipt-method').value = receipt.payment_method;
-    document.querySelector('#finance-receipt-notes').value = receipt.notes || '';
-    receiptSubmitLabel.textContent = 'Salvar alteração';
-    document.querySelector('[data-cancel-finance-receipt]').hidden = false;
-    document.querySelector('#finance-receipt-amount').focus();
   }
 
   function renderCosts(eventId) {
@@ -302,7 +291,6 @@
     document.querySelector('#finance-cost-notes').value = cost.notes || '';
     costFormSubmitLabel.textContent = 'Salvar alteração';
     document.querySelector('[data-cancel-finance-cost]').hidden = false;
-    document.querySelector('#finance-cost-name').focus();
   }
 
   function openFinanceEvent(eventId) {
@@ -323,7 +311,8 @@
     document.querySelector('#finance-tithe-fixed').value = details.setting.tithe_fixed_amount ?? 0;
     allocationFeedback.textContent = '';
     receiptFeedback.textContent = '';
-    resetReceiptForm();
+    receiptForm.reset();
+    document.querySelector('#finance-receipt-date').value = localDateString();
     resetCostForm();
     renderShareRows(details.shares.length ? details.shares : (state.staff.get(eventId) || []).map((member) => ({ ceremonialista_id: member.id, participant_name: member.name, calculation_mode: 'percentage', percentage: 0 })));
     renderReceipts(eventId);
@@ -372,37 +361,34 @@
     openFinanceEvent(state.activeEventId);
   }
 
-  async function saveReceipt(event) {
+  async function addReceipt(event) {
     event.preventDefault();
     if (!requireAccess()) return;
-    const receiptId = document.querySelector('#finance-receipt-id').value;
     const amount = Number(document.querySelector('#finance-receipt-amount').value);
     if (!Number.isFinite(amount) || amount <= 0) {
       receiptFeedback.textContent = 'Informe um valor maior que zero.';
       return;
     }
     const button = receiptForm.querySelector('button[type="submit"]');
-    const previousLabel = receiptSubmitLabel.textContent;
     button.disabled = true;
-    receiptSubmitLabel.textContent = 'Salvando...';
-    const { error } = await sb().rpc('save_event_finance_receipt', {
-      target_receipt_id: receiptId || null,
-      target_event_id: state.activeEventId,
-      target_amount: amount,
-      target_received_on: document.querySelector('#finance-receipt-date').value,
-      target_payment_method: document.querySelector('#finance-receipt-method').value,
-      target_notes: document.querySelector('#finance-receipt-notes').value.trim() || null
+    const { error } = await sb().from('event_finance_receipts').insert({
+      event_id: state.activeEventId,
+      amount,
+      received_on: document.querySelector('#finance-receipt-date').value,
+      payment_method: document.querySelector('#finance-receipt-method').value,
+      notes: document.querySelector('#finance-receipt-notes').value.trim() || null
     });
     button.disabled = false;
     if (error) {
-      receiptSubmitLabel.textContent = previousLabel;
-      receiptFeedback.textContent = error.message || 'Não foi possível salvar o recebimento. Confira a migration 019 e suas permissões.';
+      receiptFeedback.textContent = 'Não foi possível registrar o recebimento. Confira a migração 017 e suas permissões.';
       return;
     }
-    resetReceiptForm();
+    receiptForm.reset();
+    document.querySelector('#finance-receipt-date').value = localDateString();
+    receiptFeedback.textContent = '';
     await loadFinance();
     openFinanceEvent(state.activeEventId);
-    notify(receiptId ? 'Recebimento atualizado.' : 'Recebimento registrado.');
+    notify('Recebimento registrado.');
   }
 
   async function saveCost(event) {
@@ -448,18 +434,30 @@
     notify('Custo excluído.');
   }
 
-  async function deleteReceipt(receiptId) {
-    if (!requireAccess() || !window.confirm('Excluir este recebimento? Esta ação não pode ser desfeita.')) return;
+  async function voidReceipt(receiptId) {
+    if (!requireAccess() || !window.confirm('Estornar este recebimento? O registro ficará no histórico.')) return;
     const receipt = state.receipts.find((item) => item.id === receiptId && item.event_id === state.activeEventId);
-    if (!receipt || receipt.voided_at) return;
-    const { error } = await sb().rpc('delete_event_finance_receipt', { target_receipt_id: receiptId });
+    if (!receipt) return;
+    const current = financeFor(state.activeEventId);
+    const nextCollected = Math.max(0, current.collected - Number(receipt.amount));
+    const nextOperatingResult = nextCollected - current.costsTotal;
+    const nextTithe = current.setting.tithe_mode === 'fixed'
+      ? Number(current.setting.tithe_fixed_amount)
+      : Math.round(Math.max(0, nextOperatingResult) * Number(current.setting.tithe_percent) / 100 * 100) / 100;
+    const nextPool = Math.max(0, nextOperatingResult - nextTithe);
+    const existingPayouts = current.shares.reduce((sum, share) => sum + (share.calculation_mode === 'fixed' ? Number(share.fixed_amount) : Math.round(nextPool * Number(share.percentage) / 100 * 100) / 100), 0);
+    if (nextTithe > Math.max(0, nextOperatingResult) || existingPayouts > nextPool + 0.01) {
+      receiptFeedback.textContent = 'Este estorno deixaria os repasses acima do saldo. Ajuste e salve a divisão antes de estornar.';
+      return;
+    }
+    const { error } = await sb().rpc('void_event_finance_receipt', { target_receipt_id: receiptId });
     if (error) {
-      receiptFeedback.textContent = error.message || 'Não foi possível excluir o recebimento.';
+      receiptFeedback.textContent = 'Não foi possível estornar o recebimento.';
       return;
     }
     await loadFinance();
     openFinanceEvent(state.activeEventId);
-    notify('Recebimento excluído.');
+    notify('Recebimento estornado.');
   }
 
   document.querySelector('[data-open-finance]')?.addEventListener('click', openFinance);
@@ -475,15 +473,12 @@
     if (button) openFinanceEvent(button.dataset.openFinanceEvent);
   });
   allocationForm?.addEventListener('submit', saveAllocations);
-  receiptForm?.addEventListener('submit', saveReceipt);
-  document.querySelector('[data-cancel-finance-receipt]')?.addEventListener('click', resetReceiptForm);
+  receiptForm?.addEventListener('submit', addReceipt);
   costForm?.addEventListener('submit', saveCost);
   document.querySelector('[data-cancel-finance-cost]')?.addEventListener('click', resetCostForm);
   receiptsList?.addEventListener('click', (event) => {
-    const editButton = event.target.closest('[data-edit-finance-receipt]');
-    const deleteButton = event.target.closest('[data-delete-finance-receipt]');
-    if (editButton) editReceipt(editButton.dataset.editFinanceReceipt);
-    if (deleteButton) deleteReceipt(deleteButton.dataset.deleteFinanceReceipt);
+    const button = event.target.closest('[data-void-receipt]');
+    if (button) voidReceipt(button.dataset.voidReceipt);
   });
   costsList?.addEventListener('click', (event) => {
     const editButton = event.target.closest('[data-edit-finance-cost]');
@@ -495,7 +490,6 @@
     const rows = readDraftShares();
     rows.push({ participant_name: '', calculation_mode: 'percentage', percentage: 0, fixed_amount: 0 });
     renderShareRows(rows);
-    shareRows.lastElementChild?.querySelector('[data-share-name]')?.focus();
   });
   shareRows?.addEventListener('click', (event) => {
     const button = event.target.closest('[data-remove-share]');

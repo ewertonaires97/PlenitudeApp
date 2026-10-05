@@ -587,9 +587,38 @@
         <label for="quote-venue">Local</label><input id="quote-venue" type="text" placeholder="Ex.: Espaço Jardim" />
         <label>Serviços oferecidos</label><span class="field-hint">Ao marcar um serviço, os cardápios vinculados a ele aparecem aqui para consulta.</span><div class="quote-service-picker" id="quote-service-picker"></div>
         <div class="quote-totals"><span>Subtotal</span><strong id="quote-subtotal-preview">R$ 0,00</strong><label for="quote-discount">Desconto</label><input id="quote-discount" type="number" min="0" step="0.01" value="0" /><label for="quote-fee">Taxa adicional</label><input id="quote-fee" type="number" min="0" step="0.01" value="0" /><span>Total</span><strong id="quote-total-preview">R$ 0,00</strong></div>
+        <div class="quote-event-fields"><div><label for="quote-deposit-percent">Sinal exigido (%)</label><input id="quote-deposit-percent" type="number" min="0" max="100" step="1" value="30" /></div><div><label for="quote-valid-until">Válido até</label><input id="quote-valid-until" type="date" /></div></div>
+        <p class="field-hint">O sinal é a parte do total que o cliente paga para reservar a data. Zerando o percentual, a proposta não expira e a confirmação fica manual.</p>
+        <div class="quote-deposit-preview" id="quote-deposit-preview" role="status"><i data-lucide="info"></i><span>Informe o percentual do sinal e a data de corte para a proposta aparecer como válida na lista.</span></div>
         <label for="quote-status">Status</label><select id="quote-status" class="movement-select"><option value="draft">Rascunho</option><option value="sent">Enviado</option><option value="confirmed">Confirmado</option><option value="cancelled">Cancelado</option></select>
         <label for="quote-notes">Observações</label><textarea id="quote-notes" rows="3" placeholder="Condições, prazo de validade ou observações"></textarea>
         <p class="client-form-feedback" id="quote-form-feedback" role="alert"></p><button class="login-button" type="submit"><span>Salvar orçamento</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="client-form-panel" id="quote-deposit-panel" hidden aria-labelledby="quote-deposit-title">
+      <form class="client-form-card" id="quote-deposit-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">PAGAMENTO</p>
+            <h2 id="quote-deposit-title">Registrar sinal</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-quote-deposit aria-label="Fechar sinal"><i data-lucide="x"></i></button>
+        </header>
+        <input id="quote-deposit-quote-id" type="hidden" />
+        <p class="quote-deposit-context" id="quote-deposit-context"></p>
+        <div class="quote-deposit-summary">
+          <div><span>Sinal exigido</span><strong id="quote-deposit-required">R$ 0,00</strong></div>
+          <div><span>Já recebido</span><strong id="quote-deposit-paid">R$ 0,00</strong></div>
+          <div class="quote-deposit-remaining-box"><span>Falta</span><strong id="quote-deposit-remaining">R$ 0,00</strong></div>
+        </div>
+        <p class="field-hint">Registrar o sinal confirma o orçamento e lança o recebimento no Financeiro do evento. Dá para estornar depois, se precisar.</p>
+        <label for="quote-deposit-amount">Valor do sinal (R$)</label><input id="quote-deposit-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required />
+        <label for="quote-deposit-date">Data do pagamento</label><input id="quote-deposit-date" type="date" required />
+        <label for="quote-deposit-method">Forma de pagamento</label><select id="quote-deposit-method" class="movement-select"><option value="pix">Pix</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="transfer">Transferência</option><option value="other">Outra</option></select>
+        <label for="quote-deposit-notes">Observação</label><input id="quote-deposit-notes" type="text" placeholder="Ex.: entrada do sinal no contato" />
+        <div id="quote-deposit-history" class="quote-deposit-history"></div>
+        <p class="client-form-feedback" id="quote-deposit-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Registrar sinal</span><i data-lucide="hand-coins"></i></button>
       </form>
     </section>
     <section class="service-panel" id="event-panel" hidden aria-labelledby="events-title">
@@ -745,47 +774,45 @@
           <div><span>Repasses</span><strong id="finance-event-allocated">R$ 0,00</strong></div>
           <div><span>Lucro líquido</span><strong id="finance-event-balance">R$ 0,00</strong></div>
         </div>
-        <form id="finance-allocation-form" class="finance-form">
+        <form id="finance-allocation-form">
           <h3>Dízimo para a igreja</h3>
-          <div class="finance-form-fields">
-            <label class="finance-field-wide" for="finance-tithe-mode"><span>Forma de cálculo</span><select id="finance-tithe-mode" class="movement-select"><option value="percentage">Percentual da receita</option><option value="fixed">Valor direto</option></select></label>
-            <label for="finance-tithe-percent"><span>Percentual (%)</span><input id="finance-tithe-percent" type="number" min="0" max="100" step="0.01" value="10" /></label>
-            <label for="finance-tithe-fixed"><span>Valor do dízimo (R$)</span><input id="finance-tithe-fixed" type="number" min="0" step="0.01" value="0" /></label>
+          <div class="finance-tithe-fields">
+            <label for="finance-tithe-mode">Forma de cálculo</label>
+            <select id="finance-tithe-mode" class="movement-select"><option value="percentage">Percentual da receita</option><option value="fixed">Valor direto</option></select>
+            <label for="finance-tithe-percent">Percentual (%)</label>
+            <input id="finance-tithe-percent" type="number" min="0" max="100" step="0.01" value="10" />
+            <label for="finance-tithe-fixed">Valor do dízimo (R$)</label>
+            <input id="finance-tithe-fixed" type="number" min="0" step="0.01" value="0" />
           </div>
-          <div class="finance-section-heading"><h3>Divisão entre a equipe</h3><button class="add-client-button" type="button" data-add-finance-share"><i data-lucide="user-plus"></i><span>Adicionar pessoa</span></button></div>
+          <div class="finance-section-heading"><h3>Divisão entre a equipe</h3><button class="add-client-button" type="button" data-add-finance-share><i data-lucide="user-plus"></i><span>Adicionar pessoa</span></button></div>
           <p class="field-hint">Custos são descontados da receita; o dízimo é separado em seguida. Percentuais da equipe incidem sobre o saldo após custos e dízimo. Também é possível definir valor fixo.</p>
           <div class="finance-share-list" id="finance-share-rows"></div>
           <p class="client-form-feedback" id="finance-allocation-feedback" role="alert"></p>
-          <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="check"></i><span>Salvar divisão</span></button></div>
+          <button class="login-button" type="submit"><span>Salvar divisão</span><i data-lucide="check"></i></button>
         </form>
-        <section class="finance-form-section">
-          <div class="finance-section-heading"><h3>Recebimentos</h3><span id="finance-receipts-total" class="finance-form-total">R$ 0,00</span></div>
-          <div id="finance-receipts-list" class="finance-form-list"></div>
-          <form id="finance-receipt-form" class="finance-form">
-            <input id="finance-receipt-id" type="hidden" />
-            <div class="finance-form-fields">
-              <label for="finance-receipt-amount"><span>Valor do recebimento (R$)</span><input id="finance-receipt-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
-              <label for="finance-receipt-date"><span>Data do recebimento</span><input id="finance-receipt-date" type="date" required /></label>
-              <label class="finance-field-wide" for="finance-receipt-method"><span>Forma de pagamento</span><select id="finance-receipt-method" class="movement-select"><option value="pix">Pix</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="transfer">Transferência</option><option value="other">Outra</option></select></label>
-              <label class="finance-field-wide" for="finance-receipt-notes"><span>Observação</span><input id="finance-receipt-notes" type="text" placeholder="Ex.: sinal ou parcela final" /></label>
-            </div>
+        <section class="finance-receipts-section">
+          <h3>Recebimentos</h3>
+          <div id="finance-receipts-list" class="finance-receipts-list"></div>
+          <form id="finance-receipt-form" class="finance-receipt-form">
+            <label for="finance-receipt-amount">Novo recebimento (R$)</label><input id="finance-receipt-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required />
+            <label for="finance-receipt-date">Data do recebimento</label><input id="finance-receipt-date" type="date" required />
+            <label for="finance-receipt-method">Forma de pagamento</label><select id="finance-receipt-method" class="movement-select"><option value="pix">Pix</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="transfer">Transferência</option><option value="other">Outra</option></select>
+            <label for="finance-receipt-notes">Observação</label><input id="finance-receipt-notes" type="text" placeholder="Ex.: sinal ou parcela final" />
             <p class="client-form-feedback" id="finance-receipt-feedback" role="alert"></p>
-            <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-receipt-submit-label">Registrar recebimento</span></button><button class="text-button" type="button" data-cancel-finance-receipt hidden>Cancelar edição</button></div>
+            <button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Registrar recebimento</span></button>
           </form>
         </section>
-        <section class="finance-form-section">
-          <div class="finance-section-heading"><h3>Custos do evento</h3><span id="finance-costs-total" class="finance-form-total">R$ 0,00</span></div>
-          <div id="finance-costs-list" class="finance-form-list"></div>
-          <form id="finance-cost-form" class="finance-form">
+        <section class="finance-costs-section">
+          <div class="finance-section-heading"><h3>Custos do evento</h3><span id="finance-costs-total" class="finance-costs-total">R$ 0,00</span></div>
+          <div id="finance-costs-list" class="finance-costs-list"></div>
+          <form id="finance-cost-form" class="finance-cost-form">
             <input id="finance-cost-id" type="hidden" />
-            <div class="finance-form-fields">
-              <label class="finance-field-wide" for="finance-cost-name"><span>Nome do custo</span><input id="finance-cost-name" type="text" placeholder="Ex.: aluguel do espaço" required /></label>
-              <label for="finance-cost-amount"><span>Valor (R$)</span><input id="finance-cost-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
-              <label for="finance-cost-date"><span>Data</span><input id="finance-cost-date" type="date" required /></label>
-              <label class="finance-field-wide" for="finance-cost-notes"><span>Observação</span><input id="finance-cost-notes" type="text" placeholder="Fornecedor ou comprovante" /></label>
-            </div>
+            <label for="finance-cost-name">Nome do custo</label><input id="finance-cost-name" type="text" placeholder="Ex.: aluguel do espaço" required />
+            <label for="finance-cost-amount">Valor (R$)</label><input id="finance-cost-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required />
+            <label for="finance-cost-date">Data</label><input id="finance-cost-date" type="date" required />
+            <label for="finance-cost-notes">Observação</label><input id="finance-cost-notes" type="text" placeholder="Fornecedor ou comprovante" />
             <p class="client-form-feedback" id="finance-cost-feedback" role="alert"></p>
-            <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-cost-submit-label">Registrar custo</span></button><button class="text-button" type="button" data-cancel-finance-cost hidden>Cancelar edição</button></div>
+            <div class="finance-cost-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-cost-submit-label">Registrar custo</span></button><button class="text-button" type="button" data-cancel-finance-cost hidden>Cancelar edição</button></div>
           </form>
         </section>
       </div>
@@ -902,36 +929,6 @@
         <p class="client-form-feedback" id="ceremonial-activity-feedback" role="alert"></p>
         <button class="login-button" type="submit"><span>Salvar momento no roteiro</span><i data-lucide="check"></i></button>
       </form>
-    </section>
-
-    <!-- Modal: Modelos padrão de roteiro -->
-    <section class="client-form-panel" id="ceremonial-templates-modal" hidden aria-labelledby="ceremonial-templates-modal-title">
-      <div class="client-form-card templates-modal-card">
-        <header class="client-panel-header">
-          <div>
-            <p class="eyebrow">ROTEIRO</p>
-            <h2 id="ceremonial-templates-modal-title">Modelos padrão</h2>
-          </div>
-          <button class="icon-button" type="button" data-close-templates-modal aria-label="Fechar modelos padrão"><i data-lucide="x"></i></button>
-        </header>
-        <p class="field-hint">Cadastre um roteiro uma vez e copie para qualquer evento novo, sem redigitar cada momento.</p>
-
-        <div class="templates-columns">
-          <div class="templates-list-col">
-            <label class="templates-subtitle" for="template-new-name">Novo modelo</label>
-            <form id="template-create-form" class="templates-create-form">
-              <input id="template-new-name" type="text" placeholder="Ex.: Modelo Padrão 1" required />
-              <button class="inline-create-button" type="submit"><i data-lucide="plus"></i><span>Criar</span></button>
-            </form>
-            <div class="templates-list" id="templates-list"></div>
-          </div>
-
-          <div class="templates-detail-col">
-            <p class="client-form-feedback" id="ceremonial-templates-feedback" role="alert"></p>
-            <div id="templates-detail"></div>
-          </div>
-        </div>
-      </div>
     </section>
 
     <!-- Modal: Adicionar/Editar Convidado (Recepção) -->
@@ -1059,6 +1056,7 @@
         </header>
         <p class="field-hint">O PDF é gerado na hora com os dados atualizados. Você pode conferir o resultado e enviar para o cliente.</p>
         <div class="quote-saved-actions">
+          <button class="client-action-button quote-deposit-action" type="button" data-quote-deposit hidden><i data-lucide="hand-coins"></i><span>Registrar sinal</span></button>
           <button class="client-action-button" type="button" data-quote-pdf><i data-lucide="file-text"></i><span>Ver PDF</span></button>
           <button class="whatsapp-action-button" type="button" data-quote-whatsapp><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button>
           <button class="client-action-button" type="button" data-quote-share><i data-lucide="share-2"></i><span>Compartilhar</span></button>
