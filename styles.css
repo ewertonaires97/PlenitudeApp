@@ -143,7 +143,7 @@ h1 span { color: var(--gold); }
 .service-row { flex-direction: row; align-items: stretch; flex-wrap: wrap; row-gap: 9px; }
 .service-row .client-initial { width: 34px; height: 34px; margin-bottom: 0; flex-shrink: 0; }
 .service-row .client-details { display: flex; flex-direction: column; justify-content: center; flex: 1 1 0%; min-width: 0; border-top: none; padding-top: 0; }
-.service-row .client-details strong { margin-bottom: 2px; font-size: 11px; overflow: visible; white-space: normal; }
+.service-row .client-details strong { margin-bottom: 2px; font-size: 13px; overflow: visible; white-space: normal; }
 .service-row .client-details span { overflow: visible; white-space: normal; font-size: 9px; color: var(--muted); display: block; margin-bottom: 1px; }
 .service-row .service-price { margin-top: 0 !important; }
 .service-row .service-status { margin-top: 0 !important; width: fit-content !important; align-self: flex-start; display: inline-flex; align-items: center; }
@@ -255,43 +255,59 @@ h1 span { color: var(--gold); }
 .finance-event-summary span { color: var(--muted); font-size: 9px; }
 .finance-event-summary strong { color: var(--moss); font-size: 13px; }
 .finance-event-card h3 { margin: 13px 0 9px; color: var(--ink); font: 600 17px "Playfair Display", serif; }
-.finance-tithe-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(95px, .7fr); gap: 7px 10px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 4px; }
-.finance-tithe-fields label { color: var(--muted); font-size: 10px; }
-.finance-tithe-fields select, .finance-tithe-fields input { width: 100%; min-height: 38px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font: inherit; font-size: 11px; }
 .finance-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 18px; }
 .finance-section-heading h3 { margin: 0; }
 .finance-section-heading .add-client-button { flex: 0 0 auto; min-height: 34px; }
+.finance-form-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.finance-form-total { color: var(--moss); font-size: 14px; font-weight: 700; }
+.finance-form-list { display: grid; gap: 7px; margin: 10px 0; }
+
+/* === Sistema único dos formulários do rateio =========================
+   Os três formulários do modal (dízimo/divisão, recebimentos e custos)
+   usam a mesma casca: .finance-form > .finance-form-fields + feedback +
+   .finance-form-actions. Alterar a aparência de um form é alterar aqui. */
+.finance-form { display: block; margin: 0; }
+.finance-form-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; padding: 14px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.finance-form-list + .finance-form { margin-top: 14px; }
+.finance-form-list > .field-hint { margin: 0; font-size: 12px; line-height: 1.5; }
+.finance-form-fields > label, .finance-share-row label { display: flex; flex-direction: column; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 600; line-height: 1.3; }
+.finance-field-wide { grid-column: 1 / -1; }
+.finance-form-fields input:not([type="hidden"]), .finance-form-fields select, .finance-share-row input, .finance-share-row select { width: 100%; min-width: 0; min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font: inherit; font-size: 13px; transition: border-color .15s, box-shadow .15s; }
+.finance-form-fields select, .finance-share-row select { appearance: none; padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237f867b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; background-size: 14px; }
+/* Anel de foco em duas cores: o dourado marca a borda e o halo sustenta o
+   contraste, que sozinho ficaria no limite do aceitável. Mesmo par usado
+   pelos botões de navegação. */
+.finance-form-fields input:focus, .finance-form-fields select:focus, .finance-share-row input:focus, .finance-share-row select:focus { border-color: var(--gold); outline: 2px solid rgba(179, 138, 77, .22); outline-offset: 1px; }
+.finance-form-fields input:disabled, .finance-share-row input:disabled { color: var(--muted); background: var(--cream); cursor: not-allowed; }
+.finance-form-fields input::placeholder, .finance-share-row input::placeholder { color: #a9aea4; }
+.finance-form > .field-hint { display: block; margin: 10px 0 0; font-size: 12px; line-height: 1.5; }
+.finance-form > .client-form-feedback { margin: 10px 0 0; }
+.finance-form-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.finance-form-actions .add-client-button { min-height: 42px; padding: 0 16px; font-size: 12px; }
+.finance-form-actions .text-button { font-size: 12px; }
 .finance-share-list { display: grid; gap: 7px; margin: 10px 0; }
 .finance-share-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px 115px auto auto; align-items: end; gap: 7px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .finance-share-row label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); font-size: 9px; }
 .finance-share-row input, .finance-share-row select { width: 100%; min-width: 0; height: 35px; padding: 0 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff; font: inherit; font-size: 10px; }
 .finance-share-preview { align-self: center; color: var(--moss); font-size: 10px; white-space: nowrap; }
-.finance-receipts-section { margin-top: 22px; padding-top: 15px; border-top: 1px solid var(--line); }
-.finance-receipts-list { display: grid; gap: 6px; }
 .finance-receipt-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .finance-receipt-row > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .finance-receipt-row strong { color: var(--moss); font-size: 11px; }
 .finance-receipt-row span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
 .finance-receipt-row.voided { opacity: .58; }
 .finance-void-tag { flex: 0 0 auto; color: #a0483d !important; font-weight: 700; }
-.finance-receipt-form { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 9px; margin-top: 12px; }
-.finance-receipt-form label { align-self: end; color: var(--muted); font-size: 9px; font-weight: 600; }
-.finance-receipt-form input, .finance-receipt-form select { width: 100%; min-height: 37px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff; font: inherit; font-size: 10px; }
-.finance-receipt-form .client-form-feedback, .finance-receipt-form button { grid-column: 1 / -1; }
-.finance-receipt-form button { justify-self: start; min-height: 37px; }
 @media (max-width: 480px) {
    .finance-event-row { grid-template-columns: 38px minmax(0, 1fr) 28px; }
    .finance-event-numbers { grid-column: 2; align-items: flex-start; flex-direction: row; }
    .finance-event-numbers span::after { content: ":"; }
    .finance-event-numbers strong { font-size: 10px; }
    .finance-open-event { grid-column: 3; grid-row: 1 / 3; }
+   .finance-form-fields { grid-template-columns: 1fr; }
    .finance-share-row { grid-template-columns: minmax(0, 1fr) 92px; }
    .finance-share-row .finance-share-person { grid-column: 1 / -1; }
    .finance-share-preview { justify-self: start; }
-   .finance-receipt-form { grid-template-columns: 1fr; }
-   .finance-receipt-form .client-form-feedback, .finance-receipt-form button { grid-column: 1; }
    small { font-size: 12px !important; line-height: 1.35; }
-   .finance-share-row label, .finance-tithe-fields label, .finance-receipt-form label, .finance-cost-form label { font-size: 12px; }
+   .finance-share-row label { font-size: 12px; }
    .activity-description, .activity-footer-meta, .event-meta-line, .guest-sub-meta { font-size: 12px; line-height: 1.4; }
    .activity-status-tag, .guest-table-badge, .guest-notes-tag { font-size: 12px; }
 }
@@ -441,7 +457,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 
 .activity-main-col { flex: 1; min-width: 0; max-width: 100%; }
 .activity-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; flex-wrap: wrap; }
-.activity-title { margin: 0; font: 600 12px "Playfair Display", serif; color: var(--ink); line-height: 1.35; }
+.activity-title { margin: 0; font: 600 14px "Playfair Display", serif; color: var(--ink); line-height: 1.35; }
 .activity-title.strike { text-decoration: line-through; color: var(--muted); }
 .activity-time-tag { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border-radius: 3px; color: var(--gold); background: var(--cream); font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; flex: 0 0 auto; white-space: nowrap; }
 .activity-time-tag svg { width: 9px; height: 9px; }
@@ -628,7 +644,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .activity-checkbox-btn { width: 18px; height: 18px; }
   .activity-checkbox-btn svg { width: 11px; height: 11px; }
 .activity-main-col { flex: 1; min-width: 0; max-width: 100%; }
-   .activity-title { font-size: 12px; }
+   .activity-title { font-size: 14px; }
    .activity-time-tag { font-size: 10px; padding: 1px 4px; white-space: nowrap; }
    .activity-time-tag svg { width: 8px; height: 8px; }
    .activity-description { font-size: 10px; margin: 3px 0 4px; }
@@ -756,7 +772,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
    .timeline-activity-card { padding: 7px 6px; gap: 6px; }
    .activity-pos-badge { width: 16px; height: 16px; font-size: 10px; }
    .activity-checkbox-btn { width: 18px; height: 18px; }
-   .activity-title { font-size: 10.5px; }
+   .activity-title { font-size: 13px; }
    .activity-description { }
 
   .arrival-stats-card { padding: 8px 10px; }
@@ -1041,9 +1057,9 @@ a:focus-visible,
 .quote-deposit-summary > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px; border-radius: 4px; background: var(--cream); }
 .quote-deposit-summary span { color: var(--muted); font-size: 9px; }
 .quote-deposit-summary strong { overflow-wrap: anywhere; color: var(--moss); font-size: 13px; font-variant-numeric: tabular-nums; }
-.quote-deposit-remaining-box { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; background: var(--moss); }
+.quote-deposit-remaining-box { grid-column: 1 / -1; background: var(--moss); }
 .quote-deposit-remaining-box span { color: #dce5da; }
-.quote-deposit-remaining-box strong { color: var(--paper); font-size: 15px; }
+.quote-deposit-remaining-box strong { color: var(--paper); }
 .quote-deposit-history { display: grid; gap: 7px; margin-top: 15px; }
 .quote-deposit-history:empty { display: none; }
 .quote-deposit-history-title { color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
@@ -1055,21 +1071,12 @@ a:focus-visible,
 .quote-deposit-void-tag { flex: 0 0 auto; color: #a0483d !important; font-weight: 700; }
 .quote-deposit-action { border-color: transparent; color: var(--paper); background: var(--moss); }
 .quote-deposit-action:hover { border-color: transparent; background: var(--moss-deep); }
-.finance-costs-section { margin-top: 22px; padding-top: 15px; border-top: 1px solid var(--line); }
-.finance-costs-total { color: var(--moss); font-size: 14px; font-weight: 700; }
-.finance-costs-list { display: grid; gap: 7px; margin: 10px 0; }
 .finance-cost-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .finance-cost-row > div:first-child { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .finance-cost-row > div:first-child strong { overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .finance-cost-row > div:first-child span { color: var(--muted); font-size: 11px; }
 .finance-cost-amount { color: #9a554c; font-size: 13px; white-space: nowrap; }
 .finance-cost-row-actions { display: flex; gap: 2px; }
-.finance-cost-form { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 10px; margin-top: 13px; }
-.finance-cost-form label { align-self: end; color: var(--muted); font-size: 12px; font-weight: 600; }
-.finance-cost-form input { width: 100%; min-height: 41px; padding: 0 9px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff; font: inherit; font-size: 13px; }
-.finance-cost-form .client-form-feedback, .finance-cost-actions { grid-column: 1 / -1; }
-.finance-cost-actions { display: flex; align-items: center; gap: 12px; }
-.finance-cost-actions .add-client-button { min-height: 40px; font-size: 12px; }
 
 /* Aumenta textos auxiliares e labels em telas pequenas sem inflar títulos. */
 @media (max-width: 480px) {
@@ -1083,7 +1090,7 @@ a:focus-visible,
    .module-text small { font-size: 11px; line-height: 1.35; }
    .finance-event-main span, .finance-event-numbers span { font-size: 11px; }
    .finance-receipt-row span, .finance-cost-row > div:first-child span { font-size: 12px; }
-   .finance-share-row label, .finance-tithe-fields label, .finance-receipt-form label, .finance-cost-form label { font-size: 12px; }
+   .finance-share-row label { font-size: 12px; }
    .finance-cost-row > div:first-child strong, .finance-cost-amount { font-size: 14px; }
 }
 
@@ -1127,11 +1134,7 @@ a:focus-visible,
 .quote-deposit-summary > div { gap: 7px; padding: 11px; }
 .quote-deposit-summary span { font-size: 11px; line-height: 1.35; }
 .quote-deposit-summary strong { font-size: 14px; }
-.quote-deposit-remaining-box strong { font-size: 16px; }
 .finance-event-card h3 { margin: 14px 0 10px; color: var(--ink); font: 600 19px "Playfair Display", serif; }
-.finance-tithe-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(105px, .7fr); gap: 9px 11px; align-items: center; padding: 13px; border: 1px solid var(--line); border-radius: 4px; }
-.finance-tithe-fields label { color: var(--muted); font-size: 12px; }
-.finance-tithe-fields select, .finance-tithe-fields input { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font: inherit; font-size: 13px; }
 .finance-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 20px; }
 .finance-section-heading h3 { margin: 0; }
 .finance-section-heading .add-client-button { flex: 0 0 auto; min-height: 40px; font-size: 12px; }
@@ -1141,8 +1144,6 @@ a:focus-visible,
 .finance-share-row label { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--muted); font-size: 11px; }
 .finance-share-row input, .finance-share-row select { width: 100%; min-width: 0; min-height: 39px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }
 .finance-share-preview { align-self: center; color: var(--moss); font-size: 12px; white-space: nowrap; }
-.finance-receipts-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
-.finance-receipts-list { display: grid; gap: 7px; }
 .finance-receipt-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .finance-receipt-row > div { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .finance-receipt-row strong { color: var(--moss); font-size: 13px; }
@@ -1155,11 +1156,6 @@ a:focus-visible,
 .quote-deposit-row > div { min-width: 0; overflow-wrap: anywhere; }
 .quote-deposit-row span { max-width: 100%; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .finance-void-tag { flex: 0 0 auto; color: #a0483d !important; font-weight: 700; }
-.finance-receipt-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin-top: 13px; }
-.finance-receipt-form label { align-self: end; color: var(--muted); font-size: 11px; font-weight: 600; }
-.finance-receipt-form input, .finance-receipt-form select { width: 100%; min-height: 40px; padding: 0 9px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }
-.finance-receipt-form .client-form-feedback, .finance-receipt-form button { grid-column: 1 / -1; }
-.finance-receipt-form button { justify-self: start; min-height: 40px; font-size: 12px; }
 @media (max-width: 480px) {
    .finance-event-row { grid-template-columns: 42px minmax(0, 1fr) 30px; gap: 8px; }
    .finance-event-numbers { grid-column: 2; align-items: flex-start; flex-direction: row; }
@@ -1169,6 +1165,4 @@ a:focus-visible,
    .finance-share-row { grid-template-columns: minmax(0, 1fr) 105px; }
    .finance-share-row .finance-share-person { grid-column: 1 / -1; }
    .finance-share-preview { justify-self: start; }
-   .finance-receipt-form { grid-template-columns: 1fr; }
-   .finance-receipt-form .client-form-feedback, .finance-receipt-form button { grid-column: 1; }
 }

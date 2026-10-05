@@ -774,45 +774,46 @@
           <div><span>Repasses</span><strong id="finance-event-allocated">R$ 0,00</strong></div>
           <div><span>Lucro líquido</span><strong id="finance-event-balance">R$ 0,00</strong></div>
         </div>
-        <form id="finance-allocation-form">
+        <form id="finance-allocation-form" class="finance-form">
           <h3>Dízimo para a igreja</h3>
-          <div class="finance-tithe-fields">
-            <label for="finance-tithe-mode">Forma de cálculo</label>
-            <select id="finance-tithe-mode" class="movement-select"><option value="percentage">Percentual da receita</option><option value="fixed">Valor direto</option></select>
-            <label for="finance-tithe-percent">Percentual (%)</label>
-            <input id="finance-tithe-percent" type="number" min="0" max="100" step="0.01" value="10" />
-            <label for="finance-tithe-fixed">Valor do dízimo (R$)</label>
-            <input id="finance-tithe-fixed" type="number" min="0" step="0.01" value="0" />
+          <div class="finance-form-fields">
+            <label class="finance-field-wide" for="finance-tithe-mode"><span>Forma de cálculo</span><select id="finance-tithe-mode" class="movement-select"><option value="percentage">Percentual da receita</option><option value="fixed">Valor direto</option></select></label>
+            <label for="finance-tithe-percent"><span>Percentual (%)</span><input id="finance-tithe-percent" type="number" min="0" max="100" step="0.01" value="10" /></label>
+            <label for="finance-tithe-fixed"><span>Valor do dízimo (R$)</span><input id="finance-tithe-fixed" type="number" min="0" step="0.01" value="0" /></label>
           </div>
           <div class="finance-section-heading"><h3>Divisão entre a equipe</h3><button class="add-client-button" type="button" data-add-finance-share><i data-lucide="user-plus"></i><span>Adicionar pessoa</span></button></div>
           <p class="field-hint">Custos são descontados da receita; o dízimo é separado em seguida. Percentuais da equipe incidem sobre o saldo após custos e dízimo. Também é possível definir valor fixo.</p>
           <div class="finance-share-list" id="finance-share-rows"></div>
           <p class="client-form-feedback" id="finance-allocation-feedback" role="alert"></p>
-          <button class="login-button" type="submit"><span>Salvar divisão</span><i data-lucide="check"></i></button>
+          <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="check"></i><span>Salvar divisão</span></button></div>
         </form>
-        <section class="finance-receipts-section">
-          <h3>Recebimentos</h3>
-          <div id="finance-receipts-list" class="finance-receipts-list"></div>
-          <form id="finance-receipt-form" class="finance-receipt-form">
-            <label for="finance-receipt-amount">Novo recebimento (R$)</label><input id="finance-receipt-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required />
-            <label for="finance-receipt-date">Data do recebimento</label><input id="finance-receipt-date" type="date" required />
-            <label for="finance-receipt-method">Forma de pagamento</label><select id="finance-receipt-method" class="movement-select"><option value="pix">Pix</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="transfer">Transferência</option><option value="other">Outra</option></select>
-            <label for="finance-receipt-notes">Observação</label><input id="finance-receipt-notes" type="text" placeholder="Ex.: sinal ou parcela final" />
+        <section class="finance-form-section">
+          <div class="finance-section-heading"><h3>Recebimentos</h3><span id="finance-receipts-total" class="finance-form-total">R$ 0,00</span></div>
+          <div id="finance-receipts-list" class="finance-form-list"></div>
+          <form id="finance-receipt-form" class="finance-form">
+            <div class="finance-form-fields">
+              <label for="finance-receipt-amount"><span>Valor do recebimento (R$)</span><input id="finance-receipt-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
+              <label for="finance-receipt-date"><span>Data do recebimento</span><input id="finance-receipt-date" type="date" required /></label>
+              <label class="finance-field-wide" for="finance-receipt-method"><span>Forma de pagamento</span><select id="finance-receipt-method" class="movement-select"><option value="pix">Pix</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="transfer">Transferência</option><option value="other">Outra</option></select></label>
+              <label class="finance-field-wide" for="finance-receipt-notes"><span>Observação</span><input id="finance-receipt-notes" type="text" placeholder="Ex.: sinal ou parcela final" /></label>
+            </div>
             <p class="client-form-feedback" id="finance-receipt-feedback" role="alert"></p>
-            <button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Registrar recebimento</span></button>
+            <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Registrar recebimento</span></button></div>
           </form>
         </section>
-        <section class="finance-costs-section">
-          <div class="finance-section-heading"><h3>Custos do evento</h3><span id="finance-costs-total" class="finance-costs-total">R$ 0,00</span></div>
-          <div id="finance-costs-list" class="finance-costs-list"></div>
-          <form id="finance-cost-form" class="finance-cost-form">
+        <section class="finance-form-section">
+          <div class="finance-section-heading"><h3>Custos do evento</h3><span id="finance-costs-total" class="finance-form-total">R$ 0,00</span></div>
+          <div id="finance-costs-list" class="finance-form-list"></div>
+          <form id="finance-cost-form" class="finance-form">
             <input id="finance-cost-id" type="hidden" />
-            <label for="finance-cost-name">Nome do custo</label><input id="finance-cost-name" type="text" placeholder="Ex.: aluguel do espaço" required />
-            <label for="finance-cost-amount">Valor (R$)</label><input id="finance-cost-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required />
-            <label for="finance-cost-date">Data</label><input id="finance-cost-date" type="date" required />
-            <label for="finance-cost-notes">Observação</label><input id="finance-cost-notes" type="text" placeholder="Fornecedor ou comprovante" />
+            <div class="finance-form-fields">
+              <label class="finance-field-wide" for="finance-cost-name"><span>Nome do custo</span><input id="finance-cost-name" type="text" placeholder="Ex.: aluguel do espaço" required /></label>
+              <label for="finance-cost-amount"><span>Valor (R$)</span><input id="finance-cost-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
+              <label for="finance-cost-date"><span>Data</span><input id="finance-cost-date" type="date" required /></label>
+              <label class="finance-field-wide" for="finance-cost-notes"><span>Observação</span><input id="finance-cost-notes" type="text" placeholder="Fornecedor ou comprovante" /></label>
+            </div>
             <p class="client-form-feedback" id="finance-cost-feedback" role="alert"></p>
-            <div class="finance-cost-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-cost-submit-label">Registrar custo</span></button><button class="text-button" type="button" data-cancel-finance-cost hidden>Cancelar edição</button></div>
+            <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-cost-submit-label">Registrar custo</span></button><button class="text-button" type="button" data-cancel-finance-cost hidden>Cancelar edição</button></div>
           </form>
         </section>
       </div>

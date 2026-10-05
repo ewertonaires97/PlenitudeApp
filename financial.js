@@ -246,6 +246,11 @@
 
   function renderReceipts(eventId) {
     const receipts = state.receipts.filter((receipt) => receipt.event_id === eventId);
+    // O total fica ao lado do título da lista e ignora o que foi estornado,
+    // para quem olha a seção saber a soma sem somar linha por linha.
+    const total = receipts.reduce((sum, receipt) => sum + (receipt.voided_at ? 0 : Number(receipt.amount)), 0);
+    const totalEl = document.querySelector('#finance-receipts-total');
+    if (totalEl) totalEl.textContent = formatMoney(total);
     if (!receipts.length) {
       receiptsList.innerHTML = '<p class="field-hint">Ainda não há recebimentos registrados.</p>';
       return;
