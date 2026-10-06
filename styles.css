@@ -108,6 +108,26 @@ h1 span { color: var(--gold); }
    padding (nao margin) para o bloco caber em 100% e nao vazar a direita. */
 .service-menu-owner { flex: 1 0 100%; margin: 2px 0 0; padding-left: 24px; color: var(--muted); font-size: 9px; line-height: 1.4; }
 .menu-service-name { flex: 1; min-width: 0; color: var(--ink); font-size: 11px; cursor: pointer; }
+/* Cardapios sempre por categoria. No formulario de servico cada categoria e uma
+   sanfona (details/summary): com tudo aberto a lista fica longa e o resto do
+   formulario perde o foco. O marcador nativo do summary e escondido porque o
+   icone do lucide ja mostra o estado. */
+.menu-category-group { border-top: 1px solid var(--line); }.menu-category-group:first-child { border-top: 0; }
+.menu-category-summary { display: flex; align-items: center; gap: 7px; padding: 9px 2px; cursor: pointer; list-style: none; color: var(--ink); font-size: 11px; font-weight: 700; }
+.menu-category-summary::-webkit-details-marker { display: none; }.menu-category-summary::marker { content: ''; }
+.menu-category-summary:hover { color: var(--moss); }.menu-category-summary:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.menu-category-chevron { width: 14px; height: 14px; flex: 0 0 auto; transition: transform .18s ease; }
+.menu-category-group[open] > .menu-category-summary .menu-category-chevron { transform: rotate(180deg); }
+.menu-category-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-category-count { flex: 0 0 auto; padding: 2px 7px; border-radius: 10px; color: var(--moss); background: var(--sage-light); font-size: 9px; font-weight: 700; }
+.menu-category-body { padding: 0 2px 6px; }
+/* Na tela de cardapios os cartoes sao montados dentro de um bloco por categoria.
+   A coluna segue a do .client-list que ja era usada: um cartao por linha. */
+.menu-group { display: flex; flex-direction: column; gap: 8px; }
+.menu-group-head { display: flex; align-items: baseline; gap: 8px; padding: 4px 2px 0; }
+.menu-group-head strong { font: 600 15px "Playfair Display", serif; color: var(--moss); }
+.menu-group-head span { color: var(--muted); font-size: 10px; }
+.menu-group-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .detail-box { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .detail-box-title { display: block; margin-bottom: 8px; color: var(--moss); font-size: 10px; font-weight: 700; }
 .detail-service-row { padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 10px; }
@@ -117,6 +137,8 @@ h1 span { color: var(--gold); }
 .detail-service-total { font-weight: 600; color: var(--moss); white-space: nowrap; }
 .detail-item-menus { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
 .detail-item-menus .linked-menu-chip { padding: 3px 7px; font-size: 9px; font-weight: 600; }
+.detail-menu-group + .detail-menu-group { margin-top: 9px; }
+.detail-menu-group-label { display: block; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .detail-total-line { display: flex; justify-content: space-between; padding: 8px 0 0; font-size: 11px; font-weight: 700; color: var(--moss); }
 @media (max-width: 430px) { .quote-service-picker { max-height: 60vh; }.quote-service-option { grid-template-columns: 1fr; gap: 5px; padding: 8px 10px; }.quote-service-copy strong { font-size: 12px; }.quote-service-price { grid-column: 1; color: var(--moss); font-weight: 700; font-size: 11px; }.quote-qty-label, .quote-price-label { display: inline-block; width: auto; margin: 0 4px 0 0; font-size: 9px; }.quote-service-option input[type="number"] { width: 100px; min-width: 0; font-size: 10px; }.quote-service-choice { grid-column: 1; font-size: 9px; }.quote-service-check { justify-self: start; }.quote-service-menus { gap: 6px; }.linked-menu-chip { padding: 5px 9px; font-size: 11px; }.linked-menu-chip svg { width: 13px; height: 13px; }}
 @media (min-width: 600px) { .app-shell { box-shadow: 0 0 45px rgba(40, 48, 39, .13); } .bottom-nav { position: absolute; } }
@@ -828,8 +850,12 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .pd-items tbody td { padding: 9px 6px; border-bottom: 1px solid var(--line); font-size: 9.5pt; vertical-align: top; }
 .pd-items .pd-num { text-align: right; white-space: nowrap; }
 .pd-items .pd-item-name { font-weight: 600; color: var(--ink); }
-.pd-item-menus { display: block; margin-top: 4px; }
+.pd-item-menus { display: block; margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--sage); }
+.pd-item-menus-title { display: block; margin-bottom: 1px; font-size: 7pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--moss); }
 .pd-item-menu { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px; border: 1px solid var(--sage); border-radius: 3px; font-size: 8pt; color: var(--moss); background: var(--sage-light); }
+.pd-item-menu-group { display: block; margin-top: 3px; }
+.pd-item-menu-group + .pd-item-menu-group { margin-top: 5px; }
+.pd-item-menu-group-label { display: block; font-size: 7pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
 .pd-totals { display: flex; justify-content: flex-end; margin-top: 14px; }
 .pd-totals-box { width: 230px; padding: 12px 14px; border-radius: 4px; background: var(--cream); }
 .pd-total-line { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 9.5pt; color: var(--muted); }
@@ -936,7 +962,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .pd-items thead { display: table-header-group; }
   .pd-items tr, .pd-block, .pd-totals, .pd-notes { page-break-inside: avoid; }
   .pd-totals-box { background: var(--cream) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pd-block, .pd-status, .pd-brand-mark, .pd-item-menu, .pd-notes { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pd-block, .pd-status, .pd-brand-mark, .pd-item-menus, .pd-item-menu, .pd-notes { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   a[href]::after { content: none !important; }
 }
 

@@ -480,6 +480,33 @@ function groupMenusByService(menus, serviceIds) {
   return byService;
 }
 
+// Os cardapios aparecem sempre por categoria, e nao em uma lista solta. As
+// categorias ja chegam em ordem alfabetica do banco (ORDER BY name em
+// loadMenus) e o grupo "Sem categoria" fecha a lista, para nenhum cardapio ficar
+// de fora da tela. Um cardapio em duas categorias aparece nas duas, que e o
+// mesmo criterio do filtro da tela de cardapios.
+const MENU_UNGROUPED_LABEL = 'Sem categoria';
+
+function groupMenusByCategory(list) {
+  const groups = menuCategories.map((category) => ({ id: category.id, name: category.name, menus: [] }));
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const ungrouped = { id: '', name: MENU_UNGROUPED_LABEL, menus: [] };
+  list.forEach((menu) => {
+    const targets = menuCategoryLinks
+      .filter((link) => link.menu_id === menu.id)
+      .map((link) => byId.get(link.category_id))
+      .filter(Boolean);
+    if (targets.length) targets.forEach((group) => group.menus.push(menu));
+    else ungrouped.menus.push(menu);
+  });
+  return groups.concat(ungrouped).filter((group) => group.menus.length);
+}
+
+// A etiqueta de cardapio e a mesma em todas as telas: abre a ficha do cardapio.
+function menuChip(menu) {
+  return `<button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}"><i data-lucide="book-open"></i><span>${escapeHTML(menu.name)}</span></button>`;
+}
+
 // O vinculo cardapio <-> serviço é N:N e mora em menu_services. Derivar os dois
 // lados aqui mantem services e menus coerentes mesmo com os dois loaders rodando
 // em paralelo.
@@ -505,34 +532,77 @@ function openServices() {
 // No formulario de servico todos os cardapios sao listados: os marcados sao os
 // que participam deste servico. O mesmo cardapio pode estar marcado em outros
 // servicos ao mesmo tempo, e o nome do cardapio abre a tela de detalhes dele.
+// A lista vem por categoria, cada uma numa sanfona que encolhe e expande: com
+// muitas categorias abertas a leitura fica longa e o servico perde o foco.
 let serviceMenusBefore = [];
+// loadMenus re-renderiza esta lista a cada evento de realtime, entao o estado da
+// sanfona fica guardado por id de categoria em vez de no DOM.
+let serviceMenuCollapsedGroups = new Set();
 
 function renderServiceMenuOptions(serviceId) {
   if (!menus.length) {
     serviceMenuOptions.innerHTML = '<span class="field-hint">Nenhum cardápio cadastrado ainda.</span>';
     return;
   }
-  serviceMenuOptions.innerHTML = menus.map((menu) => {
-    const checked = serviceId ? menu.serviceIds.includes(serviceId) : false;
-    const others = menu.serviceIds
-      .filter((id) => id !== serviceId)
-      .map((id) => services.find((service) => service.id === id)?.name)
-      .filter(Boolean);
-    const othersLine = others.length
-      ? `<span class="service-menu-owner">também em ${escapeHTML(others.join(', '))}</span>`
-      : '';
-    return `<div class="service-menu-option${checked ? ' selected' : ''}">
-      <label class="service-menu-check" for="service-menu-${menu.id}"><input id="service-menu-${menu.id}" type="checkbox" data-service-menu="${menu.id}" ${checked ? 'checked' : ''} /></label>
-      <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}"><i data-lucide="book-open"></i><span>${escapeHTML(menu.name)}</span></button>
-      ${othersLine}
-    </div>`;
+  serviceMenuOptions.innerHTML = groupMenusByCategory(menus).map((group) => {
+    const isCollapsed = serviceMenuCollapsedGroups.has(group.id);
+    const options = group.menus.map((menu) => {
+      const checked = serviceId ? menu.serviceIds.includes(serviceId) : false;
+      const others = menu.serviceIds
+        .filter((id) => id !== serviceId)
+        .map((id) => services.find((service) => service.id === id)?.name)
+        .filter(Boolean);
+      const othersLine = others.length
+        ? `<span class="service-menu-owner">também em ${escapeHTML(others.join(', '))}</span>`
+        : '';
+      // Um cardapio em duas categorias aparece nas duas, entao o id leva a
+      // categoria junto: dois elementos com o mesmo id fariam o <label> marcar
+      // sempre o primeiro.
+      const inputId = `service-menu-${group.id || 'sem-categoria'}-${menu.id}`;
+      return `<div class="service-menu-option${checked ? ' selected' : ''}">
+        <label class="service-menu-check" for="${inputId}"><input id="${inputId}" type="checkbox" data-service-menu="${menu.id}" ${checked ? 'checked' : ''} /></label>
+        ${menuChip(menu)}
+        ${othersLine}
+      </div>`;
+    }).join('');
+    const count = group.menus.length;
+    return `<details class="menu-category-group" data-menu-group="${group.id}"${isCollapsed ? '' : ' open'}>
+      <summary class="menu-category-summary" data-toggle-menu-group="${group.id}" aria-expanded="${isCollapsed ? 'false' : 'true'}">
+        <i data-lucide="chevron-down" class="menu-category-chevron"></i>
+        <span class="menu-category-name">${escapeHTML(group.name)}</span>
+        <span class="menu-category-count">${count}</span>
+      </summary>
+      <div class="menu-category-body">${options}</div>
+    </details>`;
   }).join('');
   lucide.createIcons();
 }
 
+// O mesmo cardapio aparece em todas as suas categorias, e por isso tem mais de
+// uma caixa de marcacao. Marcar em uma precisa marcar nas outras: sao o mesmo
+// vinculo, nao dois.
 serviceMenuOptions.addEventListener('change', (event) => {
   const checkbox = event.target.closest('[data-service-menu]');
-  if (checkbox) checkbox.closest('.service-menu-option').classList.toggle('selected', checkbox.checked);
+  if (!checkbox) return;
+  serviceMenuOptions.querySelectorAll(`[data-service-menu="${CSS.escape(checkbox.dataset.serviceMenu)}"]`).forEach((input) => {
+    input.checked = checkbox.checked;
+    input.closest('.service-menu-option').classList.toggle('selected', input.checked);
+  });
+});
+
+// O toggle é delegated porque a lista inteira é re-renderizada a cada
+// carregamento: um listener direto no botão morreria junto com ele.
+// Aqui o details.open ainda é o valor de antes: o abrir/fechar do <details> é a
+// ação padrão do clique no summary e roda depois do dispatch. Por isso o
+// próximo estado é o inverso do que está no DOM.
+serviceMenuOptions.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-menu-group]');
+  if (!toggle) return;
+  const groupId = toggle.dataset.toggleMenuGroup;
+  const willOpen = !toggle.closest('[data-menu-group]').open;
+  if (willOpen) serviceMenuCollapsedGroups.delete(groupId);
+  else serviceMenuCollapsedGroups.add(groupId);
+  toggle.setAttribute('aria-expanded', String(willOpen));
 });
 
 async function openServiceForm(service = null) {
@@ -597,7 +667,9 @@ serviceForm.addEventListener('submit', async (event) => {
   // Vinculo N:N em menu_services. Os cardapios marcados passam a participar
   // deste servico; os que estavam vinculados e foram desmarcados saem apenas
   // deste servico, continuando nos demais onde tambem aparecem.
-  const checkedMenus = [...serviceMenuOptions.querySelectorAll('[data-service-menu]:checked')].map((checkbox) => checkbox.dataset.serviceMenu);
+  // Um mesmo cardapio aparece em todas as suas categorias, entao pode vir mais
+  // de uma vez marcado: o Set evita tentar inserir o mesmo vinculo duas vezes.
+  const checkedMenus = [...new Set([...serviceMenuOptions.querySelectorAll('[data-service-menu]:checked')].map((checkbox) => checkbox.dataset.serviceMenu))];
   const releasedMenus = serviceMenusBefore.filter((menuId) => !checkedMenus.includes(menuId));
   let menusError = null;
   if (releasedMenus.length) {
@@ -705,7 +777,7 @@ function renderMenus() {
     menuList.innerHTML = '<div class="empty-clients">Ainda não há cardápios cadastrados.</div>';
     return;
   }
-  menuList.innerHTML = visibleMenus.map((menu) => {
+  const card = (menu) => {
     const images = menuImages.filter((image) => image.menu_id === menu.id).slice(0, 4);
     const heroImage = images[0]?.public_url;
     return `<article class="visual-card menu-card detail-trigger" data-detail-type="menu" data-detail-id="${menu.id}">
@@ -716,6 +788,19 @@ function renderMenus() {
         <div class="visual-card-actions"><button class="client-action" type="button" data-edit-menu="${menu.id}" aria-label="Editar ${escapeHTML(menu.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-menu="${menu.id}" aria-label="Excluir ${escapeHTML(menu.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div>
       </div>
     </article>`;
+  };
+  // A grade e montada categoria por categoria, e nao como uma lista solta: o
+  // cabecalho de cada bloco diz de onde vem cada cardapio, que antes so aparecia
+  // depois de aberto o detalhe de cada um.
+  menuList.innerHTML = groupMenusByCategory(visibleMenus).map((group) => {
+    const count = group.menus.length;
+    return `<section class="menu-group">
+      <div class="menu-group-head">
+        <strong>${escapeHTML(group.name)}</strong>
+        <span>${count} ${count === 1 ? 'cardápio' : 'cardápios'}</span>
+      </div>
+      <div class="menu-group-grid">${group.menus.map(card).join('')}</div>
+    </section>`;
   }).join('');
   lucide.createIcons();
 }
@@ -1353,13 +1438,14 @@ async function openDetail(type, id) {
     title = service.name;
     eyebrow = 'SERVIÇO';
     // Mesmo padrao do detalhe do orcamento: cartapios em etiquetas que abrem a
-    // ficha de cada um.
-    const menusBox = service.menuNames.length
-      ? `<div class="detail-box"><strong class="detail-box-title">CARDÁPIOS DESTE SERVIÇO</strong><div class="detail-item-menus">${service.menuIds.map((menuId) => {
-        const menu = menus.find((item) => item.id === menuId);
-        if (!menu) return '';
-        return `<button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}"><i data-lucide="book-open"></i><span>${escapeHTML(menu.name)}</span></button>`;
-      }).join('')}</div></div>`
+    // ficha de cada um, aqui separadas por categoria.
+    const serviceMenus = menus.filter((menu) => service.menuIds.includes(menu.id));
+    const menusBox = serviceMenus.length
+      ? `<div class="detail-box"><strong class="detail-box-title">CARDÁPIOS DESTE SERVIÇO</strong>${groupMenusByCategory(serviceMenus).map((group) => `
+          <div class="detail-menu-group">
+            <span class="detail-menu-group-label">${escapeHTML(group.name)}</span>
+            <div class="detail-item-menus">${group.menus.map(menuChip).join('')}</div>
+          </div>`).join('')}</div>`
       : '';
     content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="sparkles"></i></span><div><strong>${escapeHTML(service.name)}</strong><span>${service.active ? 'Serviço ativo' : 'Serviço inativo'}</span></div></div>${detailRow('Categoria', service.category)}${detailRow('Preço padrão', formatCurrency(service.default_price))}${menusBox}${detailRow('Descrição', service.description)}`;
   } else if (type === 'menu') {
@@ -1393,8 +1479,8 @@ async function openDetail(type, id) {
       if (!menus.length) await loadMenus();
       const { data: items } = await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order');
       if (items && items.length > 0) {
-        // O cardapio nao e escolhido no orcamento: cada servico lista os seus,
-        // no mesmo agrupamento usado no PDF.
+        // O cardápio não é escolhido no orçamento: cada serviço lista os seus,
+        // por categoria, igual à tela de detalhe do serviço e ao PDF.
         const menusByService = groupMenusByService(menus, items.map((item) => item.service_id));
         const rowsHtml = items.map((item) => {
           const service = services.find((s) => s.id === item.service_id);
@@ -1402,11 +1488,11 @@ async function openDetail(type, id) {
           const total = item.quantity * item.unit_price;
           const linked = menusByService.get(item.service_id) || [];
           const menusCell = linked.length
-            ? `<div class="detail-item-menus">${linked.map((menu) => `
-                <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
-                  <i data-lucide="book-open"></i>
-                  <span>${escapeHTML(menu.name)}</span>
-                </button>`).join('')}</div>`
+            ? groupMenusByCategory(linked).map((group) => `
+                <div class="detail-menu-group">
+                  <span class="detail-menu-group-label">${escapeHTML(group.name)}</span>
+                  <div class="detail-item-menus">${group.menus.map(menuChip).join('')}</div>
+                </div>`).join('')
             : '';
           return `<div class="detail-service-row"><div class="detail-service-head"><span>${escapeHTML(name)} <span class="detail-service-qty">×${item.quantity}</span></span><span class="detail-service-total">${formatCurrency(total)}</span></div>${menusCell}</div>`;
         }).join('');
@@ -1428,8 +1514,13 @@ async function openDetail(type, id) {
   const depositButton = actionQuoteId && detailQuote && Number(detailQuote.deposit_amount) > 0 && detailQuote.status !== 'cancelled'
     ? `<button class="client-action-button quote-deposit-action" type="button" data-quote-deposit-row="${actionQuoteId}"><i data-lucide="hand-coins"></i><span>Registrar sinal</span></button>`
     : '';
+  // Quem envia por e-mail ou telefone não passa pelo botão do WhatsApp, mas a
+  // proposta saiu do mesmo jeito: o botão registra isso sem abrir o formulário.
+  const sentButton = actionQuoteId && detailQuote?.status === 'draft'
+    ? `<button class="client-action-button quote-deposit-action" type="button" data-quote-sent-row="${actionQuoteId}"><i data-lucide="send"></i><span>Marcar como enviado</span></button>`
+    : '';
   detailViewContent.innerHTML = actionQuoteId
-    ? `${content}<div class="quote-saved-actions">${depositButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
+    ? `${content}<div class="quote-saved-actions">${sentButton}${depositButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
     : content;
   detailView.hidden = false;
   lucide.createIcons();
@@ -1464,9 +1555,13 @@ document.querySelector('[data-close-detail]').addEventListener('click', closeDet
 detailView.addEventListener('click', (event) => { if (event.target === detailView) closeDetail(); });
 detailView.addEventListener('click', async (event) => {
   const depositButton = event.target.closest('[data-quote-deposit-row]');
+  const sentButton = event.target.closest('[data-quote-sent-row]');
   const pdfButton = event.target.closest('[data-quote-pdf-row]');
   const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
   const shareButton = event.target.closest('[data-quote-share-row]');
+  // A tela é reaberta porque o status mudou e o botão some: quem marcou como
+  // enviado precisa ver o orçamento no novo estado, não a tela antiga.
+  if (sentButton) { await markQuoteAsSent(sentButton.dataset.quoteSentRow); await openDetail('quote', sentButton.dataset.quoteSentRow); return; }
   if (depositButton) { closeDetail(); await openQuoteDepositPanel(depositButton.dataset.quoteDepositRow); return; }
   if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
   if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
@@ -1520,6 +1615,15 @@ function quoteSignalComplete(quote) {
   return quoteRequiresSignal(quote) && Number(quote?.deposited_amount || 0) + 0.01 >= Number(quote.deposit_amount);
 }
 
+// Enviado é o estado em que a proposta está na mão do cliente esperando resposta.
+// É o único estado em que o prazo e o sinal viram cobrança de verdade, e é
+// nele que o banco também age: quotes_expiring_idx, refresh_quote_expiry e
+// expire_overdue_quotes (migration 020) só olham o que está 'sent'. Enquanto o
+// orçamento é rascunho ninguém recebeu nada, então não há o que cobrar.
+function quoteAwaitingClient(quote) {
+  return quote?.status === 'sent' || quote?.status === 'expired';
+}
+
 // Frase curta que resume a situação do sinal, usada na lista, no detalhe, no PDF
 // e na mensagem: um texto só evita cada tela inventar sua própria redação.
 function quoteValidityNote(quote) {
@@ -1529,6 +1633,9 @@ function quoteValidityNote(quote) {
       ? `Sinal de ${formatCurrency(quote.deposited_amount)} recebido`
       : 'Confirmado';
   }
+  // Rascunho não tem prazo correndo: mostrar "falta o sinal" nele seria cobrar
+  // algo que o cliente nem sabe que existe.
+  if (quote.status === 'draft') return 'Não enviado';
   if (!quoteRequiresSignal(quote)) return 'Sem sinal';
   const remaining = Math.max(0, Number(quote.deposit_amount) - Number(quote.deposited_amount || 0));
   const days = daysUntilLocalDate(quote.valid_until);
@@ -1541,7 +1648,8 @@ function quoteValidityNote(quote) {
 
 function quoteValidityTone(quote) {
   if (!quote || quote.status === 'confirmed') return 'done';
-  if (!quoteRequiresSignal(quote)) return 'none';
+  // Nem urgente nem atrasado: ninguém foi cobrado de nada ainda.
+  if (quote.status === 'draft' || !quoteRequiresSignal(quote)) return 'none';
   if (quote.status === 'expired' || quote.status === 'cancelled') return 'late';
   const days = daysUntilLocalDate(quote.valid_until);
   if (days !== null && days < 0) return 'late';
@@ -1570,10 +1678,12 @@ function renderQuotes() {
   for (const [clientName, groupQuotes] of Object.entries(grouped)) {
     html += `<div style="margin-bottom:6px;padding:0 4px;"><strong style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">${escapeHTML(clientName)}</strong></div>`;
     for (const quote of groupQuotes) {
-      // A linha de validade só aparece quando existe prazo ou sinal a cobrar;
-      // orçamento confirmado mostra o sinal recebido, os demais, o que falta.
+      // A linha de validade só aparece quando há algo que a etiqueta de status não
+      // diz sozinha: o sinal recebido, o prazo correndo ou o sinal configurado de
+      // um rascunho que ainda não saiu. Rascunho sem sinal é só "Rascunho".
+      const hasValidityNote = quoteRequiresSignal(quote) || quoteAwaitingClient(quote) || quote.status === 'confirmed';
       const tone = quoteValidityTone(quote);
-      const validity = quote.status === 'confirmed' && !quoteRequiresSignal(quote) ? '' : `<span class="quote-validity-tag ${tone}"><i data-lucide="${tone === 'done' ? 'circle-check' : tone === 'late' ? 'triangle-alert' : 'clock'}"></i>${escapeHTML(quoteValidityNote(quote))}</span>`;
+      const validity = hasValidityNote ? `<span class="quote-validity-tag ${tone}"><i data-lucide="${tone === 'done' ? 'circle-check' : tone === 'late' ? 'triangle-alert' : 'clock'}"></i>${escapeHTML(quoteValidityNote(quote))}</span>` : '';
       html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
     }
   }
@@ -1651,8 +1761,16 @@ function renderQuotePrint({ quote, items, menusByService }) {
   const eventLine = [formatDateBR(quote.event_date), quote.event_time ? String(quote.event_time).slice(0, 5) : ''].filter(Boolean).join(' · ');
   const rows = items.map((item) => {
     const linked = menusByService.get(item.service_id) || [];
+    // O cabeçalho diz de quem são os cardápios e a lista fica recuada em relação
+    // ao nome do serviço: no PDF não há detalhe para abrir, então a associação
+    // entre o serviço e o que o acompanha precisa ficar evidente na leitura.
+    // Dentro do bloco, as categorias separam o que compõe o cardápio do serviço.
     const menusCell = linked.length
-      ? `<span class="pd-item-menus">${linked.map((menu) => `<span class="pd-item-menu">${escapeHTML(menu.name)}</span>`).join('')}</span>`
+      ? `<span class="pd-item-menus"><span class="pd-item-menus-title">Cardápios deste serviço</span>${groupMenusByCategory(linked).map((group) => `
+          <span class="pd-item-menu-group">
+            <span class="pd-item-menu-group-label">${escapeHTML(group.name)}</span>
+            ${group.menus.map((menu) => `<span class="pd-item-menu">${escapeHTML(menu.name)}</span>`).join('')}
+          </span>`).join('')}</span>`
       : '';
     return `<tr><td><span class="pd-item-name">${escapeHTML(item.description || 'Serviço')}</span>${menusCell}</td><td class="pd-num">${formatNumber(item.quantity)}</td><td class="pd-num">${formatCurrency(item.unit_price)}</td><td class="pd-num">${formatCurrency(Number(item.quantity) * Number(item.unit_price))}</td></tr>`;
   }).join('');
@@ -1729,6 +1847,32 @@ function quoteWhatsappText({ quote, items, menusByService }) {
   return lines.join('\n');
 }
 
+// Marcar como enviado é registrar que a proposta saiu daqui. Sem isso ninguém
+// precisa lembrar de abrir o formulário depois de mandar: o envio é o momento em
+// que o prazo começa a valer, e é o estado que o banco usa para expirar o que
+// ficou sem resposta. Confirmed, cancelled e sent não mudam por causa de um
+// reenvio, e expired fica de fora de propósito: voltar dele é estender o prazo,
+// não reenviar.
+async function markQuoteAsSent(quoteId) {
+  const quote = quotes.find((item) => item.id === quoteId);
+  if (!quote || quote.status !== 'draft') return;
+  // O formulário exige data de validade para enviar, mas um rascunho pode ter
+  // sido salvo com sinal e sem prazo. Aplicar o prazo padrão é o mesmo que a
+  // migration 020 fez no backfill dos orçamentos enviados sem validade.
+  const patch = { status: 'sent' };
+  if (!quote.valid_until && quoteRequiresSignal(quote)) {
+    patch.valid_until = addDaysToLocalDate(localToday(), QUOTE_VALIDITY_DAYS);
+  }
+  const { error } = await supabaseClient.from('quotes').update(patch).eq('id', quoteId);
+  if (error) {
+    setQuoteOutputFeedback(`Proposta enviada, mas não foi possível marcar como enviada: ${error.message}`, true);
+    return false;
+  }
+  await loadQuotes();
+  showToast('Orçamento marcado como enviado');
+  return true;
+}
+
 async function sendQuoteOnWhatsapp(quoteId) {
   try {
     const payload = await loadQuoteForOutput(quoteId);
@@ -1738,6 +1882,7 @@ async function sendQuoteOnWhatsapp(quoteId) {
       return;
     }
     window.open(`https://wa.me/${number}?text=${encodeURIComponent(quoteWhatsappText(payload))}`, '_blank', 'noopener,noreferrer');
+    await markQuoteAsSent(quoteId);
   } catch (error) {
     setQuoteOutputFeedback(`Não foi possível preparar o envio: ${error.message}`, true);
   }
@@ -1749,10 +1894,11 @@ async function shareQuote(quoteId) {
     const shareData = { title: `Orçamento #${String(payload.quote.quote_number ?? 0).padStart(4, '0')} — ${payload.quote.name}`, text: quoteWhatsappText(payload) };
     if (navigator.share) {
       await navigator.share(shareData);
-      return;
+    } else {
+      await navigator.clipboard.writeText(shareData.text);
+      setQuoteOutputFeedback('Orçamento copiado. Cole no WhatsApp do cliente.');
     }
-    await navigator.clipboard.writeText(shareData.text);
-    setQuoteOutputFeedback('Orçamento copiado. Cole no WhatsApp do cliente.');
+    await markQuoteAsSent(quoteId);
   } catch (error) {
     if (error?.name === 'AbortError') return;
     setQuoteOutputFeedback('Não foi possível compartilhar o orçamento.', true);
