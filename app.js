@@ -125,6 +125,21 @@ let removedInventoryImageIds = [];
 function setAuthenticated(isAuthenticated) {
   authScreen.hidden = isAuthenticated;
   appShell.classList.toggle('ready', isAuthenticated);
+  // Um orçamento vencendo é o único problema do app que não pode esperar
+  // alguém se lembrar de abrir um módulo. Carregar no login faz o sino do topo
+  // já apontar o que está vencendo na primeira tela, sem depender de a tela de
+  // Orçamentos ter sido aberta alguma vez.
+  //
+  // Sai para o próximo tick pelos dois motivos que o permissions.js já cita: o
+  // cliente do Supabase serializa as chamadas de auth e um await aqui trava a
+  // renovação do token, e os avisos do orçamento são declarados bem depois
+  // desta função — chamar antes os deixaria em zona morta.
+  if (isAuthenticated) {
+    setTimeout(() => {
+      watchQuoteDeadline();
+      loadQuotes();
+    }, 0);
+  }
 }
 
 function showLoginError(message) {
@@ -1519,8 +1534,14 @@ async function openDetail(type, id) {
   const sentButton = actionQuoteId && detailQuote?.status === 'draft'
     ? `<button class="client-action-button quote-deposit-action" type="button" data-quote-sent-row="${actionQuoteId}"><i data-lucide="send"></i><span>Marcar como enviado</span></button>`
     : '';
+  // Com o prazo vencendo, vencido ou já cobrado, o lembrete entra na fila de
+  // ações do orçamento: o sinal em aberto é a única coisa que pode ser feita
+  // com a proposta nesse momento, e o botão some assim que o lembrete sai.
+  const reminderButton = actionQuoteId && quoteReminderEligible(detailQuote) && daysUntilLocalDate(detailQuote?.valid_until) !== null
+    ? `<button class="client-action-button quote-reminder-action" type="button" data-quote-reminder-detail="${actionQuoteId}"><i data-lucide="bell-ring"></i><span>Lembrete de sinal</span></button>`
+    : '';
   detailViewContent.innerHTML = actionQuoteId
-    ? `${content}<div class="quote-saved-actions">${sentButton}${depositButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
+    ? `${content}<div class="quote-saved-actions">${sentButton}${depositButton}${reminderButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
     : content;
   detailView.hidden = false;
   lucide.createIcons();
@@ -1559,9 +1580,11 @@ detailView.addEventListener('click', async (event) => {
   const pdfButton = event.target.closest('[data-quote-pdf-row]');
   const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
   const shareButton = event.target.closest('[data-quote-share-row]');
+  const reminderButton = event.target.closest('[data-quote-reminder-detail]');
   // A tela é reaberta porque o status mudou e o botão some: quem marcou como
   // enviado precisa ver o orçamento no novo estado, não a tela antiga.
   if (sentButton) { await markQuoteAsSent(sentButton.dataset.quoteSentRow); await openDetail('quote', sentButton.dataset.quoteSentRow); return; }
+  if (reminderButton) { await sendQuoteExpiryReminder(reminderButton.dataset.quoteReminderDetail); await openDetail('quote', reminderButton.dataset.quoteReminderDetail); return; }
   if (depositButton) { closeDetail(); await openQuoteDepositPanel(depositButton.dataset.quoteDepositRow); return; }
   if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
   if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
@@ -1684,30 +1707,46 @@ function renderQuotes() {
       const hasValidityNote = quoteRequiresSignal(quote) || quoteAwaitingClient(quote) || quote.status === 'confirmed';
       const tone = quoteValidityTone(quote);
       const validity = hasValidityNote ? `<span class="quote-validity-tag ${tone}"><i data-lucide="${tone === 'done' ? 'circle-check' : tone === 'late' ? 'triangle-alert' : 'clock'}"></i>${escapeHTML(quoteValidityNote(quote))}</span>` : '';
-      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+      // O botão do lembrete aparece só quando a cobrança serve a algo: sinal em
+      // aberto, prazo vencido ou a vencer, e ninguém cobrou ainda. Fora disso
+      // ele seria um botão sem ação útil, só um sino a mais na linha.
+      const reminderButton = quoteReminderEligible(quote) && daysUntilLocalDate(quote.valid_until) !== null
+        ? `<button class="client-action quote-reminder-action" type="button" data-quote-reminder-row="${quote.id}" aria-label="Enviar lembrete de sinal de ${escapeHTML(quote.name)}" title="Lembrete de sinal"><i data-lucide="bell-ring"></i></button>`
+        : '';
+      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button>${reminderButton}<button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
     }
   }
   quoteList.innerHTML = html;
   refreshQuoteDepositButtons();
+  renderQuoteReminders();
+  renderQuoteAlerts();
   lucide.createIcons();
 }
 
 // Colunas usadas pelas telas de orçamento, listas uma vez para o select não
 // divergir entre a lista, o detalhe, o PDF e a mensagem.
-const QUOTE_COLUMNS = 'id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, valid_until, deposit_percent, deposit_amount, deposited_amount, confirmed_by_deposit';
+const QUOTE_COLUMNS = 'id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, valid_until, deposit_percent, deposit_amount, deposited_amount, confirmed_by_deposit, expiry_reminder_sent_at, reminder_message';
 
 async function loadQuotes() {
   setQuoteFeedback('Carregando orçamentos...');
   // A expiração é derivada da data de corte, então é resolvida aqui em vez de
   // depender de um job no servidor: quem abrir a lista já vê o estado real.
   await supabaseClient.rpc('expire_overdue_quotes');
-  const { data, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name)`).order('created_at', { ascending: false });
+  // O WhatsApp entra na lista porque o lembrete de sinal é decidido aqui, na
+  // tela de orçamentos: sem o contato no mesmo lugar que mostra quem está
+  // vencendo amanhã, a cobrança dependeria de abrir o orçamento um por um.
+  const { data, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name, whatsapp)`).order('created_at', { ascending: false });
   if (error) {
     setQuoteFeedback(`Não foi possível carregar os orçamentos: ${error.message}`, true);
     quoteList.innerHTML = '';
+    // Sem lista confiável o aviso também some: mostrar "vence em breve" a partir
+    // de um dado que não veio do banco é pior do que não mostrar nada.
+    quotes = [];
+    renderQuotes();
     return;
   }
   quotes = data || [];
+  await loadQuoteMessageTemplates();
   setQuoteFeedback(`${quotes.length} ${quotes.length === 1 ? 'orçamento cadastrado' : 'orçamentos cadastrados'}`);
   renderQuotes();
 }
@@ -2037,6 +2076,564 @@ quoteDepositHistory?.addEventListener('click', async (event) => {
   showToast('Sinal estornado');
 });
 
+/* ========================================================================== */
+/* LEMBRETE DE SINAL                                                          */
+/* A cobrança é derivada da data, como a expiração: não há job no servidor e   */
+/* nada é agendado. O app descobre quem está com o sinal em aberto toda vez    */
+/* que a lista de orçamentos carrega — e, desde o login, mesmo que ninguém      */
+/* abra a tela de Orçamentos.                                                  */
+/*                                                                           */
+/* O envio é um passo humano: o WhatsApp abre com o texto pronto e quem opera */
+/* confirma o envio. Um PWA sem servidor e sem credencial de disparo           */
+/* automático não tem como mandar mensagem sozinho — mandar sem ninguém olhando */
+/* é o que transforma um orçamento vencido em cliente perdido.                 */
+/*                                                                           */
+/* A janela é "vence hoje ou nos próximos dias" mais "o que já venceu", e não  */
+/* só a véspera: comparar o dia restante com um valor fixo fazia o orçamento   */
+/* desaparecer da lista assim que o dia passava, e o cliente sumia junto.     */
+/* ========================================================================== */
+const QUOTE_REMINDER_LEAD_DAYS = 1;
+const QUOTE_REMINDER_TEMPLATE_KEY = 'expiry_reminder';
+const quoteReminderPanel = document.querySelector('#quote-reminder-panel');
+const quoteReminderList = document.querySelector('#quote-reminder-list');
+const quoteReminderFeedback = document.querySelector('#quote-reminder-feedback');
+const quoteReminderCount = document.querySelector('#quote-reminder-count');
+const quoteReminderButtons = document.querySelectorAll('[data-open-quote-reminders]');
+const quoteReminderToolbarButtons = document.querySelectorAll('.quote-reminder-button');
+const quoteTemplateEditor = document.querySelector('#quote-template-editor');
+const quoteTemplateToggle = document.querySelector('[data-toggle-quote-template]');
+const quoteTemplateBody = document.querySelector('#quote-template-body');
+const quoteTemplateTokens = document.querySelector('#quote-template-tokens');
+const quoteTemplatePreview = document.querySelector('#quote-template-preview');
+const quoteTemplateFeedback = document.querySelector('#quote-template-feedback');
+let quoteMessageTemplates = [];
+
+// Já saiu para o cliente, exige sinal, não recebeu o sinal inteiro e ninguém
+// cobrou ainda. O mesmo recorte de quoteValidityNote: rascunho não entra
+// porque ninguém recebeu a proposta, e confirmado não entra porque já está
+// reservado.
+function quoteReminderEligible(quote) {
+  if (!quote || !quoteAwaitingClient(quote)) return false;
+  if (!quoteRequiresSignal(quote) || quoteSignalComplete(quote)) return false;
+  return !quote.expiry_reminder_sent_at;
+}
+
+// Vencimento mais antigo primeiro: quando dois vencem juntos, o que está há
+// mais tempo sem resposta é o que precisa de atenção primeiro.
+function byQuoteDeadline(a, b) {
+  return String(a.valid_until).localeCompare(String(b.valid_until));
+}
+
+// Ainda dá para cobrar dentro do prazo.
+function upcomingQuoteReminders() {
+  return quotes.filter((quote) => {
+    if (!quoteReminderEligible(quote)) return false;
+    const days = daysUntilLocalDate(quote.valid_until);
+    return days !== null && days >= 0 && days <= QUOTE_REMINDER_LEAD_DAYS;
+  }).sort(byQuoteDeadline);
+}
+
+// O prazo passou e o sinal continua em aberto. Entra na cobrança mesmo assim: a
+// data já foi liberada para outro cliente, mas a proposta não foi recusada por
+// ninguém, e é o silêncio depois de cobrar que transforma atraso em cliente
+// perdido. Fica numa lista à parte porque não é a mesma cobrança do que está
+// por vencer — é o que impede o texto de dizer "vence amanhã" para algo que já
+// venceu.
+function overdueQuoteReminders() {
+  return quotes.filter((quote) => {
+    if (!quoteReminderEligible(quote)) return false;
+    const days = daysUntilLocalDate(quote.valid_until);
+    return days !== null && days < 0;
+  }).sort(byQuoteDeadline);
+}
+
+function pendingQuoteReminders() {
+  return [...upcomingQuoteReminders(), ...overdueQuoteReminders()];
+}
+
+/* ========================================================================== */
+/* TEXTO DA MENSAGEM                                                          */
+/* O texto padrão mora no app e não no banco: quando ninguém editou nada, ele  */
+/* é o que sai. Quando alguém edita, o banco vence. Guardar o padrão no banco   */
+/* obrigaria a duplicar a redação em dois lugares que divergiriam na primeira  */
+/* edição, e transformaria "voltar ao padrão" em uma operação que apaga dado.  */
+/*                                                                           */
+/* A variável {prazo} devolve uma frase, não um advérbio, porque entra no meio */
+/* de uma frase que a pessoa escreveu: só assim o mesmo texto continua         */
+/* correto para o orçamento que vence amanhã e para o que já venceu.           */
+/* ========================================================================== */
+
+const QUOTE_REMINDER_DEFAULT_BODY = `*ORÇAMENTO #{numero}*
+*{orcamento}*
+
+Olá, {cliente}!
+
+Esperamos que esteja tudo bem. Escrevemos para lembrar sobre a proposta enviada, cujo prazo de validade {prazo}.
+
+O evento está previsto para *{evento}*.
+
+Para reservar a data, o sinal de *{sinal}*{sinal_detalhe} precisa ser pago até *{vencimento}*.
+
+Informamos que *sem o pagamento do sinal não será possível confirmar o evento*. Depois de {vencimento} a proposta perde a validade e a data fica disponível para outros clientes.
+
+{observacoes}
+
+Se quiser garantir a reserva, basta fazer o Pix e nos confirmar por aqui. Caso precise ajustar o orçamento ou a data, estamos à disposição para conversar.
+
+Agradecemos a atenção.
+
+Equipe Plenitude Realizações`;
+
+// As variáveis disponíveis, na ordem em que aparecem no texto padrão.
+const QUOTE_REMINDER_TOKENS = [
+  ['{cliente}', 'Nome do cliente'],
+  ['{orcamento}', 'Nome do orçamento'],
+  ['{numero}', 'Número do orçamento'],
+  ['{evento}', 'Data e local do evento'],
+  ['{sinal}', 'Valor que ainda falta'],
+  ['{sinal_total}', 'Valor total do sinal'],
+  ['{sinal_detalhe}', 'Detalhe do sinal (parcial ou percentual)'],
+  ['{percentual}', 'Percentual do sinal'],
+  ['{valor_total}', 'Valor total do orçamento'],
+  ['{prazo}', 'Prazo por extenso, já com o verbo'],
+  ['{vencimento}', 'Data do prazo'],
+  ['{observacoes}', 'Observações do orçamento']
+];
+
+// A frase inteira, e não só o quanto falta. Um "termina {prazo}" com
+// {prazo} = "está vencido" sairia errado justamente na cobrança que mais
+// importa, e nenhuma redação única resolveria os dois casos.
+function quoteDeadlinePhrase(quote) {
+  const days = daysUntilLocalDate(quote.valid_until);
+  if (days === null) return 'ainda está em aberto';
+  if (days === 0) return 'vence hoje';
+  if (days === 1) return 'vence amanhã';
+  if (days > 1) return `vence em ${days} dias`;
+  if (days === -1) return 'venceu ontem';
+  return `venceu há ${Math.abs(days)} dias`;
+}
+
+function quoteReminderVariables(quote) {
+  const remaining = Math.max(0, Number(quote.deposit_amount || 0) - Number(quote.deposited_amount || 0));
+  const partial = Number(quote.deposited_amount || 0) > 0;
+  const event = [quote.event_date ? formatDateBR(quote.event_date) : '', quote.venue].filter(Boolean).join(', em ');
+  return {
+    cliente: (quote.clients?.name || '').trim(),
+    orcamento: quote.name || '',
+    numero: String(quote.quote_number ?? 0).padStart(4, '0'),
+    evento: event,
+    sinal: formatCurrency(remaining),
+    sinal_total: formatCurrency(quote.deposit_amount),
+    // O parêntese e o espaço vêm junto para a variável caber em qualquer frase
+    // sem que a pessoa precise condicionalmente colocar ou tirar um parêntese.
+    sinal_detalhe: partial
+      ? ` (parte que falta de ${formatCurrency(quote.deposit_amount)})`
+      : ` (${formatNumber(quote.deposit_percent)}% do total de ${formatCurrency(quote.total)})`,
+    percentual: formatNumber(quote.deposit_percent),
+    valor_total: formatCurrency(quote.total),
+    prazo: quoteDeadlinePhrase(quote),
+    vencimento: quote.valid_until ? formatDateBR(quote.valid_until) : '',
+    // O rótulo vem junto: o texto padrão usa a variável numa linha inteira, e
+    // sem o rótulo ela viraria um "Observações:" sem nada depois.
+    observacoes: quote.notes ? `Observações da proposta: ${quote.notes}` : ''
+  };
+}
+
+// Substitui só as variáveis conhecidas. Uma variável escrita errado fica como
+// está em vez de sumir: uma mensagem que perde um pedaço no meio é muito pior
+// de diagnosticar do que uma que mostra o próprio erro.
+function renderQuoteTemplate(body, quote) {
+  const variables = quoteReminderVariables(quote);
+  return String(body || '')
+    .replace(/\{(\w+)\}/g, (match, key) => (Object.hasOwn(variables, key) ? variables[key] : match))
+    // Uma linha que virou nada deixa três quebras seguidas. Acontece com o
+    // texto padrão ({observacoes} vazia) e com qualquer texto que a pessoa
+    // escreva, então é corrigido aqui em vez de pedir cuidado a quem escreve.
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// O que a pessoa salvou no painel, se salvou.
+function quoteExpiryReminderTemplate() {
+  const saved = quoteMessageTemplates.find((template) => template.template_key === QUOTE_REMINDER_TEMPLATE_KEY)?.body;
+  return String(saved || '').trim();
+}
+
+// O que sai para o cliente: a mensagem escrita para este orçamento se houver,
+// o texto salvo no painel se houver, o padrão do app se não houver nada.
+function quoteExpiryReminderText(quote) {
+  const own = String(quote.reminder_message || '').trim();
+  return renderQuoteTemplate(own || quoteExpiryReminderTemplate() || QUOTE_REMINDER_DEFAULT_BODY, quote);
+}
+
+// Só o orçamento e o contato: o lembrete não lista serviços nem cardápios, então
+// não passa por loadQuoteForOutput e não carrega menus à toa.
+async function loadQuoteForReminder(quoteId) {
+  const { data: quote, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name, whatsapp)`).eq('id', quoteId).single();
+  if (error) throw new Error(error.message);
+  return quote;
+}
+
+// O texto salvo vem junto com a lista porque o painel de lembretes mostra a
+// mensagem antes de qualquer envio. Sem isso a prévia apareceria com a redação
+// antiga logo depois de a pessoa salvar outra.
+async function loadQuoteMessageTemplates() {
+  const { data, error } = await supabaseClient.from('quote_message_templates').select('template_key, body');
+  if (error) {
+    // Migration 022 não aplicada: o app segue com o texto padrão do código, que
+    // é o que a pessoa já usava. Não vale quebrar a tela de orçamentos por causa
+    // de uma mensagem.
+    console.warn('[Lembretes] Não foi possível carregar a mensagem salva, usando o padrão do app:', error.message);
+    quoteMessageTemplates = [];
+    return;
+  }
+  quoteMessageTemplates = data || [];
+}
+
+function setQuoteReminderFeedback(message, isError = false) {
+  if (quoteReminderPanel && !quoteReminderPanel.hidden) {
+    quoteReminderFeedback.textContent = message;
+    quoteReminderFeedback.style.color = isError ? '#a0483d' : '';
+    return;
+  }
+  setQuoteOutputFeedback(message, isError);
+}
+
+// Um cartão por orçamento, com o texto já montado para conferência: quem opera
+// lê antes de mandar, e o WhatsApp abre com exatamente o que está na tela.
+function quoteReminderCard(quote, group) {
+  const hasWhatsapp = Boolean(whatsappNumber(quote.clients?.whatsapp));
+  const custom = String(quote.reminder_message || '').trim();
+  return `<article class="quote-reminder-card ${group === 'overdue' ? 'is-overdue' : ''}">
+      <div class="quote-reminder-head">
+        <span class="client-initial"><i data-lucide="bell-ring"></i></span>
+        <div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.clients?.name || 'Sem cliente')}</span><span class="quote-validity-tag ${group === 'overdue' ? 'late' : 'soon'}"><i data-lucide="${group === 'overdue' ? 'triangle-alert' : 'clock'}"></i>${escapeHTML(quoteValidityNote(quote))}</span>${custom ? '<span class="quote-reminder-custom-tag"><i data-lucide="pencil"></i>Mensagem personalizada</span>' : ''}</div>
+      </div>
+      <pre class="quote-reminder-preview">${escapeHTML(quoteExpiryReminderText(quote))}</pre>
+      <div class="quote-reminder-actions">
+        <button class="client-action-button quote-reminder-action" type="button" data-quote-reminder-copy="${quote.id}"><i data-lucide="copy"></i><span>Copiar texto</span></button>
+        <button class="whatsapp-action-button" type="button" data-quote-reminder-whatsapp="${quote.id}"><i data-lucide="message-circle"></i><span>Enviar no WhatsApp</span></button>
+        <button class="client-action-button" type="button" data-quote-reminder-custom="${quote.id}"><i data-lucide="text-cursor-input"></i><span>${custom ? 'Editar esta mensagem' : 'Personalizar esta mensagem'}</span></button>
+      </div>
+      <div class="quote-reminder-custom-editor" data-quote-reminder-custom-editor="${quote.id}" hidden>
+        <label for="quote-reminder-message-${quote.id}">Mensagem para ${escapeHTML(quote.clients?.name || 'este cliente')}</label>
+        <p class="field-hint">Vale só para este orçamento. Deixe vazio para usar a mensagem padrão do painel. As mesmas variáveis de lá funcionam aqui.</p>
+        <textarea id="quote-reminder-message-${quote.id}" rows="9" data-quote-reminder-message="${quote.id}" placeholder="Usar a mensagem padrão">${escapeHTML(custom)}</textarea>
+        <div class="quote-reminder-custom-actions">
+          <button class="client-action-button" type="button" data-quote-reminder-save="${quote.id}"><i data-lucide="check"></i><span>Salvar</span></button>
+          <button class="client-action-button" type="button" data-quote-reminder-restore="${quote.id}"><i data-lucide="undo-2"></i><span>Usar a padrão</span></button>
+          <button class="icon-button" type="button" data-quote-reminder-cancel="${quote.id}" aria-label="Fechar edição da mensagem"><i data-lucide="x"></i></button>
+        </div>
+      </div>
+      ${hasWhatsapp ? '' : '<p class="quote-reminder-warning"><i data-lucide="triangle-alert"></i><span>Este cliente não tem WhatsApp cadastrado. Copie o texto e envie pelo canal que preferir.</span></p>'}
+    </article>`;
+}
+
+function renderQuoteReminders() {
+  const upcoming = upcomingQuoteReminders();
+  const overdue = overdueQuoteReminders();
+  // Com o painel fechado só as contagens importam. A lista só é reconstruída
+  // na hora em que alguém está olhando para ela.
+  if (quoteReminderPanel?.hidden || !quoteReminderList) return;
+  if (!upcoming.length && !overdue.length) {
+    quoteReminderList.innerHTML = '<div class="empty-clients">Nenhum orçamento com sinal em aberto vencendo.</div>';
+    return;
+  }
+  let html = '';
+  // O vencido vem primeiro na tela: é a cobrança mais velha e a única em que a
+  // data já foi perdida.
+  if (overdue.length) {
+    html += `<h3 class="quote-reminder-group"><i data-lucide="triangle-alert"></i>${overdue.length} ${overdue.length === 1 ? 'proposta venceu' : 'propostas venceram'} com o sinal em aberto</h3>`;
+    html += overdue.map((quote) => quoteReminderCard(quote, 'overdue')).join('');
+  }
+  if (upcoming.length) {
+    html += `<h3 class="quote-reminder-group"><i data-lucide="clock"></i>${upcoming.length} ${upcoming.length === 1 ? 'proposta vence' : 'propostas vencem'} em breve</h3>`;
+    html += upcoming.map((quote) => quoteReminderCard(quote, 'upcoming')).join('');
+  }
+  quoteReminderList.innerHTML = html;
+  lucide.createIcons();
+}
+
+/* ========================================================================== */
+/* O AVISO FORA DA TELA DE ORÇAMENTOS                                         */
+/* Três pontos de entrada para a mesma lista — sino do topo, card do módulo e  */
+/* faixa do início — e não três listas: cada uma com sua própria contagem      */
+/* seria três chances de o número estar errado.                               */
+/* ========================================================================== */
+const quoteAlertBell = document.querySelector('#quote-alert-bell');
+const quoteAlertCount = document.querySelector('#quote-alert-count');
+const quoteAlertBanner = document.querySelector('#quote-alert-banner');
+const quoteAlertItems = document.querySelector('#quote-alert-items');
+const quoteModuleCount = document.querySelector('#quote-module-count');
+
+function renderQuoteAlerts() {
+  const upcoming = upcomingQuoteReminders();
+  const overdue = overdueQuoteReminders();
+  const count = upcoming.length + overdue.length;
+  // Quem não tem a permissão de orçamentos não vê nem a contagem: o sino do
+  // topo é comum a todos e não pode revelar que existe proposta vencendo para
+  // quem não abriria a tela.
+  const visible = count > 0 && permitir('orcamentos');
+
+  [quoteReminderCount, quoteAlertCount, quoteModuleCount].forEach((badge) => {
+    if (!badge) return;
+    badge.textContent = String(count);
+    badge.hidden = !visible;
+  });
+  quoteReminderToolbarButtons.forEach((button) => button.classList.toggle('has-pending', visible));
+  if (quoteAlertBell) {
+    quoteAlertBell.classList.toggle('has-pending', visible);
+    quoteAlertBell.setAttribute('aria-label', visible ? `Avisos de sinal (${count})` : 'Notificações');
+  }
+  // O permissions.js esconde a faixa sozinha quando a permissão some e nunca
+  // mostra uma que estava escondida, então quem decide se ela reaparece é este
+  // render e não ele.
+  if (!quoteAlertBanner) return;
+  quoteAlertBanner.hidden = !visible;
+  if (!visible || !quoteAlertItems) return;
+  const summary = [
+    upcoming.length ? `${upcoming.length} ${upcoming.length === 1 ? 'vence' : 'vencem'} em breve` : '',
+    overdue.length ? `${overdue.length} ${overdue.length === 1 ? 'já venceu' : 'já venceram'} sem sinal` : ''
+  ].filter(Boolean).join(' · ');
+  // Três nomes cabem na faixa sem empurrar o resto do início para baixo. O
+  // resto continua a um clique de distância, na tela de lembretes.
+  const shown = [...overdue, ...upcoming].slice(0, 3);
+  const extra = count - shown.length;
+  quoteAlertItems.innerHTML = `<p class="quote-alert-summary">${escapeHTML(summary)}</p><ul class="quote-alert-names">${shown.map((quote) => `<li>${escapeHTML(quote.clients?.name || 'Sem cliente')} · ${escapeHTML(quote.name)}</li>`).join('')}${extra > 0 ? `<li class="quote-alert-more">e mais ${extra} ${extra === 1 ? 'orçamento' : 'orçamentos'}</li>` : ''}</ul>`;
+}
+
+// Tudo que decide o que está vencendo é derivado da data local, mas o app só
+// recalcula quando busca alguma coisa. Quem deixa o app aberto de sexta para
+// sábado continua vendo "vence amanhã" no sábado — exatamente o dia em que a
+// cobrança é mais cara de errar.
+let quoteDeadlineWatchDay = null;
+let quoteDeadlineWatchStarted = false;
+
+function watchQuoteDeadline() {
+  quoteDeadlineWatchDay = localToday();
+  if (quoteDeadlineWatchStarted) return;
+  quoteDeadlineWatchStarted = true;
+  // A cada minuto o trabalho é comparar duas strings. O trabalho de verdade
+  // acontece uma vez, na virada do dia.
+  setInterval(checkQuoteDeadlineRollover, 60000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkQuoteDeadlineRollover();
+  });
+}
+
+function checkQuoteDeadlineRollover() {
+  const today = localToday();
+  if (today === quoteDeadlineWatchDay) return;
+  quoteDeadlineWatchDay = today;
+  // Recarrega em vez de só redesenhar: quem ficou aberto de um dia para o outro
+  // pode ter recebido sinal de outro usuário, e o carimbo do lembrete enviado
+  // também muda o que está na lista.
+  loadQuotes();
+}
+
+function openQuoteReminders() {
+  if (!permitir('orcamentos') || !quoteReminderPanel) return;
+  quoteReminderFeedback.textContent = '';
+  quoteReminderFeedback.style.color = '';
+  quoteReminderPanel.hidden = false;
+  renderQuoteReminders();
+}
+
+async function sendQuoteExpiryReminder(quoteId) {
+  try {
+    const quote = await loadQuoteForReminder(quoteId);
+    const number = whatsappNumber(quote.clients?.whatsapp);
+    if (!number) {
+      setQuoteReminderFeedback('Cadastre o WhatsApp do cliente para enviar o lembrete.');
+      return;
+    }
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(quoteExpiryReminderText(quote))}`, '_blank', 'noopener,noreferrer');
+    // O carimbo vem depois de abrir o WhatsApp, nunca antes: se a gravação
+    // falhar, o lembrete continua na lista e é possível tentar de novo, o que é
+    // melhor do que perdê-lo sem que ele tenha saído.
+    const { error } = await supabaseClient.from('quotes').update({ expiry_reminder_sent_at: new Date().toISOString() }).eq('id', quoteId);
+    if (error) {
+      setQuoteReminderFeedback(`O lembreite foi aberto, mas não foi possível registrar o envio: ${error.message}`, true);
+      return;
+    }
+    await loadQuotes();
+    setQuoteReminderFeedback('Lembrete enviado. Ele não volta para esta lista até a validade mudar.');
+  } catch (error) {
+    setQuoteReminderFeedback(`Não foi possível preparar o lembrete: ${error.message}`, true);
+  }
+}
+
+async function copyQuoteExpiryReminder(quoteId) {
+  const quote = quotes.find((item) => item.id === quoteId);
+  if (!quote) return;
+  try {
+    await navigator.clipboard.writeText(quoteExpiryReminderText(quote));
+    setQuoteReminderFeedback('Texto do lembrete copiado.');
+  } catch {
+    setQuoteReminderFeedback('Não foi possível copiar. Abra o orçamento para ver a mensagem completa.', true);
+  }
+}
+
+/* ========================================================================== */
+/* EDIÇÃO DA MENSAGEM                                                         */
+/* ========================================================================== */
+function setQuoteTemplateFeedback(message, isError = false) {
+  if (!quoteTemplateFeedback) return;
+  quoteTemplateFeedback.textContent = message;
+  quoteTemplateFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+// A prévia usa um orçamento de verdade, não um exemplo genérico: o que a pessoa
+// precisa ver é se "R$ 3.000,00" e "vence amanhã" caíram no lugar certo do
+// texto dela, e um exemplo com números inventados não mostra nada disso.
+function quoteTemplatePreviewQuote() {
+  return quotes.find(quoteReminderEligible) || quotes[0] || null;
+}
+
+function renderQuoteTemplatePreview() {
+  if (!quoteTemplatePreview || !quoteTemplateBody) return;
+  const quote = quoteTemplatePreviewQuote();
+  if (!quote) {
+    quoteTemplatePreview.textContent = 'Cadastre um orçamento para ver a prévia com os dados reais.';
+    return;
+  }
+  quoteTemplatePreview.textContent = renderQuoteTemplate(quoteTemplateBody.value.trim() || quoteExpiryReminderTemplate() || QUOTE_REMINDER_DEFAULT_BODY, quote);
+}
+
+function renderQuoteTemplateTokens() {
+  if (!quoteTemplateTokens) return;
+  quoteTemplateTokens.innerHTML = QUOTE_REMINDER_TOKENS.map(([token, label]) => `<button class="quote-template-token" type="button" data-insert-token="${token}" title="${escapeHTML(token)}">${escapeHTML(label)}</button>`).join('');
+}
+
+// A variável entra onde o cursor está. Um botão que jogasse a variável no fim
+// do texto obrigaria quem escreve a reorganizar a frase na mão.
+function insertQuoteTemplateToken(token) {
+  if (!quoteTemplateBody) return;
+  const start = quoteTemplateBody.selectionStart ?? quoteTemplateBody.value.length;
+  const end = quoteTemplateBody.selectionEnd ?? start;
+  quoteTemplateBody.value = `${quoteTemplateBody.value.slice(0, start)}${token}${quoteTemplateBody.value.slice(end)}`;
+  quoteTemplateBody.focus();
+  quoteTemplateBody.setSelectionRange(start + token.length, start + token.length);
+  renderQuoteTemplatePreview();
+}
+
+function openQuoteTemplateEditor() {
+  if (!permitir('orcamentos') || !quoteTemplateEditor || !quoteTemplateBody) return;
+  // O campo mostra sempre o texto que vai sair, e não o vazio do banco: quem
+  // chega para editar precisa ver o que está valendo agora.
+  quoteTemplateBody.value = quoteExpiryReminderTemplate() || QUOTE_REMINDER_DEFAULT_BODY;
+  setQuoteTemplateFeedback('');
+  quoteTemplateEditor.hidden = false;
+  renderQuoteTemplateTokens();
+  renderQuoteTemplatePreview();
+  quoteTemplateBody.focus();
+}
+
+async function saveQuoteTemplate() {
+  if (!quoteTemplateBody) return;
+  const body = quoteTemplateBody.value.trim() || null;
+  const { error } = await supabaseClient.from('quote_message_templates')
+    .upsert({ template_key: QUOTE_REMINDER_TEMPLATE_KEY, name: 'Lembrete de sinal', body }, { onConflict: 'template_key' });
+  if (error) {
+    setQuoteTemplateFeedback(`Não foi possível salvar a mensagem: ${error.message}`, true);
+    return;
+  }
+  await loadQuotes();
+  setQuoteTemplateFeedback('Mensagem salva. Ela vale para todos os lembretes que não tiverem texto próprio.');
+  renderQuoteTemplatePreview();
+}
+
+// Voltar ao padrão é apagar o texto salvo, não gravar uma cópia do padrão: o
+// padrão continua sendo o do app, e assim as duas coisas não podem divergir.
+async function restoreQuoteTemplate() {
+  const { error } = await supabaseClient.from('quote_message_templates')
+    .upsert({ template_key: QUOTE_REMINDER_TEMPLATE_KEY, name: 'Lembrete de sinal', body: null }, { onConflict: 'template_key' });
+  if (error) {
+    setQuoteTemplateFeedback(`Não foi possível restaurar a mensagem padrão: ${error.message}`, true);
+    return;
+  }
+  quoteTemplateBody.value = QUOTE_REMINDER_DEFAULT_BODY;
+  await loadQuotes();
+  setQuoteTemplateFeedback('Mensagem restaurada para o padrão do app.');
+  renderQuoteTemplatePreview();
+}
+
+async function saveQuoteCustomMessage(quoteId, value) {
+  const { error } = await supabaseClient.from('quotes').update({ reminder_message: value || null }).eq('id', quoteId);
+  if (error) {
+    setQuoteReminderFeedback(`Não foi possível salvar a mensagem: ${error.message}`, true);
+    return false;
+  }
+  await loadQuotes();
+  return true;
+}
+
+quoteReminderButtons.forEach((button) => button.addEventListener('click', openQuoteReminders));
+// O sino do topo é o mesmo aviso do painel de lembretes, então ele abre a mesma
+// tela. Sem nada pendente ele volta a ser o sino decorativo que era antes,
+// em vez de abrir uma lista vazia e deixar a pessoa achando que o app quebrou.
+quoteAlertBell?.addEventListener('click', () => {
+  if (pendingQuoteReminders().length && permitir('orcamentos')) openQuoteReminders();
+  else showToast('Notificações');
+});
+// Os dois botões do painel fecham a tela: o X do cabeçalho e o "Voltar" do rodapé.
+document.querySelectorAll('[data-close-quote-reminders]').forEach((button) => button.addEventListener('click', () => { quoteReminderPanel.hidden = true; }));
+
+quoteTemplateToggle?.addEventListener('click', () => {
+  if (quoteTemplateEditor.hidden) openQuoteTemplateEditor();
+  else quoteTemplateEditor.hidden = true;
+});
+quoteTemplateBody?.addEventListener('input', renderQuoteTemplatePreview);
+document.querySelectorAll('[data-save-quote-template]').forEach((button) => button.addEventListener('click', saveQuoteTemplate));
+document.querySelectorAll('[data-restore-quote-template]').forEach((button) => button.addEventListener('click', restoreQuoteTemplate));
+quoteTemplateTokens?.addEventListener('click', (event) => {
+  const token = event.target.closest('[data-insert-token]');
+  if (token) insertQuoteTemplateToken(token.dataset.insertToken);
+});
+
+quoteReminderList?.addEventListener('click', async (event) => {
+  const target = event.target;
+  const whatsappButton = target.closest('[data-quote-reminder-whatsapp]');
+  const copyButton = target.closest('[data-quote-reminder-copy]');
+  const customButton = target.closest('[data-quote-reminder-custom]');
+  const saveButton = target.closest('[data-quote-reminder-save]');
+  const restoreButton = target.closest('[data-quote-reminder-restore]');
+  const cancelButton = target.closest('[data-quote-reminder-cancel]');
+  if (whatsappButton) { await sendQuoteExpiryReminder(whatsappButton.dataset.quoteReminderWhatsapp); return; }
+  if (copyButton) { await copyQuoteExpiryReminder(copyButton.dataset.quoteReminderCopy); return; }
+  if (customButton) {
+    const editor = quoteReminderList.querySelector(`[data-quote-reminder-custom-editor="${customButton.dataset.quoteReminderCustom}"]`);
+    if (!editor) return;
+    editor.hidden = !editor.hidden;
+    if (!editor.hidden) editor.querySelector('textarea')?.focus();
+    return;
+  }
+  if (saveButton) {
+    const field = quoteReminderList.querySelector(`[data-quote-reminder-message="${saveButton.dataset.quoteReminderSave}"]`);
+    if (!field) return;
+    setQuoteReminderFeedback('Salvando a mensagem...');
+    if (await saveQuoteCustomMessage(saveButton.dataset.quoteReminderSave, field.value.trim())) {
+      setQuoteReminderFeedback('Mensagem deste orçamento salva.');
+    }
+    return;
+  }
+  if (restoreButton) {
+    const field = quoteReminderList.querySelector(`[data-quote-reminder-message="${restoreButton.dataset.quoteReminderRestore}"]`);
+    if (field) field.value = '';
+    if (await saveQuoteCustomMessage(restoreButton.dataset.quoteReminderRestore, '')) {
+      setQuoteReminderFeedback('Este orçamento voltou a usar a mensagem padrão.');
+    }
+    return;
+  }
+  if (cancelButton) {
+    const editor = quoteReminderList.querySelector(`[data-quote-reminder-custom-editor="${cancelButton.dataset.quoteReminderCancel}"]`);
+    // Descartar também reconstrói a lista: o editor local pode estar com um texto
+    // que ninguém salvou, e só a lista montada de novo tem o texto certo.
+    if (editor) editor.hidden = true;
+    await loadQuotes();
+  }
+});
+
 async function loadQuoteReferences() {
   await Promise.all([loadClients(), loadServices(), loadMenus()]);
   quoteClientSelect.innerHTML = '<option value="">Selecione um cliente</option>' + clients.map((client) => `<option value="${client.id}">${escapeHTML(client.name)}</option>`).join('');
@@ -2198,8 +2795,10 @@ quoteForm.addEventListener('submit', async (event) => {
 quoteList.addEventListener('click', async (event) => {
   const pdfButton = event.target.closest('[data-quote-pdf-row]');
   const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
+  const reminderButton = event.target.closest('[data-quote-reminder-row]');
   if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
   if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
+  if (reminderButton) { await sendQuoteExpiryReminder(reminderButton.dataset.quoteReminderRow); return; }
   const editButton = event.target.closest('[data-edit-quote]');
   const deleteButton = event.target.closest('[data-delete-quote]');
   if (editButton) { openQuoteForm(quotes.find((quote) => quote.id === editButton.dataset.editQuote)); return; }

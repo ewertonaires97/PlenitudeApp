@@ -134,11 +134,16 @@
       // A trigger recalculate_quote_totals roda um UPDATE em quotes a cada
       // linha de quote_items alterada: sem o debounce isso viraria uma rajada.
       // quote_items também define se o evento tem serviço de Cerimonial.
+      //
+      // loadQuotes roda fora do whenVisible de propósito: o aviso de orçamento
+      // vencendo vive no sino do topo e na faixa do início, e uma mudança feita
+      // por outra pessoa nesse celular teria de atualizar esses dois mesmo com
+      // o app em outra tela.
       name: 'orcamentos',
-      tables: ['quotes', 'quote_items'],
+      tables: ['quotes', 'quote_items', 'quote_message_templates'],
       reload() {
         return Promise.all([
-          whenVisible('#quote-panel', () => app()?.loadQuotes()),
+          app()?.loadQuotes(),
           whenVisible('#event-panel', () => events()?.reloadLookups()),
           whenVisible('#ceremonial-panel', () => ceremonial()?.reloadEventsList())
         ]);

@@ -51,9 +51,10 @@
           <span class="brand-name">Plenitude <strong>Realizações</strong></span>
         </a>
         <div class="topbar-actions">
-          <button class="icon-button" type="button" aria-label="Notificações" data-action="Notificações">
+          <button class="icon-button quote-alert-bell" id="quote-alert-bell" type="button" aria-label="Notificações" title="Notificações">
             <i data-lucide="bell"></i>
             <span class="notification-dot"></span>
+            <span class="quote-alert-count" id="quote-alert-count" hidden>0</span>
           </button>
           <button class="avatar" id="profile-avatar" type="button" aria-label="Perfil" data-action="Perfil">PR</button>
           <button class="icon-button" id="logout-button" type="button" aria-label="Sair" title="Sair">
@@ -80,6 +81,19 @@
              banco. Sem ele, o app esconderia todos os módulos sem explicar por
              quê, e o administrator não teria como sair do beco. -->
         <p class="access-warning" id="access-warning" role="alert" hidden></p>
+
+        <!-- Aviso de orçamento vencendo. Fica no início e não dentro de um
+             módulo porque orçamento vencendo é o único problema do app que não
+             pode esperar alguém se lembrar de abrir uma tela. A faixa aponta
+             para a lista de lembretes, onde o texto é conferido antes de sair. -->
+        <button class="quote-alert-banner" id="quote-alert-banner" type="button" data-open-quote-reminders hidden>
+          <span class="quote-alert-icon"><i data-lucide="bell-ring"></i></span>
+          <span class="quote-alert-body">
+            <strong>Sinal em aberto</strong>
+            <span id="quote-alert-items"></span>
+            <span class="quote-alert-cta">Conferir e enviar <i data-lucide="arrow-right"></i></span>
+          </span>
+        </button>
 
       <section class="today-row" aria-label="Resumo do dia" data-permission="dashboard">
         <div>
@@ -122,6 +136,7 @@
           <button class="module-card card-orcamentos" type="button" data-permission="orcamentos" data-open-quotes>
             <span class="module-icon"><i data-lucide="notebook-tabs"></i></span>
             <span class="module-text"><strong>Orçamentos</strong><small>Propostas e valores</small></span>
+            <span class="quote-module-count" id="quote-module-count" hidden>0</span>
             <i class="module-arrow" data-lucide="arrow-up-right"></i>
           </button>
           <button class="module-card card-servicos" type="button" data-permission="servicos" data-open-services>
@@ -571,9 +586,9 @@
       <div class="service-panel-card quote-panel-card">
         <header class="client-panel-header">
           <div><p class="eyebrow">NEGÓCIOS</p><h2 id="quotes-title">Orçamentos</h2></div>
-          <div class="panel-header-actions"><button class="add-client-button" type="button" data-new-quote><i data-lucide="plus"></i><span>Novo</span></button><button class="icon-button" type="button" data-close-quotes aria-label="Fechar orçamentos"><i data-lucide="x"></i></button></div>
+          <div class="panel-header-actions"><button class="add-client-button quote-reminder-button" type="button" data-open-quote-reminders><i data-lucide="bell-ring"></i><span>Lembretes</span><span class="quote-reminder-count" id="quote-reminder-count" hidden>0</span></button><button class="add-client-button" type="button" data-new-quote><i data-lucide="plus"></i><span>Novo</span></button><button class="icon-button" type="button" data-close-quotes aria-label="Fechar orçamentos"><i data-lucide="x"></i></button></div>
         </header>
-        <div class="client-toolbar"><label class="search-field" for="quote-search"><i data-lucide="search"></i><input id="quote-search" type="search" placeholder="Buscar orçamento, cliente ou local" /></label><select class="catalog-filter" id="quote-status-filter" aria-label="Filtrar status"><option value="">Todos</option><option value="draft">Rascunhos</option><option value="sent">Enviados</option><option value="confirmed">Confirmados</option><option value="cancelled">Cancelados</option></select></div>
+        <div class="client-toolbar"><label class="search-field" for="quote-search"><i data-lucide="search"></i><input id="quote-search" type="search" placeholder="Buscar orçamento, cliente ou local" /></label><select class="catalog-filter" id="quote-status-filter" aria-label="Filtrar status"><option value="">Todos</option><option value="draft">Rascunhos</option><option value="sent">Enviados</option><option value="confirmed">Confirmados</option><option value="expired">Expirados</option><option value="cancelled">Cancelados</option></select></div>
         <p class="client-feedback" id="quote-feedback" role="status"></p><div class="client-list" id="quote-list"></div>
       </div>
     </section>
@@ -620,6 +635,37 @@
         <p class="client-form-feedback" id="quote-deposit-feedback" role="alert"></p>
         <button class="login-button" type="submit"><span>Registrar sinal</span><i data-lucide="hand-coins"></i></button>
       </form>
+    </section>
+    <section class="client-form-panel" id="quote-reminder-panel" hidden aria-labelledby="quote-reminder-title">
+      <div class="client-form-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">COBRANÇA</p>
+            <h2 id="quote-reminder-title">Lembretes de sinal</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-quote-reminders aria-label="Fechar lembretes"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">Propostas enviadas com o sinal em aberto, vencendo ou já vencidas. A mensagem diz o prazo em que a proposta está e avisa que, sem o pagamento, o evento não pode ser confirmado. O WhatsApp abre com o texto pronto: é só conferir e enviar. Cada cartão tem o botão para escrever uma mensagem só para aquele cliente.</p>
+        <div class="quote-reminder-toolbar">
+          <button class="client-action-button quote-reminder-action" type="button" data-toggle-quote-template><i data-lucide="text-cursor-input"></i><span>Editar a mensagem padrão</span></button>
+        </div>
+        <div class="quote-template-editor" id="quote-template-editor" hidden>
+          <label for="quote-template-body">Mensagem padrão do lembrete</label>
+          <p class="field-hint">Escreva do seu jeito. Toque numa variável abaixo para inseri-la onde o cursor estiver. <strong>{prazo}</strong> já vem com o verbo — escreva "cujo prazo de validade {prazo}" e ele vira "cujo prazo de validade vence amanhã" ou "já venceu há 3 dias", conforme a situação. O que aparecer entre chaves e não for uma variável sai como você escreveu, então dá para chamar o cliente pelo nome.</p>
+          <div class="quote-template-tokens" id="quote-template-tokens"></div>
+          <textarea id="quote-template-body" rows="14" spellcheck="false"></textarea>
+          <p class="quote-template-preview-label">PRÉVIA COM UM ORÇAMENTO REAL</p>
+          <pre class="quote-reminder-preview" id="quote-template-preview"></pre>
+          <p class="client-form-feedback" id="quote-template-feedback" role="alert"></p>
+          <div class="quote-template-actions">
+            <button class="login-button" type="button" data-save-quote-template><span>Salvar mensagem</span><i data-lucide="check"></i></button>
+            <button class="client-action-button" type="button" data-restore-quote-template><i data-lucide="undo-2"></i><span>Restaurar padrão</span></button>
+          </div>
+        </div>
+        <p class="client-form-feedback" id="quote-reminder-feedback" role="alert"></p>
+        <div class="client-list" id="quote-reminder-list"></div>
+        <button class="login-button" type="button" data-close-quote-reminders><span>Voltar aos orçamentos</span><i data-lucide="check"></i></button>
+      </div>
     </section>
     <section class="service-panel" id="event-panel" hidden aria-labelledby="events-title">
       <div class="service-panel-card quote-panel-card">

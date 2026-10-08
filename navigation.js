@@ -40,6 +40,7 @@
     ['quote-panel', 'data-close-quotes'],
     ['quote-form-panel', 'data-close-quote-form'],
     ['quote-deposit-panel', 'data-close-quote-deposit'],
+    ['quote-reminder-panel', 'data-close-quote-reminders'],
     ['quote-saved-panel', 'data-close-quote-saved'],
     ['event-panel', 'data-close-events'],
     ['event-form-panel', 'data-close-event-form'],

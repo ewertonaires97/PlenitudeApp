@@ -57,6 +57,8 @@
     { selector: '#quote-panel', permission: 'orcamentos' },
     { selector: '#quote-form-panel', permission: 'orcamentos' },
     { selector: '#quote-deposit-panel', permission: 'orcamentos' },
+    { selector: '#quote-reminder-panel', permission: 'orcamentos' },
+    { selector: '#quote-alert-banner', permission: 'orcamentos' },
     { selector: '#quote-saved-panel', permission: 'orcamentos' },
     { selector: '#event-panel', permission: 'eventos' },
     { selector: '#event-detail-panel', permission: 'eventos' },
