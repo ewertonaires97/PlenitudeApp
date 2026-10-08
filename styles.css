@@ -318,6 +318,14 @@ h1 span { color: var(--gold); }
 .finance-receipt-row span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
 .finance-receipt-row.voided { opacity: .58; }
 .finance-void-tag { flex: 0 0 auto; color: #a0483d !important; font-weight: 700; }
+/* Ações de cada recebimento. A linha é flex e toda div filha vira coluna, então
+   o grupo de botões precisa deste override para ficar na horizontal. A
+   especificidade (0,2,1) é o que vence a regra `.finance-receipt-row > div`,
+   dentro e fora dos @media que repetem o layout. */
+.finance-receipt-row > .finance-receipt-row-actions { display: flex; flex-direction: row; align-items: center; gap: 2px; flex: 0 0 auto; }
+/* Etiqueta do recebimento que veio do sinal do orçamento. Diz onde o valor pode
+   ser corrigido, porque aqui ele não tem lápis. */
+.finance-receipt-row .finance-deposit-tag { flex: 0 0 auto; color: #7a5c2e !important; font-size: 9px; font-weight: 700; white-space: nowrap; }
 @media (max-width: 480px) {
    .finance-event-row { grid-template-columns: 38px minmax(0, 1fr) 28px; }
    .finance-event-numbers { grid-column: 2; align-items: flex-start; flex-direction: row; }
@@ -1306,6 +1314,7 @@ a:focus-visible,
 .quote-deposit-row > div { min-width: 0; overflow-wrap: anywhere; }
 .quote-deposit-row span { max-width: 100%; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .finance-void-tag { flex: 0 0 auto; color: #a0483d !important; font-weight: 700; }
+.finance-receipt-row .finance-deposit-tag { font-size: 11px; }
 @media (max-width: 480px) {
    .finance-event-row { grid-template-columns: 42px minmax(0, 1fr) 30px; gap: 8px; }
    .finance-event-numbers { grid-column: 2; align-items: flex-start; flex-direction: row; }

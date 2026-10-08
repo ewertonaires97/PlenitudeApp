@@ -15,6 +15,8 @@
   const receiptForm = document.querySelector('#finance-receipt-form');
   const receiptFeedback = document.querySelector('#finance-receipt-feedback');
   const receiptsList = document.querySelector('#finance-receipts-list');
+  const receiptFormSubmitLabel = document.querySelector('#finance-receipt-submit-label');
+  const receiptCancelButton = document.querySelector('[data-cancel-finance-receipt]');
   const costForm = document.querySelector('#finance-cost-form');
   const costFeedback = document.querySelector('#finance-cost-feedback');
   const costsList = document.querySelector('#finance-costs-list');
@@ -256,10 +258,25 @@
       return;
     }
     const methodLabels = { pix: 'Pix', cash: 'Dinheiro', card: 'Cartão', transfer: 'Transferência', other: 'Outra' };
-    receiptsList.innerHTML = receipts.map((receipt) => `<div class="finance-receipt-row ${receipt.voided_at ? 'voided' : ''}">
-      <div><strong>${formatMoney(receipt.amount)}</strong><span>${new Date(`${receipt.received_on}T12:00:00`).toLocaleDateString('pt-BR')} · ${methodLabels[receipt.payment_method] || 'Outra'}${receipt.notes ? ` · ${escapeHTML(receipt.notes)}` : ''}</span></div>
-      ${receipt.voided_at ? '<span class="finance-void-tag">Estornado</span>' : `<button class="client-action" type="button" data-void-receipt="${receipt.id}" aria-label="Estornar recebimento"><i data-lucide="rotate-ccw"></i></button>`}
-    </div>`).join('');
+    receiptsList.innerHTML = receipts.map((receipt) => {
+      // O sinal do orçamento é o mesmo dinheiro visto pelas duas telas. Editar ou
+      // apagar aqui mexeria só num dos lados, então esse recebimento fica sem
+      // lápis e sem lixeira: quem muda o valor é a tela de sinal do orçamento.
+      const fromQuote = Boolean(receipt.quote_deposit_id);
+      const label = formatMoney(receipt.amount);
+      let actions;
+      if (receipt.voided_at) {
+        actions = '<span class="finance-void-tag">Estornado</span>';
+      } else {
+        actions = `<div class="finance-receipt-row-actions">${fromQuote
+          ? '<span class="finance-deposit-tag" title="Valor do sinal do orçamento. Para mudar, use a tela de sinal do orçamento.">Sinal do orçamento</span>'
+          : `<button class="client-action" type="button" data-edit-finance-receipt="${receipt.id}" aria-label="Editar recebimento de ${label}" title="Editar"><i data-lucide="pencil"></i></button>`}<button class="client-action" type="button" data-void-receipt="${receipt.id}" aria-label="Estornar recebimento de ${label}" title="Estornar"><i data-lucide="rotate-ccw"></i></button>${fromQuote ? '' : `<button class="client-action" type="button" data-delete-finance-receipt="${receipt.id}" aria-label="Excluir recebimento de ${label}" title="Excluir"><i data-lucide="trash-2"></i></button>`}</div>`;
+      }
+      return `<div class="finance-receipt-row ${receipt.voided_at ? 'voided' : ''}">
+      <div><strong>${label}</strong><span>${new Date(`${receipt.received_on}T12:00:00`).toLocaleDateString('pt-BR')} · ${methodLabels[receipt.payment_method] || 'Outra'}${receipt.notes ? ` · ${escapeHTML(receipt.notes)}` : ''}</span></div>
+      ${actions}
+    </div>`;
+    }).join('');
     window.lucide?.createIcons();
   }
 
@@ -284,6 +301,32 @@
     costFormSubmitLabel.textContent = 'Registrar custo';
     document.querySelector('[data-cancel-finance-cost]').hidden = true;
     costFeedback.textContent = '';
+  }
+
+  function resetReceiptForm() {
+    receiptForm.reset();
+    document.querySelector('#finance-receipt-id').value = '';
+    document.querySelector('#finance-receipt-date').value = localDateString();
+    receiptFormSubmitLabel.textContent = 'Registrar recebimento';
+    receiptCancelButton.hidden = true;
+    receiptFeedback.textContent = '';
+  }
+
+  function editReceipt(receiptId) {
+    const receipt = state.receipts.find((item) => item.id === receiptId);
+    if (!receipt) return;
+    if (receipt.quote_deposit_id) {
+      receiptFeedback.textContent = 'Este recebimento é o sinal do orçamento. Para mudar o valor, estorne e registre o sinal de novo.';
+      return;
+    }
+    document.querySelector('#finance-receipt-id').value = receipt.id;
+    document.querySelector('#finance-receipt-amount').value = receipt.amount;
+    document.querySelector('#finance-receipt-date').value = receipt.received_on;
+    document.querySelector('#finance-receipt-method').value = receipt.payment_method;
+    document.querySelector('#finance-receipt-notes').value = receipt.notes || '';
+    receiptFormSubmitLabel.textContent = 'Salvar alteração';
+    receiptCancelButton.hidden = false;
+    receiptFeedback.textContent = '';
   }
 
   function editCost(costId) {
@@ -315,9 +358,7 @@
     document.querySelector('#finance-tithe-percent').value = details.setting.tithe_percent ?? 10;
     document.querySelector('#finance-tithe-fixed').value = details.setting.tithe_fixed_amount ?? 0;
     allocationFeedback.textContent = '';
-    receiptFeedback.textContent = '';
-    receiptForm.reset();
-    document.querySelector('#finance-receipt-date').value = localDateString();
+    resetReceiptForm();
     resetCostForm();
     renderShareRows(details.shares.length ? details.shares : (state.staff.get(eventId) || []).map((member) => ({ ceremonialista_id: member.id, participant_name: member.name, calculation_mode: 'percentage', percentage: 0 })));
     renderReceipts(eventId);
@@ -366,34 +407,55 @@
     openFinanceEvent(state.activeEventId);
   }
 
-  async function addReceipt(event) {
+  async function saveReceipt(event) {
     event.preventDefault();
     if (!requireAccess()) return;
-    const amount = Number(document.querySelector('#finance-receipt-amount').value);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      receiptFeedback.textContent = 'Informe um valor maior que zero.';
+    const receiptId = document.querySelector('#finance-receipt-id').value;
+    const button = receiptForm.querySelector('button[type="submit"]');
+    const payload = {
+      target_event_id: state.activeEventId,
+      target_amount: Number(document.querySelector('#finance-receipt-amount').value),
+      target_received_on: document.querySelector('#finance-receipt-date').value,
+      target_payment_method: document.querySelector('#finance-receipt-method').value,
+      target_notes: document.querySelector('#finance-receipt-notes').value.trim() || null
+    };
+    if (!Number.isFinite(payload.target_amount) || payload.target_amount <= 0 || !payload.target_received_on) {
+      receiptFeedback.textContent = 'Informe um valor maior que zero e a data do recebimento.';
       return;
     }
-    const button = receiptForm.querySelector('button[type="submit"]');
     button.disabled = true;
-    const { error } = await sb().from('event_finance_receipts').insert({
-      event_id: state.activeEventId,
-      amount,
-      received_on: document.querySelector('#finance-receipt-date').value,
-      payment_method: document.querySelector('#finance-receipt-method').value,
-      notes: document.querySelector('#finance-receipt-notes').value.trim() || null
-    });
+    // Vai pela function e não por insert direto: a migration 019 revogou o
+    // insert na tabela e centraliza a conferência de dízimo e repasses.
+    const { error } = await sb().rpc('save_event_finance_receipt', { target_receipt_id: receiptId || null, ...payload });
     button.disabled = false;
     if (error) {
-      receiptFeedback.textContent = 'Não foi possível registrar o recebimento. Confira a migração 017 e suas permissões.';
+      receiptFeedback.textContent = error.message || 'Não foi possível salvar o recebimento. Confira a migração 019 e suas permissões.';
       return;
     }
-    receiptForm.reset();
-    document.querySelector('#finance-receipt-date').value = localDateString();
-    receiptFeedback.textContent = '';
+    resetReceiptForm();
     await loadFinance();
     openFinanceEvent(state.activeEventId);
-    notify('Recebimento registrado.');
+    notify(receiptId ? 'Recebimento atualizado.' : 'Recebimento registrado.');
+  }
+
+  async function deleteReceipt(receiptId) {
+    if (!requireAccess()) return;
+    const receipt = state.receipts.find((item) => item.id === receiptId && item.event_id === state.activeEventId);
+    if (!receipt) return;
+    if (receipt.quote_deposit_id) {
+      receiptFeedback.textContent = 'Este recebimento é o sinal do orçamento e não pode ser excluído aqui. Estorne o sinal na tela do orçamento.';
+      return;
+    }
+    if (!window.confirm('Excluir este recebimento do evento?')) return;
+    const { error } = await sb().rpc('delete_event_finance_receipt', { target_receipt_id: receiptId });
+    if (error) {
+      receiptFeedback.textContent = error.message || 'Não foi possível excluir o recebimento.';
+      return;
+    }
+    resetReceiptForm();
+    await loadFinance();
+    openFinanceEvent(state.activeEventId);
+    notify('Recebimento excluído.');
   }
 
   async function saveCost(event) {
@@ -440,9 +502,14 @@
   }
 
   async function voidReceipt(receiptId) {
-    if (!requireAccess() || !window.confirm('Estornar este recebimento? O registro ficará no histórico.')) return;
+    if (!requireAccess()) return;
     const receipt = state.receipts.find((item) => item.id === receiptId && item.event_id === state.activeEventId);
     if (!receipt) return;
+    const fromQuote = Boolean(receipt.quote_deposit_id);
+    const question = fromQuote
+      ? 'Estornar este sinal do orçamento? O orçamento volta a mostrar o valor como pendente.'
+      : 'Estornar este recebimento? O registro ficará no histórico.';
+    if (!window.confirm(question)) return;
     const current = financeFor(state.activeEventId);
     const nextCollected = Math.max(0, current.collected - Number(receipt.amount));
     const nextOperatingResult = nextCollected - current.costsTotal;
@@ -455,14 +522,19 @@
       receiptFeedback.textContent = 'Este estorno deixaria os repasses acima do saldo. Ajuste e salve a divisão antes de estornar.';
       return;
     }
-    const { error } = await sb().rpc('void_event_finance_receipt', { target_receipt_id: receiptId });
+    // O sinal do orçamento tem duas pontas guardadas: o depósito e o recebimento
+    // do evento. Estornar só o recebimento deixaria o orçamento ainda dando o
+    // valor como pago, então a chamada sai pela function que desfaz as duas.
+    const { error } = fromQuote
+      ? await sb().rpc('void_quote_deposit', { target_deposit_id: receipt.quote_deposit_id })
+      : await sb().rpc('void_event_finance_receipt', { target_receipt_id: receiptId });
     if (error) {
-      receiptFeedback.textContent = 'Não foi possível estornar o recebimento.';
+      receiptFeedback.textContent = error.message || 'Não foi possível estornar o recebimento.';
       return;
     }
     await loadFinance();
     openFinanceEvent(state.activeEventId);
-    notify('Recebimento estornado.');
+    notify(fromQuote ? 'Sinal estornado.' : 'Recebimento estornado.');
   }
 
   document.querySelector('[data-open-finance]')?.addEventListener('click', openFinance);
@@ -478,12 +550,17 @@
     if (button) openFinanceEvent(button.dataset.openFinanceEvent);
   });
   allocationForm?.addEventListener('submit', saveAllocations);
-  receiptForm?.addEventListener('submit', addReceipt);
+  receiptForm?.addEventListener('submit', saveReceipt);
+  document.querySelector('[data-cancel-finance-receipt]')?.addEventListener('click', resetReceiptForm);
   costForm?.addEventListener('submit', saveCost);
   document.querySelector('[data-cancel-finance-cost]')?.addEventListener('click', resetCostForm);
   receiptsList?.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-void-receipt]');
-    if (button) voidReceipt(button.dataset.voidReceipt);
+    const editButton = event.target.closest('[data-edit-finance-receipt]');
+    const deleteButton = event.target.closest('[data-delete-finance-receipt]');
+    const voidButton = event.target.closest('[data-void-receipt]');
+    if (editButton) editReceipt(editButton.dataset.editFinanceReceipt);
+    if (deleteButton) deleteReceipt(deleteButton.dataset.deleteFinanceReceipt);
+    if (voidButton) voidReceipt(voidButton.dataset.voidReceipt);
   });
   costsList?.addEventListener('click', (event) => {
     const editButton = event.target.closest('[data-edit-finance-cost]');

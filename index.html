@@ -837,6 +837,7 @@
           <div class="finance-section-heading"><h3>Recebimentos</h3><span id="finance-receipts-total" class="finance-form-total">R$ 0,00</span></div>
           <div id="finance-receipts-list" class="finance-form-list"></div>
           <form id="finance-receipt-form" class="finance-form">
+            <input id="finance-receipt-id" type="hidden" />
             <div class="finance-form-fields">
               <label for="finance-receipt-amount"><span>Valor do recebimento (R$)</span><input id="finance-receipt-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
               <label for="finance-receipt-date"><span>Data do recebimento</span><input id="finance-receipt-date" type="date" required /></label>
@@ -844,7 +845,7 @@
               <label class="finance-field-wide" for="finance-receipt-notes"><span>Observação</span><input id="finance-receipt-notes" type="text" placeholder="Ex.: sinal ou parcela final" /></label>
             </div>
             <p class="client-form-feedback" id="finance-receipt-feedback" role="alert"></p>
-            <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Registrar recebimento</span></button></div>
+            <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-receipt-submit-label">Registrar recebimento</span></button><button class="text-button" type="button" data-cancel-finance-receipt hidden>Cancelar edição</button></div>
           </form>
         </section>
         <section class="finance-form-section">
