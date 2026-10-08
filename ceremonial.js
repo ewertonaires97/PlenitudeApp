@@ -33,8 +33,15 @@
     // filtro é ignorado e todos os eventos aparecem.
     onlyCeremonialEvents: true,
     ceremonialServiceIds: new Set(),
+    // Modelos padrão de roteiro cadastrados pelo usuário
+    templates: [],
+    templateActivities: [],
+    editingTemplateId: null,
     // Arraste em andamento (drag and drop do roteiro)
     drag: { activityId: null, beforeId: null, started: false, card: null, pointerY: 0 },
+    // Arraste em andamento nos momentos do modelo padrão. State separado do
+    // roteiro porque a lista alvo é outra e o commit é outro.
+    templateDrag: { activityId: null, beforeId: null, started: false, row: null, pointerY: 0 }
   };
 
   // Toast utilitário
@@ -684,6 +691,9 @@
           <p class="section-subtitle">${completed} de ${total} momentos concluídos</p>
         </div>
         <div class="section-actions-right">
+          <button class="text-button template-open-btn" type="button" data-open-templates-modal>
+            <i data-lucide="copy-check"></i><span>Modelo padrão</span>
+          </button>
           <button class="add-client-button" type="button" data-open-activity-modal>
             <i data-lucide="plus"></i><span>Novo momento</span>
           </button>
@@ -1188,6 +1198,10 @@
                 <i data-lucide="check-circle"></i>
                 <span>Concluir Momento</span>
               </button>
+              <button class="live-btn start" type="button" data-live-action="start" data-activity-id="${currentActivity.id}">
+                <i data-lucide="play"></i>
+                <span>Iniciar Agora</span>
+              </button>
               <button class="live-btn skip" type="button" data-live-action="skip" data-activity-id="${currentActivity.id}">
                 <i data-lucide="fast-forward"></i>
                 <span>Pular</span>
@@ -1470,6 +1484,463 @@
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
+  }
+
+  // ==========================================================================
+  // MODELOS PADRÃO DE ROTEIRO
+  // ==========================================================================
+  // Um modelo é um roteiro sem evento, guardado pelo usuário e reaproveitado.
+  // As atividades vivem em ceremonial_template_activities e são copiadas para
+  // o evento pela função copy_ceremonial_template, que faz tudo em uma
+  // transação no banco.
+
+  function setTemplatesFeedback(message, isError = false) {
+    const el = document.getElementById('ceremonial-templates-feedback');
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = isError ? '#a0483d' : '';
+  }
+
+  async function loadTemplates() {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    try {
+      const [templatesResult, activitiesResult] = await Promise.all([
+        sb.from('ceremonial_templates').select('id, name, description, created_at').order('name'),
+        sb.from('ceremonial_template_activities').select('id, template_id, position, title, description, responsible, scheduled_time').order('position')
+      ]);
+
+      if (templatesResult.error) throw templatesResult.error;
+
+      state.templates = templatesResult.data || [];
+      state.templateActivities = activitiesResult.data || [];
+    } catch (err) {
+      console.error('Erro ao carregar modelos padrão:', err);
+      setTemplatesFeedback('Não foi possível carregar os modelos padrão.', true);
+    }
+  }
+
+  function selectedTemplate() {
+    return state.templates.find(t => t.id === state.editingTemplateId) || null;
+  }
+
+  function templateActivities(templateId) {
+    return state.templateActivities
+      .filter(item => item.template_id === templateId)
+      .sort((a, b) => a.position - b.position);
+  }
+
+  function openTemplatesModal() {
+    const panel = document.getElementById('ceremonial-templates-modal');
+    if (!panel) return;
+
+    setTemplatesFeedback('');
+    if (!state.editingTemplateId && state.templates.length) {
+      state.editingTemplateId = state.templates[0].id;
+    }
+
+    panel.hidden = false;
+    loadTemplates().then(renderTemplatesModal);
+    refreshIcons();
+  }
+
+  function closeTemplatesModal() {
+    const panel = document.getElementById('ceremonial-templates-modal');
+    if (panel) panel.hidden = true;
+  }
+
+  function renderTemplatesModal() {
+    const list = document.getElementById('templates-list');
+    const detail = document.getElementById('templates-detail');
+    if (!list || !detail) return;
+
+    if (!state.templates.length) {
+      list.innerHTML = '<p class="templates-list-empty">Nenhum modelo ainda. Crie o primeiro ao lado.</p>';
+      detail.innerHTML = '<div class="templates-empty-detail">Crie um modelo padrão com os momentos que você sempre repete nos eventos.</div>';
+      refreshIcons();
+      return;
+    }
+
+    list.innerHTML = state.templates.map(template => {
+      const count = templateActivities(template.id).length;
+      return `
+        <button class="templates-list-item${template.id === state.editingTemplateId ? ' active' : ''}" type="button" data-select-template="${template.id}">
+          <span>${sanitizeHtml(template.name)}<small>${count} ${count === 1 ? 'momento' : 'momentos'}</small></span>
+          <i data-lucide="chevron-right"></i>
+        </button>
+      `;
+    }).join('');
+
+    renderTemplateDetail();
+    refreshIcons();
+  }
+
+  function renderTemplateDetail() {
+    const detail = document.getElementById('templates-detail');
+    if (!detail) return;
+
+    const template = selectedTemplate();
+    if (!template) {
+      detail.innerHTML = '<div class="templates-empty-detail">Escolha um modelo à esquerda ou crie um novo.</div>';
+      return;
+    }
+
+    const activities = templateActivities(template.id);
+
+    detail.innerHTML = `
+      <div class="templates-detail-head">
+        <h5>${sanitizeHtml(template.name)}</h5>
+        <div class="activity-mini-actions">
+          <button class="client-action" type="button" data-rename-template="${template.id}" title="Renomear modelo"><i data-lucide="pencil"></i></button>
+          <button class="client-action" type="button" data-delete-template="${template.id}" title="Excluir modelo"><i data-lucide="trash-2"></i></button>
+        </div>
+      </div>
+
+      <form id="template-activity-form" class="templates-create-form" style="flex-wrap: wrap;">
+        <input id="template-act-time" type="time" style="flex: 0 0 96px;" />
+        <input id="template-act-title" type="text" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required style="flex: 1 1 130px;" />
+        <input id="template-act-resp" type="text" placeholder="Responsável" style="flex: 1 1 100px;" />
+        <button class="inline-create-button" type="submit"><i data-lucide="plus"></i><span>Adicionar</span></button>
+      </form>
+
+      <div class="templates-activity-list" style="margin-top: 9px;">
+        ${activities.length === 0
+          ? '<p class="templates-list-empty">Este modelo ainda não tem momentos. Use o campo acima para começar.</p>'
+          : activities.map((item, index) => `
+              <div class="templates-activity-row" data-template-act-id="${item.id}">
+                <button class="templates-act-grip" type="button" data-template-drag-grip="${item.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
+                  <i data-lucide="grip-vertical"></i>
+                </button>
+                <span class="templates-activity-index">${index + 1}</span>
+                <div class="templates-activity-body">
+                  <strong>${sanitizeHtml(item.title)}</strong>
+                  <span>${item.scheduled_time ? sanitizeHtml(item.scheduled_time.slice(0, 5)) + ' · ' : ''}${item.responsible ? sanitizeHtml(item.responsible) : ''}</span>
+                </div>
+                <button class="order-btn templates-act-delete" type="button" data-template-act-delete="${item.id}" title="Remover do modelo"><i data-lucide="trash-2"></i></button>
+              </div>
+            `).join('')}
+      </div>
+
+      ${state.selectedEventId ? `
+        <div class="templates-apply-box">
+          <div>
+            <label>
+              <input id="template-replace" type="checkbox" />
+              <span>Substituir o roteiro atual em vez de anexar</span>
+            </label>
+            <p class="field-hint" style="margin-top: 4px;">O evento <strong>${sanitizeHtml(state.selectedEvent?.name || '')}</strong> tem ${state.activities.length} ${state.activities.length === 1 ? 'momento' : 'momentos'}.</p>
+          </div>
+          <button class="add-client-button" type="button" data-apply-template="${template.id}">
+            <i data-lucide="copy-check"></i><span>Copiar para o evento</span>
+          </button>
+        </div>
+      ` : '<p class="field-hint" style="margin-top: 10px;">Selecione um evento acima para poder copiar o modelo.</p>'}
+    `;
+
+    const form = document.getElementById('template-activity-form');
+    if (form) form.addEventListener('submit', handleTemplateActivitySubmit);
+  }
+
+  async function createTemplate(event) {
+    event.preventDefault();
+    const sb = getSupabase();
+    const input = document.getElementById('template-new-name');
+    if (!sb || !input) return;
+
+    const name = input.value.trim();
+    if (!name) return;
+
+    setTemplatesFeedback('');
+    const { data, error } = await sb
+      .from('ceremonial_templates')
+      .insert({ name })
+      .select('id, name, description, created_at')
+      .single();
+
+    if (error) {
+      setTemplatesFeedback('Não foi possível criar o modelo: ' + error.message, true);
+      return;
+    }
+
+    input.value = '';
+    state.editingTemplateId = data.id;
+    state.templates.push(data);
+    renderTemplatesModal();
+    notify(`Modelo "${data.name}" criado.`);
+  }
+
+  async function renameTemplate(templateId) {
+    const sb = getSupabase();
+    const template = state.templates.find(t => t.id === templateId);
+    if (!sb || !template) return;
+
+    const name = window.prompt('Novo nome do modelo:', template.name);
+    if (!name || !name.trim()) return;
+
+    const { error } = await sb.from('ceremonial_templates').update({ name: name.trim() }).eq('id', templateId);
+    if (error) {
+      setTemplatesFeedback('Não foi possível renomear: ' + error.message, true);
+      return;
+    }
+
+    template.name = name.trim();
+    renderTemplatesModal();
+  }
+
+  async function deleteTemplate(templateId) {
+    const sb = getSupabase();
+    const template = state.templates.find(t => t.id === templateId);
+    if (!sb || !template) return;
+
+    const count = templateActivities(templateId).length;
+    if (!confirm(`Excluir o modelo "${template.name}"${count ? ` e seus ${count} momentos` : ''}?`)) return;
+
+    // As atividades do modelo caem por cascade, então uma chamada basta.
+    const { error } = await sb.from('ceremonial_templates').delete().eq('id', templateId);
+    if (error) {
+      setTemplatesFeedback('Não foi possível excluir: ' + error.message, true);
+      return;
+    }
+
+    state.templates = state.templates.filter(t => t.id !== templateId);
+    state.templateActivities = state.templateActivities.filter(item => item.template_id !== templateId);
+    if (state.editingTemplateId === templateId) {
+      state.editingTemplateId = state.templates.length ? state.templates[0].id : null;
+    }
+    renderTemplatesModal();
+    notify('Modelo excluído.');
+  }
+
+  async function handleTemplateActivitySubmit(event) {
+    event.preventDefault();
+    const sb = getSupabase();
+    const template = selectedTemplate();
+    if (!sb || !template) return;
+
+    const title = document.getElementById('template-act-title').value.trim();
+    if (!title) return;
+
+    const time = document.getElementById('template-act-time').value || null;
+    const responsible = document.getElementById('template-act-resp').value.trim() || null;
+
+    // max(position) + 1 e não length + 1: excluir um momento do meio deixa
+    // buraco na sequência e o length colidiria com a posição ocupada.
+    const current = templateActivities(template.id);
+    const nextPosition = current.reduce((max, item) => Math.max(max, item.position || 0), 0) + 1;
+
+    const { data, error } = await sb
+      .from('ceremonial_template_activities')
+      .insert({ template_id: template.id, position: nextPosition, title, scheduled_time: time, responsible })
+      .select('id, template_id, position, title, description, responsible, scheduled_time')
+      .single();
+
+    if (error) {
+      setTemplatesFeedback('Não foi possível adicionar ao modelo: ' + error.message, true);
+      return;
+    }
+
+    state.templateActivities.push(data);
+    renderTemplatesModal();
+    document.getElementById('template-act-title').value = '';
+    document.getElementById('template-act-resp').value = '';
+  }
+
+  async function removeTemplateActivity(activityId) {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    const { error } = await sb.from('ceremonial_template_activities').delete().eq('id', activityId);
+    if (error) {
+      setTemplatesFeedback('Não foi possível remover do modelo: ' + error.message, true);
+      return;
+    }
+
+    state.templateActivities = state.templateActivities.filter(item => item.id !== activityId);
+    renderTemplatesModal();
+  }
+
+  // Reordena gravando a ordem inteira no banco, o mesmo caminho do roteiro.
+  // Um movimento de drag pode cruzar meia lista, então a troca de vizinhos não
+  // bastaria: `unique (template_id, position)` não deixa gravar a ordem final
+  // em UPDATEs avulsos, porque o primeiro esbarraria na posição que o vizinho
+  // ainda ocupa. A RPC faz as duas fases dentro de uma transação.
+  async function persistTemplateActivityOrder(orderedIds) {
+    const sb = getSupabase();
+    const template = selectedTemplate();
+    if (!sb || !template) return;
+
+    setTemplatesFeedback('');
+
+    const { error } = await sb.rpc('reorder_ceremonial_template_activities', {
+      target_template_id: template.id,
+      ordered_ids: orderedIds
+    });
+
+    if (error) {
+      console.error('Erro ao reordenar os momentos do modelo:', error);
+      setTemplatesFeedback('Não foi possível reordenar: ' + error.message, true);
+    }
+
+    await loadTemplates();
+    renderTemplatesModal();
+  }
+
+  // Reordena movendo activityId para a posição de beforeId na ordem atual.
+  // beforeId null significa "colocar no fim".
+  async function moveTemplateActivityTo(activityId, beforeId) {
+    const template = selectedTemplate();
+    if (!template) return;
+
+    const current = templateActivities(template.id);
+    const list = [...current];
+    const from = list.findIndex(item => item.id === activityId);
+    if (from === -1) return;
+
+    const [moved] = list.splice(from, 1);
+    let to = beforeId ? list.findIndex(item => item.id === beforeId) : list.length;
+    if (to === -1) to = list.length;
+    list.splice(to, 0, moved);
+
+    if (list.every((item, i) => item.id === current[i].id)) return; // nada mudou
+    await persistTemplateActivityOrder(list.map(item => item.id));
+  }
+
+  // ==========================================================================
+  // DRAG AND DROP DOS MOMENTOS DO MODELO PADRÃO (Pointer Events)
+  // ==========================================================================
+  // Mesmo desenho do roteiro, em um state separado porque a lista alvo e o
+  // commit são outros: aqui o destino é reorder_ceremonial_template_activities.
+
+  function emptyTemplateDragState() {
+    return { activityId: null, beforeId: null, started: false, row: null, pointerY: 0 };
+  }
+
+  function templateActivityRows() {
+    const list = document.querySelector('#ceremonial-templates-modal .templates-activity-list');
+    return list ? Array.from(list.querySelectorAll('.templates-activity-row')) : [];
+  }
+
+  function templateDropTargetBeforeId(pointerY) {
+    const rows = templateActivityRows().filter(row => row.dataset.templateActId !== state.templateDrag.activityId);
+    for (const row of rows) {
+      const box = row.getBoundingClientRect();
+      if (pointerY < box.top + box.height / 2) return row.dataset.templateActId;
+    }
+    return null;
+  }
+
+  function clearTemplateDropMarkers() {
+    templateActivityRows().forEach(row => row.classList.remove('drag-over-top', 'drag-over-bottom'));
+  }
+
+  function paintTemplateDropTarget(beforeId) {
+    clearTemplateDropMarkers();
+    const others = templateActivityRows().filter(row => row.dataset.templateActId !== state.templateDrag.activityId);
+    if (!beforeId) {
+      others[others.length - 1]?.classList.add('drag-over-bottom');
+    } else {
+      others.find(row => row.dataset.templateActId === beforeId)?.classList.add('drag-over-top');
+    }
+  }
+
+  function endTemplateDrag(commit) {
+    const { activityId, beforeId, started, row } = state.templateDrag;
+    if (!activityId) return;
+
+    clearTemplateDropMarkers();
+    row?.classList.remove('dragging');
+    document.body.classList.remove('is-dragging-activity');
+
+    state.templateDrag = emptyTemplateDragState();
+    if (commit && started) moveTemplateActivityTo(activityId, beforeId);
+  }
+
+  function onTemplateGripPointerDown(event) {
+    // Só o botão principal; o clique direito não deve iniciar arraste.
+    if (event.button !== undefined && event.button !== 0) return;
+
+    const grip = event.target.closest('[data-template-drag-grip]');
+    if (!grip) return;
+
+    const row = grip.closest('.templates-activity-row');
+    if (!row) return;
+
+    // Impede a rolagem da página enquanto o dedo arrasta a linha.
+    event.preventDefault();
+
+    state.templateDrag = {
+      activityId: row.dataset.templateActId,
+      beforeId: null,
+      started: false,
+      row,
+      pointerY: event.clientY
+    };
+
+    const startY = event.clientY;
+
+    const onMove = (moveEvent) => {
+      // Um toque no punho sem deslocar é um clique, não um arraste.
+      if (!state.templateDrag.started && Math.abs(moveEvent.clientY - startY) < DRAG_THRESHOLD_PX) return;
+
+      if (!state.templateDrag.started) {
+        state.templateDrag.started = true;
+        state.templateDrag.row?.classList.add('dragging');
+        document.body.classList.add('is-dragging-activity');
+      }
+
+      state.templateDrag.pointerY = moveEvent.clientY;
+      state.templateDrag.beforeId = templateDropTargetBeforeId(moveEvent.clientY);
+      paintTemplateDropTarget(state.templateDrag.beforeId);
+    };
+
+    const finish = (commit) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      endTemplateDrag(commit);
+    };
+
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+
+    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+  }
+
+  async function applyTemplateToEvent(templateId) {
+    const sb = getSupabase();
+    const template = state.templates.find(t => t.id === templateId);
+    if (!sb || !template || !state.selectedEventId) return;
+
+    const replace = document.getElementById('template-replace')?.checked === true;
+    const count = templateActivities(templateId).length;
+    if (!count) {
+      setTemplatesFeedback('Este modelo ainda não tem momentos para copiar.', true);
+      return;
+    }
+
+    if (replace && state.activities.length && !confirm(`Isso apaga os ${state.activities.length} momentos do roteiro atual e coloca os ${count} do modelo. Continuar?`)) {
+      return;
+    }
+
+    setTemplatesFeedback('');
+    const { data, error } = await sb.rpc('copy_ceremonial_template', {
+      source_template_id: templateId,
+      target_event_id: state.selectedEventId,
+      replace_activity: replace
+    });
+
+    if (error) {
+      setTemplatesFeedback('Não foi possível copiar o modelo: ' + error.message, true);
+      return;
+    }
+
+    const copied = Array.isArray(data) ? data[0] : data;
+    closeTemplatesModal();
+    await loadSelectedEventDetails(state.selectedEventId);
+    notify(`${copied || count} momentos do modelo "${template.name}" copiados para o roteiro.`, 4000);
   }
 
   async function deleteActivity(actId) {
@@ -2102,6 +2573,45 @@
         return;
       }
 
+      // Ações dos modelos padrão
+      if (target.closest('[data-open-templates-modal]')) {
+        e.preventDefault();
+        openTemplatesModal();
+        return;
+      }
+
+      if (target.hasAttribute('data-select-template')) {
+        e.preventDefault();
+        state.editingTemplateId = target.dataset.selectTemplate;
+        setTemplatesFeedback('');
+        renderTemplatesModal();
+        return;
+      }
+
+      if (target.hasAttribute('data-rename-template')) {
+        e.preventDefault();
+        renameTemplate(target.dataset.renameTemplate);
+        return;
+      }
+
+      if (target.hasAttribute('data-delete-template')) {
+        e.preventDefault();
+        deleteTemplate(target.dataset.deleteTemplate);
+        return;
+      }
+
+      if (target.hasAttribute('data-template-act-delete')) {
+        e.preventDefault();
+        removeTemplateActivity(target.dataset.templateActDelete);
+        return;
+      }
+
+      if (target.hasAttribute('data-apply-template')) {
+        e.preventDefault();
+        applyTemplateToEvent(target.dataset.applyTemplate);
+        return;
+      }
+
       // Ações da Recepção (Check-in, Edit, Delete)
       if (target.hasAttribute('data-toggle-arrival')) {
         e.preventDefault();
@@ -2202,6 +2712,8 @@
         const actId = target.dataset.activityId;
         if (action === 'complete') {
           updateActivityStatus(actId, 'completed');
+        } else if (action === 'start') {
+          updateActivityStatus(actId, 'in_progress');
         } else if (action === 'skip') {
           updateActivityStatus(actId, 'skipped');
         }
@@ -2229,6 +2741,10 @@
     // cada recarga e um listener direto seria perdido.
     document.addEventListener('pointerdown', onGripPointerDown);
 
+    // 2d. Arraste dos momentos do modelo padrão, mesma técnica e pelo mesmo
+    // motivo: as linhas são redesenhadas a cada render do modal.
+    document.addEventListener('pointerdown', onTemplateGripPointerDown);
+
     // 3. Mudança rápida de status da atividade no select inline
     document.addEventListener('change', e => {
       if (e.target.hasAttribute('data-change-activity-status')) {
@@ -2254,6 +2770,12 @@
     const tableForm = document.getElementById('ceremonial-table-form');
     if (tableForm) tableForm.addEventListener('submit', handleTableSubmit);
 
+    const templateCreateForm = document.getElementById('template-create-form');
+    if (templateCreateForm) templateCreateForm.addEventListener('submit', createTemplate);
+
+    document.querySelectorAll('[data-close-templates-modal]').forEach(button => {
+      button.addEventListener('click', closeTemplatesModal);
+    });
   }
 
   // ==========================================================================
@@ -2270,6 +2792,13 @@
       if (state.selectedEventId) loadSelectedEventDetails(state.selectedEventId);
     },
     reloadEventsList: loadEventsList,
+    // Realtime: os modelos padrão são compartilhados pela equipe, então uma
+    // alteração feita por outro usuário precisa chegar aqui.
+    reloadTemplates: async () => {
+      await loadTemplates();
+      const modal = document.getElementById('ceremonial-templates-modal');
+      if (modal && !modal.hidden) renderTemplatesModal();
+    },
     // Realtime: marcar um serviço como "de cerimonial" muda o filtro do
     // seletor de evento, então a lista precisa ser redesenhada.
     reloadCeremonialFilter: async () => {

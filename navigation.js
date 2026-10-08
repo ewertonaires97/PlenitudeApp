@@ -49,6 +49,7 @@
     ['ceremonial-activity-modal', 'data-close-activity-modal'],
     ['finance-panel', 'data-close-finance'],
     ['finance-event-panel', 'data-close-finance-event'],
+    ['ceremonial-templates-modal', 'data-close-templates-modal'],
     ['ceremonial-guest-modal', 'data-close-guest-modal'],
     ['ceremonial-staff-modal', 'data-close-staff-modal'],
     ['ceremonial-table-modal', 'data-close-table-modal'],

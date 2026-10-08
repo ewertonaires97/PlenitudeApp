@@ -330,8 +330,8 @@ h1 span { color: var(--gold); }
    .finance-share-preview { justify-self: start; }
    small { font-size: 12px !important; line-height: 1.35; }
    .finance-share-row label { font-size: 12px; }
-   .activity-description, .activity-footer-meta, .event-meta-line, .guest-sub-meta { font-size: 12px; line-height: 1.4; }
-   .activity-status-tag, .guest-table-badge, .guest-notes-tag { font-size: 12px; }
+.templates-subtitle, .templates-list-empty, .activity-description, .activity-footer-meta, .event-meta-line, .guest-sub-meta { font-size: 12px; line-height: 1.4; }
+.templates-list-item, .templates-list-item small, .activity-status-tag, .guest-table-badge, .guest-notes-tag { font-size: 12px; }
 }
 
 /* Seção de Visão Geral */
@@ -470,6 +470,43 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .timeline-activity-card.drag-over-top { box-shadow: inset 0 3px 0 0 var(--gold); }
 .timeline-activity-card.drag-over-bottom { box-shadow: inset 0 -3px 0 0 var(--gold); }
 
+/* Modelos padrão de roteiro */
+.templates-modal-card { width: min(100%, 760px); }
+.templates-columns { display: grid; grid-template-columns: 240px 1fr; gap: 14px; margin-top: 12px; }
+.templates-list-col, .templates-detail-col { min-width: 0; }
+.templates-subtitle { display: block; margin-bottom: 6px; color: var(--muted); font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
+.templates-create-form { display: flex; gap: 5px; margin-bottom: 9px; }
+.templates-create-form input { flex: 1 1 auto; min-width: 0; }
+.templates-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+.templates-list-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-height: 40px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font-size: 11px; font-weight: 600; text-align: left; cursor: pointer; }
+.templates-list-item:hover { border-color: var(--gold); }
+.templates-list-item.active { border-color: var(--moss); background: var(--sage-light); }
+.templates-list-item small { display: block; margin-top: 1px; color: var(--muted); font-size: 9.5px; font-weight: 500; }
+.templates-list-empty { padding: 14px 10px; border: 1px dashed var(--line); border-radius: 4px; color: var(--muted); font-size: 10px; text-align: center; }
+.templates-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.templates-detail-head h5 { margin: 0; font: 600 14px "Playfair Display", serif; color: var(--moss-deep); }
+.templates-activity-row { display: flex; align-items: flex-start; gap: 7px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.templates-activity-row + .templates-activity-row { margin-top: 4px; }
+/* Alça de arraste dos momentos do modelo. Tem a mesma pegada do círculo da
+   posição para os dois ficarem alinhados na primeira linha da linha. */
+.templates-act-grip { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; color: var(--muted); background: transparent; cursor: grab; touch-action: none; }
+.templates-act-grip:hover { color: var(--moss); background: var(--cream); }
+.templates-act-grip:active { cursor: grabbing; }
+.templates-act-grip svg { width: 14px; height: 14px; }
+.templates-activity-row.dragging { opacity: .55; border-color: var(--gold); box-shadow: 0 8px 20px rgba(37, 49, 41, .16); }
+.templates-activity-row.drag-over-top { box-shadow: inset 0 3px 0 0 var(--gold); }
+.templates-activity-row.drag-over-bottom { box-shadow: inset 0 -3px 0 0 var(--gold); }
+.templates-activity-index { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; color: var(--moss-deep); background: var(--sage-light); font-size: 9.5px; font-weight: 700; }
+.templates-activity-body { flex: 1 1 auto; min-width: 0; }
+.templates-activity-body strong { display: block; font-size: 11px; color: var(--ink); }
+.templates-activity-body span { display: block; margin-top: 2px; color: var(--muted); font-size: 9.5px; }
+.templates-apply-box { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: 11px; padding: 10px; border-radius: 5px; background: var(--cream); flex-wrap: wrap; }
+.templates-apply-box label { display: flex; align-items: center; gap: 6px; color: #7a5c2e; font-size: 10px; font-weight: 600; cursor: pointer; }
+.templates-apply-box label input { width: 13px; height: 13px; accent-color: #a0483d; }
+.templates-empty-detail { padding: 22px 12px; border: 1px dashed var(--line); border-radius: 4px; color: var(--muted); font-size: 10.5px; text-align: center; }
+.template-open-btn { display: inline-flex; align-items: center; gap: 5px; margin-right: 6px; color: var(--moss); font-size: 10px; font-weight: 700; }
+.template-open-btn svg { width: 13px; height: 13px; }
+@media (max-width: 720px) { .templates-columns { grid-template-columns: 1fr; } .templates-list { max-height: 160px; } }
 
 .activity-check-col { display: flex; align-items: center; justify-content: center; flex: 0 0 24px; min-width: 24px; max-width: 24px; }
 .activity-checkbox-btn { display: grid; place-items: center; width: 24px; height: 24px; border: 1.5px solid var(--sage); border-radius: 4px; background: #fff; color: white; cursor: pointer; transition: all .15s; }
@@ -945,11 +982,23 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .table-actions .client-action { width: 44px; height: 44px; }
   .table-actions .client-action svg { width: 19px; height: 19px; }
 
+  /* A alça é o único alvo de arraste dos momentos do modelo, então precisa do
+     mesmo tamanho dos outros controles do modal. */
+  .templates-activity-row { align-items: center; }
+  .templates-act-grip { flex: 0 0 44px; width: 44px; height: 44px; }
+  .templates-act-grip svg { width: 20px; height: 20px; }
+  .templates-activity-row .order-btn { width: 44px; height: 44px; }
+  .templates-detail-head .client-action { width: 44px; height: 44px; }
+  .templates-detail-head .client-action svg { width: 19px; height: 19px; }
+  .templates-activity-index { width: 26px; height: 26px; flex-basis: 26px; font-size: 11px; }
+  .templates-list-item { min-height: 44px; }
 
   /* O X de fechar os modais do módulo também é um alvo de toque frequente */
   .ceremonial-panel .icon-button,
+  #ceremonial-templates-modal .icon-button,
   #ceremonial-activity-modal .icon-button { width: 44px; height: 44px; }
   .ceremonial-panel .icon-button svg,
+  #ceremonial-templates-modal .icon-button svg,
   #ceremonial-activity-modal .icon-button svg { width: 22px; height: 22px; }
 }
 

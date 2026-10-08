@@ -978,6 +978,36 @@
       </form>
     </section>
 
+    <!-- Modal: Modelos padrão de roteiro -->
+    <section class="client-form-panel" id="ceremonial-templates-modal" hidden aria-labelledby="ceremonial-templates-modal-title">
+      <div class="client-form-card templates-modal-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ROTEIRO</p>
+            <h2 id="ceremonial-templates-modal-title">Modelos padrão</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-templates-modal aria-label="Fechar modelos padrão"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">Cadastre um roteiro uma vez e copie para qualquer evento novo, sem redigitar cada momento.</p>
+
+        <div class="templates-columns">
+          <div class="templates-list-col">
+            <label class="templates-subtitle" for="template-new-name">Novo modelo</label>
+            <form id="template-create-form" class="templates-create-form">
+              <input id="template-new-name" type="text" placeholder="Ex.: Modelo Padrão 1" required />
+              <button class="inline-create-button" type="submit"><i data-lucide="plus"></i><span>Criar</span></button>
+            </form>
+            <div class="templates-list" id="templates-list"></div>
+          </div>
+
+          <div class="templates-detail-col">
+            <p class="client-form-feedback" id="ceremonial-templates-feedback" role="alert"></p>
+            <div id="templates-detail"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Modal: Adicionar/Editar Convidado (Recepção) -->
     <section class="client-form-panel" id="ceremonial-guest-modal" hidden aria-labelledby="ceremonial-guest-modal-title">
       <form class="client-form-card" id="ceremonial-guest-form">
