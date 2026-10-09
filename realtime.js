@@ -60,6 +60,7 @@
 
   const app = () => window.plenitudeApp;
   const events = () => window.plenitudeEvents;
+  const alerts = () => window.plenitudeAlerts;
   const ceremonial = () => window.plenitudeCeremonial;
   const permissions = () => window.plenitudePermissions;
 
@@ -82,7 +83,13 @@
       tables: ['profiles', 'app_roles', 'app_role_permissions'],
       reload() {
         return Promise.all([
-          permissions()?.reloadAccess(),
+          // Depois e não junto: a central filtra as fontes pela permissão, e
+          // consultá-la antes de resolver o acesso novo daria a contagem da
+          // permissão antiga por alguns segundos.
+          // O then do acesso virando promessa do refresh: reloadAccess() devolve
+          // undefined quando não há cliente do Supabase, e o optional chaining
+          // sozinho deixaria o .then sem alvo.
+          Promise.resolve(permissions()?.reloadAccess()).then(() => alerts()?.refresh({ force: true })),
           whenVisible('#users-panel', () => permissions()?.loadUsers())
         ]);
       }
@@ -143,6 +150,10 @@
       tables: ['quotes', 'quote_items', 'quote_message_templates'],
       reload() {
         return Promise.all([
+          // O force é porque a lista de lembretes já foi reconstruída logo acima
+          // e a central precisa do recorte novo, não do que ela tinha guardado
+          // no intervalo de 10 segundos.
+          alerts()?.refresh({ force: true }),
           app()?.loadQuotes(),
           whenVisible('#event-panel', () => events()?.reloadLookups()),
           whenVisible('#ceremonial-panel', () => ceremonial()?.reloadEventsList())
@@ -154,6 +165,10 @@
       tables: ['inventory_items', 'inventory_movements', 'inventory_categories', 'inventory_images', 'inventory_category_links'],
       reload() {
         return Promise.all([
+          // Fora do whenVisible pelo mesmo motivo do orçamento: quem repõe um item
+          // em outro aparelho precisa tirar o aviso de estoque baixo do sino de
+          // quem está com a tela de Estoque fechada.
+          alerts()?.refresh({ force: true }),
           whenVisible('#inventory-panel', () => app()?.loadInventory()),
           whenVisible('#inventory-category-panel', () => app()?.loadInventoryCategories())
         ]);
@@ -164,6 +179,9 @@
       tables: ['events', 'event_tables'],
       reload() {
         return Promise.all([
+          // Criar ou remarcar um evento muda a janela de sete dias que decide quais
+          // convidados viram aviso, e ela é calculada aqui, não numa tela.
+          alerts()?.refresh({ force: true }),
           whenVisible('#event-panel', () => Promise.all([
             events()?.reloadEvents(),
             events()?.reloadEventDetail()
@@ -177,6 +195,9 @@
       tables: ['ceremonial_activities', 'ceremonialistas', 'guests'],
       reload() {
         return Promise.all([
+          // Alguém marcar o convidado como confirmado é a única forma de um aviso
+          // de convidado sair da central sem ninguém abrir a lista.
+          alerts()?.refresh({ force: true }),
           whenVisible('#ceremonial-panel', () => ceremonial()?.reloadCeremonial()),
           whenVisible('#event-panel', () => events()?.reloadEventDetail())
         ]);

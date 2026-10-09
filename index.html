@@ -51,10 +51,10 @@
           <span class="brand-name">Plenitude <strong>Realizações</strong></span>
         </a>
         <div class="topbar-actions">
-          <button class="icon-button quote-alert-bell" id="quote-alert-bell" type="button" aria-label="Notificações" title="Notificações">
+          <button class="icon-button notice-bell" id="notice-bell" type="button" data-permission="dashboard" aria-label="Avisos" title="Avisos">
             <i data-lucide="bell"></i>
-            <span class="notification-dot"></span>
-            <span class="quote-alert-count" id="quote-alert-count" hidden>0</span>
+            <span class="notification-dot" id="notice-dot" hidden></span>
+            <span class="notice-count" id="notice-count" hidden>0</span>
           </button>
           <button class="avatar" id="profile-avatar" type="button" aria-label="Perfil" data-action="Perfil">PR</button>
           <button class="icon-button" id="logout-button" type="button" aria-label="Sair" title="Sair">
@@ -667,6 +667,21 @@
         <button class="login-button" type="button" data-close-quote-reminders><span>Voltar aos orçamentos</span><i data-lucide="check"></i></button>
       </div>
     </section>
+    <section class="client-form-panel" id="notice-panel" hidden aria-labelledby="notice-title">
+      <div class="client-form-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CENTRAL</p>
+            <h2 id="notice-title">Avisos</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-notices aria-label="Fechar avisos"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">O que pede uma decisão agora. Tudo aqui sai da lista sozinho quando o assunto é resolvido — receber o sinal, repor o item, o convidado confirmar.</p>
+        <p class="client-form-feedback" id="notice-summary" role="status"></p>
+        <div class="notice-list" id="notice-list"></div>
+        <button class="login-button" type="button" data-close-notices><span>Voltar</span><i data-lucide="check"></i></button>
+      </div>
+    </section>
     <section class="service-panel" id="event-panel" hidden aria-labelledby="events-title">
       <div class="service-panel-card quote-panel-card">
         <header class="client-panel-header">
@@ -1154,6 +1169,7 @@
     <script src="navigation.js"></script>
     <script src="realtime.js"></script>
     <script src="permissions.js"></script>
+    <script src="alerts.js"></script>
     <script src="app.js"></script>
     <script src="events.js"></script>
     <script src="ceremonial.js"></script>

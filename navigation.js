@@ -53,6 +53,7 @@
     ['ceremonial-guest-modal', 'data-close-guest-modal'],
     ['ceremonial-staff-modal', 'data-close-staff-modal'],
     ['ceremonial-table-modal', 'data-close-table-modal'],
+    ['notice-panel', 'data-close-notices'],
     ['detail-view', 'data-close-detail'],
     ['image-viewer', 'data-close-image-viewer']
   ].map(([id, closeAttribute]) => ({ id, closeAttribute, element: document.getElementById(id) }))

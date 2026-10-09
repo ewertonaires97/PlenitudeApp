@@ -60,6 +60,10 @@
     { selector: '#quote-reminder-panel', permission: 'orcamentos' },
     { selector: '#quote-alert-banner', permission: 'orcamentos' },
     { selector: '#quote-saved-panel', permission: 'orcamentos' },
+    // A central não tem permissão própria: quem só tem Eventos vê os avisos de
+    // convidado e quem só tem Estoque vê os de item baixo. O alerts.js filtra
+    // fonte por fonte, e uma tela sem nenhuma fonte visível não abre.
+    { selector: '#notice-panel', permission: 'dashboard' },
     { selector: '#event-panel', permission: 'eventos' },
     { selector: '#event-detail-panel', permission: 'eventos' },
     { selector: '#ceremonial-panel', permission: 'cerimonial' },
@@ -304,6 +308,11 @@
 
     await loadCatalog();
     applyToUI();
+    // A central de avisos esconde a fonte de quem não tem a permissão dela, e
+    // os orçamentos são carregados logo no login, às vezes antes de o acesso
+    // resolver. Sem esta chamada o sino ficaria em zero até alguém mexer em
+    // alguma tela, que é o oposto de um aviso.
+    window.plenitudeAlerts?.refresh({ force: true });
 
     // O próprio acesso pode ter mudado enquanto a tela estava aberta (outro
     // administrador mexeu nas permissões). A lista de usuários só interessa
@@ -777,6 +786,7 @@
       if (state.resolved) return;
       console.warn('[Acesso] Perfil não resolvido; liberando a interface com as permissões padrão.');
       applyToUI();
+      window.plenitudeAlerts?.refresh({ force: true });
     }, 8000);
   }
 

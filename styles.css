@@ -1172,12 +1172,14 @@ a:focus-visible,
 .quote-reminder-actions svg { width: 16px; height: 16px; }
 .quote-reminder-warning { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: #8b7450; font-size: 10px; line-height: 1.5; }
 .quote-reminder-warning svg { width: 14px; height: 14px; flex: 0 0 auto; margin-top: 1px; }
-/* O mesmo aviso aparece em três lugares, e os três usam o tom dourado da
-   etiqueta de validade para que se leiam como a mesma coisa: uma contagem
-   dourada no sino e outra no card do módulo são o mesmo número, não dois
-   avisos diferentes. */
-.quote-alert-count { position: absolute; top: -3px; right: -4px; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border: 2px solid var(--paper); border-radius: 8px; color: var(--paper); background: var(--gold); font-size: 9px; font-weight: 700; }
-.quote-alert-bell.has-pending { color: var(--gold); }
+/* O sino do topo: a contagem dourada é o mesmo tom da etiqueta de validade, para
+   que o número no sino e o número no card do módulo se leiam como a mesma
+   cobrança — e não como dois avisos diferentes. O ponto é a única parte que
+   significa outra coisa: ele marca que algum prazo já passou. */
+.notice-count { position: absolute; top: -3px; right: -4px; display: grid; place-items: center; min-width: 16px; height: 16px; padding: 0 4px; border: 2px solid var(--paper); border-radius: 8px; color: var(--paper); background: var(--gold); font-size: 9px; font-weight: 700; }
+.notice-bell.has-alerts { color: var(--gold); }
+.notice-bell.has-critical { color: #a0483d; }
+.notice-bell.has-critical .notification-dot { background: #a0483d; }
 .module-card .quote-module-count { position: absolute; right: 10px; bottom: 10px; display: grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; color: var(--paper); background: var(--gold); font-size: 9px; font-weight: 700; }
 /* A faixa do início é um botão inteiro: quem precisa ver isso é quem está
    olhando para o celular, e um bloco de texto que exige achar o clique não
@@ -1194,6 +1196,30 @@ a:focus-visible,
 .quote-alert-more { font-style: italic; }
 .quote-alert-cta { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--gold); font-size: 10px; font-weight: 700; }
 .quote-alert-cta svg { width: 13px; height: 13px; }
+/* Central de avisos: a lista é o que o sino promete, e cada linha é um assunto
+   com um botão que abre a tela onde ele se resolve. Nada de cartão com borda
+   grossa: a diferença entre "agora" e "em breve" é feita pelo grupo e pela cor
+   do título, que é o que o olho encontra primeiro numa rolagem curta. */
+/* A central fica abaixo dos painéis que ela abre. Cada aviso tem um botão que
+   leva para a tela onde ele se resolve, e essa tela precisa aparecer por cima:
+   com o mesmo z-index da central, o DOM decide quem ganha, e o card de quem
+   ficaria por baixo é o que o botão do aviso acabou de mandar abrir. */
+#notice-panel { z-index: 7; }
+.notice-list { display: grid; gap: 7px; }
+.notice-group { display: flex; align-items: center; gap: 7px; margin: 8px 0 1px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.notice-group svg { width: 14px; height: 14px; color: var(--gold); }
+.notice-group.is-critical { color: #a0483d; }
+.notice-group.is-critical svg { color: #a0483d; }
+.notice-row { display: flex; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 4px; background: #fff; }
+.notice-row.is-critical { border-left-color: #a0483d; }
+.notice-icon { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: var(--gold); background: var(--cream); }
+.notice-row.is-critical .notice-icon { color: #a0483d; background: #f7ece9; }
+.notice-icon svg { width: 15px; height: 15px; }
+.notice-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.notice-copy strong { overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.notice-row.is-critical .notice-copy strong { color: #a0483d; }
+.notice-copy span { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.notice-row .client-action-button { flex: 0 0 auto; padding: 7px 11px; font-size: 10px; }
 .quote-reminder-toolbar { display: flex; justify-content: flex-end; margin: -3px 0 10px; }
 .quote-reminder-toolbar button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 13px; font-size: 10px; font-weight: 700; }
 .quote-reminder-toolbar svg { width: 15px; height: 15px; }
@@ -1227,7 +1253,8 @@ a:focus-visible,
 /* Todo elemento que ganha `display` precisa repetir o `[hidden]` aqui: a
    regra do navegador para o atributo perde para qualquer `display` do autor, e
    sem isso um contador zerado continuaria aparecendo. */
-.quote-reminder-count[hidden], .quote-alert-count[hidden], .module-card .quote-module-count[hidden] { display: none !important; }
+.quote-reminder-count[hidden], .module-card .quote-module-count[hidden] { display: none !important; }
+.notice-count[hidden], .notification-dot[hidden] { display: none !important; }
 .quote-alert-banner[hidden], .quote-template-editor[hidden], .quote-reminder-custom-editor[hidden] { display: none !important; }
 .finance-cost-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .finance-cost-row > div:first-child { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

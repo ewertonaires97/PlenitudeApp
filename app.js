@@ -1336,11 +1336,14 @@ async function loadInventory() {
   renderInventory();
 }
 
-function openInventory() {
+// `lowOnly` é o que o aviso de estoque usa: quem clica nele quer ver os itens
+// abaixo do mínimo, e não a lista inteira com o filtro já marcado esperando
+// alguém notar que ele existe.
+function openInventory(options = {}) {
   if (!permitir('estoque')) return;
   inventoryPanel.hidden = false;
   inventorySearch.value = '';
-  inventoryLowOnly.checked = false;
+  inventoryLowOnly.checked = Boolean(options.lowOnly);
   loadInventory();
 }
 
@@ -1385,7 +1388,10 @@ function openMovementForm(item) {
   movementFormPanel.hidden = false;
 }
 
-document.querySelector('[data-open-inventory]').addEventListener('click', openInventory);
+// O wrapper existe porque o listener passa o evento de clique para o
+// handler, e um MouseEvent lido como `options` transformaria qualquer coisa
+// nele em lowOnly.
+document.querySelector('[data-open-inventory]').addEventListener('click', () => openInventory());
 document.querySelector('[data-open-inventory-categories]').addEventListener('click', openInventoryCategories);
 document.querySelector('[data-close-inventory]').addEventListener('click', () => { inventoryPanel.hidden = true; });
 document.querySelector('[data-new-inventory]').addEventListener('click', () => openInventoryForm());
@@ -1451,6 +1457,46 @@ let detailTarget = null;
 // baixo. O primeiro callback fecha uma camada por vez e é o botão de voltar; o
 // segundo fecha a ficha inteira e é o botão de início.
 window.plenitudeNav?.setLayerCloser(detailView, closeDetailLayer, hideDetail);
+
+/* ========================================================================== */
+/* FONTE DE AVISOS: ORÇAMENTOS                                                 */
+/* O sinal em aberto vem da cobrança, e a cobrança já tem uma tela inteira com */
+/* o texto pronto. O aviso existe para apontar para lá, não para repetir a     */
+/* lista: quem lê o card e discorda do prazo vai para a tela de lembretes,      */
+/* onde dá para conferir o texto e enviar.                                     */
+/* ========================================================================== */
+window.plenitudeAlerts?.register({
+  id: 'sinais',
+  label: 'Sinais',
+  permissions: ['orcamentos'],
+  collect() {
+    const overdue = overdueQuoteReminders();
+    const upcoming = upcomingQuoteReminders();
+    const openReminders = { label: 'Cobrar sinal', run: openQuoteReminders };
+    const alerts = [];
+
+    // O vencido vem primeiro na central: é a cobrança mais velha e a única em
+    // que a data já foi perdida.
+    overdue.forEach((quote) => alerts.push({
+      id: `sinal:${quote.id}`,
+      severity: 'critical',
+      icon: 'hand-coins',
+      title: `Sinal em aberto · ${quote.clients?.name || 'Sem cliente'}`,
+      detail: `${quote.name} · ${quoteValidityNote(quote)}`,
+      action: openReminders
+    }));
+    upcoming.forEach((quote) => alerts.push({
+      id: `sinal:${quote.id}`,
+      severity: 'warn',
+      icon: 'clock',
+      title: `Sinal vence em breve · ${quote.clients?.name || 'Sem cliente'}`,
+      detail: `${quote.name} · ${quoteValidityNote(quote)}`,
+      action: openReminders
+    }));
+
+    return alerts;
+  }
+});
 
 async function openDetail(type, id) {
   let title = 'Detalhes';
@@ -2207,10 +2253,6 @@ function overdueQuoteReminders() {
   }).sort(byQuoteDeadline);
 }
 
-function pendingQuoteReminders() {
-  return [...upcomingQuoteReminders(), ...overdueQuoteReminders()];
-}
-
 /* ========================================================================== */
 /* TEXTO DA MENSAGEM                                                          */
 /* O texto padrão mora no app e não no banco: quando ninguém editou nada, ele  */
@@ -2416,12 +2458,11 @@ function renderQuoteReminders() {
 
 /* ========================================================================== */
 /* O AVISO FORA DA TELA DE ORÇAMENTOS                                         */
-/* Três pontos de entrada para a mesma lista — sino do topo, card do módulo e  */
-/* faixa do início — e não três listas: cada uma com sua própria contagem      */
-/* seria três chances de o número estar errado.                               */
+/* Dois pontos de entrada para a mesma lista — card do módulo e faixa do       */
+/* início — e não duas listas: cada uma com sua própria contagem seria duas    */
+/* chances de o número estar errado. O sino do topo ficou com a central de     */
+/* avisos, que conta mais coisa que sinal e por isso tem o próprio número.    */
 /* ========================================================================== */
-const quoteAlertBell = document.querySelector('#quote-alert-bell');
-const quoteAlertCount = document.querySelector('#quote-alert-count');
 const quoteAlertBanner = document.querySelector('#quote-alert-banner');
 const quoteAlertItems = document.querySelector('#quote-alert-items');
 const quoteModuleCount = document.querySelector('#quote-module-count');
@@ -2430,21 +2471,21 @@ function renderQuoteAlerts() {
   const upcoming = upcomingQuoteReminders();
   const overdue = overdueQuoteReminders();
   const count = upcoming.length + overdue.length;
-  // Quem não tem a permissão de orçamentos não vê nem a contagem: o sino do
-  // topo é comum a todos e não pode revelar que existe proposta vencendo para
-  // quem não abriria a tela.
+  // Quem não tem a permissão de orçamentos não vê nem a contagem: os dois
+  // lugares que sobram são o cabeçalho da lista e o card do módulo, ambos
+  // dentro do próprio Orçamentos. O sino do topo é comum a todos e por isso
+  // ele é do alerts.js, que também cuida da permissão de cada fonte.
   const visible = count > 0 && permitir('orcamentos');
 
-  [quoteReminderCount, quoteAlertCount, quoteModuleCount].forEach((badge) => {
+  [quoteReminderCount, quoteModuleCount].forEach((badge) => {
     if (!badge) return;
     badge.textContent = String(count);
     badge.hidden = !visible;
   });
   quoteReminderToolbarButtons.forEach((button) => button.classList.toggle('has-pending', visible));
-  if (quoteAlertBell) {
-    quoteAlertBell.classList.toggle('has-pending', visible);
-    quoteAlertBell.setAttribute('aria-label', visible ? `Avisos de sinal (${count})` : 'Notificações');
-  }
+  // A contagem do sino saiu daqui porque ele deixou de contar só sinal: ele
+  // passou a contar o que a central inteira tem pendente.
+  window.plenitudeAlerts?.refresh();
   // O permissions.js esconde a faixa sozinha quando a permissão some e nunca
   // mostra uma que estava escondida, então quem decide se ela reaparece é este
   // render e não ele.
@@ -2489,6 +2530,10 @@ function checkQuoteDeadlineRollover() {
   // pode ter recebido sinal de outro usuário, e o carimbo do lembrete enviado
   // também muda o que está na lista.
   loadQuotes();
+  // "Vence hoje" vira "venceu" sozinho na virada do dia, e um evento que estava
+  // a uma semana vira o evento de hoje. O sino não depende de ninguém abrir uma
+  // tela para aprender disso, então ele é avisado à parte.
+  window.plenitudeAlerts?.refresh({ force: true });
 }
 
 function openQuoteReminders() {
@@ -2629,13 +2674,9 @@ async function saveQuoteCustomMessage(quoteId, value) {
 }
 
 quoteReminderButtons.forEach((button) => button.addEventListener('click', openQuoteReminders));
-// O sino do topo é o mesmo aviso do painel de lembretes, então ele abre a mesma
-// tela. Sem nada pendente ele volta a ser o sino decorativo que era antes,
-// em vez de abrir uma lista vazia e deixar a pessoa achando que o app quebrou.
-quoteAlertBell?.addEventListener('click', () => {
-  if (pendingQuoteReminders().length && permitir('orcamentos')) openQuoteReminders();
-  else showToast('Notificações');
-});
+// O clique do sino é do alerts.js: ele abre a central, que junta sinal,
+// estoque e convidados. A lista de lembretes continua sendo o destino do aviso
+// de sinal, alcançável pelo próprio aviso.
 // Os dois botões do painel fecham a tela: o X do cabeçalho e o "Voltar" do rodapé.
 document.querySelectorAll('[data-close-quote-reminders]').forEach((button) => button.addEventListener('click', () => { quoteReminderPanel.hidden = true; }));
 
@@ -3005,13 +3046,18 @@ inventoryList.addEventListener('click', async (event) => {
 /* altera uma tabela. Também é o que events.js usava em window.plenitudeApp   */
 /* sem que esse objeto existisse.                                             */
 window.plenitudeApp = {
-  loadClients,
-  loadServices,
-  loadMenus,
-  loadInventory,
-  loadInventoryCategories,
-  loadQuotes,
-  loadQuoteReferences,
+    loadClients,
+    loadServices,
+    loadMenus,
+    loadInventory,
+    loadInventoryCategories,
+    loadQuotes,
+    loadQuoteReferences,
+    // A central de avisos precisa abrir a tela que o aviso resolve, e ela não
+    // conhece o formulário de movimentação nem o filtro de estoque baixo.
+    openInventory,
+    openQuotes,
+    openQuoteReminders,
   // O módulo de Cerimonial precisa saber quais serviços estão marcados como
   // "serviço de cerimonial" para filtrar o seletor de evento ativo. A lista
   // só é buscada se o app já tiver carregado os serviços; caso contrário o

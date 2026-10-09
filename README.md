@@ -52,7 +52,7 @@ Execute [supabase/migrations/021_quote_expiry_reminder.sql](supabase/migrations/
 
 O **Lembrete de sinal** reúne cada proposta enviada que tem sinal em aberto e **vence hoje, vence amanhã ou já venceu**. A cobrança é derivada da data, como a expiração: não há job no servidor e nada é agendado.
 
-O aviso aparece em três lugares, todos apontando para a mesma lista: o sino do topo, o botão **Lembretes** na tela de Orçamentos e uma faixa no início com o nome dos clientes. Os orçamentos são carregados no login, e a lista é reconsultada quando o dia vira (`checkQuoteDeadlineRollover`) — é o que mantém o aviso certo com o app aberto de um dia para o outro. Sem isso, um orçamento que venciasse durante a noite sumiria sem ninguém ver.
+O aviso aparece no botão **Lembretes** da tela de Orçamentos e numa faixa no início com o nome dos clientes. No sino do topo ele entra pela central de avisos, que junta sinal com o resto. Os orçamentos são carregados no login, e a lista é reconsultada quando o dia vira (`checkQuoteDeadlineRollover`) — é o que mantém o aviso certo com o app aberto de um dia para o outro. Sem isso, um orçamento que venciasse durante a noite sumiria sem ninguém ver.
 
 Na tela de lembretes os vencidos vêm num grupo separado dos que estão por vencer. Isso não é cosmético: o mesmo texto serve aos dois casos porque a variável `{prazo}` devolve a **frase inteira** — "vence amanhã", "venceu há 3 dias" — e não só o advérbio. Um `{prazo}` que devolvesse apenas "amanhã" faria o app escrever "termina amanhã" para uma proposta que já tinha vencido.
 
@@ -80,6 +80,30 @@ O corpo usa variáveis entre chaves, inseridas pelos botões da lista:
 | `{observacoes}` | as observações do orçamento, já com o rótulo |
 
 Uma variável escrita errado **fica como está** em vez de sumir, e linhas vazias demais são colapsadas automaticamente. O texto padrão continua no app (`QUOTE_REMINDER_DEFAULT_BODY`) e o botão **Restaurar padrão** apaga o que está no banco em vez de gravar uma cópia — assim o padrão nunca diverge do que está em produção.
+
+### Central de avisos
+
+O sino do topo não é mais um atalho para a tela de lembretes: ele abre a **Central de avisos**, em [alerts.js](alerts.js), que reúne tudo que pede uma decisão e joga cada item na tela onde ele se resolve. O que ele contava antes — proposta com sinal em aberto — virou um aviso entre outros.
+
+**Nada é gravado.** Cada aviso é derivado de uma coluna que já existe e some sozinho quando o assunto é resolvido: o sinal recebido tira a cobrança, o item reposto sai do aviso de estoque, o convidado confirmado sai da lista. Um "lido" guardado no banco seria pior — marcaria a leitura, não a resolução, e o contador passaria a avisar de um problema que ninguém mais tem.
+
+As fontes hoje:
+
+| Aviso | Vem de | Permissão | Some quando |
+|---|---|---|---|
+| Sinal em aberto, vencido ou vencendo | `app.js`, com o mesmo recorte de `upcomingQuoteReminders` e `overdueQuoteReminders` | `orcamentos` | o sinal entra ou o lembrete é enviado |
+| Itens abaixo do estoque mínimo | `alerts.js`, direto do banco | `estoque` | o item é reposto |
+| Convidados sem confirmar | `alerts.js`, direto do banco | `eventos` ou `cerimonial` | o convidado confirma |
+
+Três pontos que dependem de manutenção futura:
+
+- **Uma fonte nova se registra com `plenitudeAlerts.register({ id, permissions, collect })`** e nada mais precisa mudar. Quem registra é o módulo dono do dado, então cada um continua sendo o único que sabe a regra do seu recorte — a central não conhece orçamento, sinal nem convidado. `permissions` é uma lista de alternativas: convidados entram para quem tem Eventos **ou** Cerimonial, porque as duas telas mostram a mesma lista de gente.
+- **A permissão filtra fonte por fonte.** Quem não tem `estoque` não vê o item baixo nem a contagem dele, mesmo com o sino à vista. E o `collect` de cada fonte só roda depois do acesso resolvido, pelo mesmo motivo do `permitir()` que tranca a navegação: antes da resposta do banco, nada é decidido.
+- **Duas urgências só: "Agora" e "Em breve".** "Agora" é o que já quebrou alguma coisa — o prazo da proposta passou, o evento é hoje e ainda tem convidado sem responder. "Em breve" é o que dá para resolver com calma. Uma terceira faixa exigiria um terceiro tipo de ação, e o que existe no app resolve em duas. O ponto vermelho no sino marca só o "Agora": a contagem sozinha não diz se é para se apressar ou só olhar.
+
+O `collect` de estoque e o de convidados leem do banco em vez de usar os arrays em memória porque esses dados só existem enquanto a tela deles estiver aberta — quem nunca abriu Estoque não tem `inventoryItems`, e quem nunca abriu um evento não tem os convidados. As consultas são estreitas de propósito: só as colunas do recorte. As duas passam por um TTL de 10 segundos, e o `refresh({ force: true })` — que o [realtime.js](realtime.js) chama em cada tópico relevante e que a virada do dia dispara — invalida esse TTL junto. Sem isso, o force recolia a lista e as duas fontes devolviam o recorte velho, que é justamente o que a chamada veio corrigir.
+
+A tela não tem permissão própria no [permissions.js](permissions.js): quem só tem Eventos vê os avisos de convidado e quem só tem Estoque vê os de item baixo. É preciso entrar em `SCREENS` com a permissão `dashboard` porque o botão do sino vive no cabeçalho do Início.
 
 ### Estoque
 
@@ -111,7 +135,7 @@ A partir daí, [realtime.js](realtime.js) mantém um único canal que escuta as 
 
 Dois pontos que dependem de manutenção futura:
 
-- `app.js` não exportava nada. As funções que o `realtime.js` chama foram expostas em `window.plenitudeApp`. Ao adicionar uma tela nova, inclua o respective loader nessa lista, senão ela não sincroniza.
+- `app.js` não exportava nada. As funções que o `realtime.js` chama foram expostas em `window.plenitudeApp`. Ao adicionar uma tela nova, inclua o respective loader nessa lista, senão ela não sincroniza. A lista também leva as telas que a [central de avisos](#central-de-avisos) precisa abrir — um aviso cujo botão não chega na tela dele é um aviso que só ocupa espaço.
 - A tabela `profiles` é lida pelo `permissions.js` e tem um tópico (`acesso`) em `realtime.js`, para que uma mudança de permissão chegue a quem está com o app aberto. Ao adicionar um módulo que depende de `profiles`, inclua o loader dele nesse mesmo tópico.
 
 ### Navegação entre telas
