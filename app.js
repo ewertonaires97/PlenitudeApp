@@ -1436,6 +1436,22 @@ function renderDetailImages(images, title) {
   return `<div class="detail-images">${images.map((url) => `<button type="button" data-view-image="${escapeHTML(url)}" aria-label="Ampliar imagem de ${escapeHTML(title)}"><img src="${escapeHTML(url)}" alt="${escapeHTML(title)}" /></button>`).join('')}</div>`;
 }
 
+// Ficha de detalhes aberta por cima de outra: o cardápio dentro da ficha do
+// serviço ou do orçamento. A de baixo continua na tela, e o X volta para ela em
+// vez de fechar tudo. Guarda o par que sabe redesenhar a de baixo, e não o HTML
+// pronto, para que quem volta veja os dados do momento, não uma cópia.
+const detailStack = [];
+// A ficha que está na tela agora, para distinguir abrir uma ficha por cima de
+// outra de reabrir a mesma em outro estado.
+let detailTarget = null;
+
+// A ficha de detalhes abre camadas por cima de si mesma: o cardápio que aparece
+// dentro da ficha do serviço ou do orçamento. A navegação precisa saber disso, senão
+// o botão de voltar fecharia a tela inteira em vez de devolver para a ficha de
+// baixo. O primeiro callback fecha uma camada por vez e é o botão de voltar; o
+// segundo fecha a ficha inteira e é o botão de início.
+window.plenitudeNav?.setLayerCloser(detailView, closeDetailLayer, hideDetail);
+
 async function openDetail(type, id) {
   let title = 'Detalhes';
   let eyebrow = 'DETALHES';
@@ -1543,11 +1559,53 @@ async function openDetail(type, id) {
   detailViewContent.innerHTML = actionQuoteId
     ? `${content}<div class="quote-saved-actions">${sentButton}${depositButton}${reminderButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
     : content;
+  // Ficha aberta por cima de outra: o cardápio dentro da ficha do serviço ou do
+  // orçamento. Quem fica embaixo continua na tela e o X volta para ele. Reabrir a
+  // mesma ficha, como depois de marcar o orçamento como enviado, troca no lugar
+  // e não empilha, senão o X voltaria para uma cópia dela mesma.
+  if (detailTarget && (detailTarget.type !== type || detailTarget.id !== id)) {
+    detailStack.push(detailTarget);
+    // Uma camada a mais na pilha de telas, para o X e o botão de voltar fecharem
+    // uma camada por vez em vez de a tela inteira.
+    window.plenitudeNav?.layer(detailView);
+  }
+  detailTarget = { type, id };
   detailView.hidden = false;
   lucide.createIcons();
 }
 
+// O X, o clique no fundo e o Esc. Tiram a camada da pilha de telas junto, porque
+// nenhum dos três passa pela navegação.
 function closeDetail() {
+  window.plenitudeNav?.unlayer(detailView);
+  closeDetailLayer();
+}
+
+// Fecha uma camada da ficha, seja pelo X, seja pelo botão de voltar. No segundo
+// caso a entrada da camada já saiu da pilha, porque foi o próprio botão de voltar
+// que tirou.
+function closeDetailLayer() {
+  const previous = detailStack.pop();
+  if (!previous) {
+    hideDetail();
+    return;
+  }
+  // A ficha de baixo é a que está na tela a partir de agora, e ela é redesenhada
+  // a partir do seu par, e não de uma cópia do HTML, para que quem volta leia os
+  // dados do momento e não o que estava na tela antes. O alvo é apontado para ela
+  // antes do desenho porque é ele que decide se abrir uma ficha empilha outra ou
+  // apenas troca o conteúdo, e aqui é a mesma ficha voltando.
+  detailTarget = previous;
+  openDetail(previous.type, previous.id);
+}
+
+// Fecha a ficha e tudo o que ela tinha por baixo. É o que as ações que abrem
+// outra tela usam: fechar só uma camada deixaria a ficha de baixo aparecendo por
+// baixo do painel que vem a seguir.
+function hideDetail() {
+  detailStack.length = 0;
+  detailTarget = null;
+  window.plenitudeNav?.unlayerAll(detailView);
   detailView.hidden = true;
   detailViewContent.innerHTML = '';
 }
@@ -1585,7 +1643,9 @@ detailView.addEventListener('click', async (event) => {
   // enviado precisa ver o orçamento no novo estado, não a tela antiga.
   if (sentButton) { await markQuoteAsSent(sentButton.dataset.quoteSentRow); await openDetail('quote', sentButton.dataset.quoteSentRow); return; }
   if (reminderButton) { await sendQuoteExpiryReminder(reminderButton.dataset.quoteReminderDetail); await openDetail('quote', reminderButton.dataset.quoteReminderDetail); return; }
-  if (depositButton) { closeDetail(); await openQuoteDepositPanel(depositButton.dataset.quoteDepositRow); return; }
+  // A ficha sai inteira, e não uma camada: o painel do sinal é outra tela, e a
+  // ficha de baixo ficaria aparecendo por baixo dele.
+  if (depositButton) { hideDetail(); await openQuoteDepositPanel(depositButton.dataset.quoteDepositRow); return; }
   if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
   if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
   if (shareButton) { await shareQuote(shareButton.dataset.quoteShareRow); }

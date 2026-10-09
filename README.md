@@ -129,6 +129,20 @@ Dois pontos que dependem de manutenção futura:
 
 `window.plenitudeNav` expõe `back()`, `home()`, `stack()` e `cover(panel)`. O `cover()` é para quando uma tela abre **por cima** de outra em vez de por baixo: a de baixo continua na pilha e volta a aparecer quando a de cima fecha. É o que faz Configurações devolver em vez de sumir quando se volta de Usuários, Cardápios ou Categorias.
 
+### Uma tela por cima de si mesma
+
+O `cover()` serve para uma tela que sai de cena enquanto a outra está à vista. A ficha de detalhes de [app.js](app.js) é o outro caso: ela abre **por cima de si mesma**, porque o cardápio do serviço e o cardápio do item do orçamento aparecem dentro da ficha que os listou. Uma segunda tela não resolveria, porque as duas fichas são o mesmo painel com o mesmo botão de fechar.
+
+Nesses casos a tela se registra uma vez com `setLayerCloser(panel, close, closeAll)` e avisa cada camada que abre:
+
+- **`close(panel)`** — a ficha que está embaixo continua na tela e ganha uma entrada a mais na pilha, com `layer(panel)`. O X, o clique no fundo e o Esc fecham uma camada por vez e tiram a entrada com `unlayer(panel)`; o botão de voltar e o do aparelho fecham a mesma camada, mas quem tirou a entrada da pilha foi o próprio botão;
+- **`closeAll(panel)`** — a tela inteira fecha, e é o que o botão de início usa, que não desce camada por camada;
+- **`unlayerAll(panel)`** — a tela fecha com camadas abertas. As entradas das camadas saem da pilha junto com a da tela, e quem tira é o observador do `hidden`, de uma vez só.
+
+A ficha guarda o par `{ type, id }` de cada camada, e não o HTML pronto: fechar o cardápio redesenha a ficha de baixo a partir dos dados do momento, em vez de mostrar uma cópia do que estava na tela antes.
+
+Uma consequência que vale para qualquer tela com camadas: `history.go(-n)` de *n* entradas responde com *n* `popstate`. Só o último é o balanço da operação, e é por isso que o "histórico em movimento" do [navigation.js](navigation.js) é um contador. Com um ligado/desligado, o segundo `popstate` de um lote que fechou mais de uma tela seria lido como pedido do usuário e fecharia uma tela a mais.
+
 ### Instalar como PWA
 
 O app agora possui [manifest.webmanifest](manifest.webmanifest), [sw.js](sw.js) e ícones em [icons](icons). Depois do deploy no Netlify:

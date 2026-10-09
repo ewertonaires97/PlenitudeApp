@@ -68,15 +68,23 @@
   // delas. É o caso de Configurações: as telas de apoio saem de lá, e voltar
   // precisa devolver para lá em vez de pular para o início.
   const covered = new Set();
+  // Telas que abrem camadas por cima de si mesmas sem sair da tela: a ficha de
+  // detalhes que mostra o cardápio do serviço ou do orçamento. Cada camada vale
+  // uma entrada a mais na pilha, para o X e o botão de voltar fecharem uma
+  // camada por vez em vez de a tela inteira. O valor é a função do módulo que
+  // fecha a camada e quantas ainda estão abertas.
+  const layers = new Map();
   // Quantas entradas esta navegação empurrou para o histórico do navegador.
   let historyDepth = 0;
   // Alterações de `hidden` feitas por aqui. O MutationObserver chega depois do
   // código que mudou o atributo e reportaria esse fechamento de novo, o que
   // faria a tela fechar em laço.
   const ownChanges = [];
-  // Um history.go() disparado por aqui: o popstate que chegar é o balanço da
-  // operação, e não um pedido do usuário.
-  let traversing = false;
+  // Quantos history.go() disparados por aqui ainda estão a caminho de voltar:
+  // cada um responde com um popstate, e um contador serve melhor que um ligado
+  // porque a pilha pode encolher mais de uma entrada de uma só vez. O contador
+  // também separa o balanço da operação de um pedido do usuário.
+  let traversing = 0;
   // Lote de mudanças que chegou com o histórico em movimento.
   let queued = null;
 
@@ -91,8 +99,23 @@
   }
 
   // Fecha a tela pelo botão que ela já tem, para que a limpeza do módulo
-  // aconteça igual acontece com o X.
-  function closeScreen(screen) {
+  // aconteça igual acontece com o X. `force` ignora as camadas: é o ir para o
+  // início, que fecha a tela inteira em vez de descer uma camada por vez.
+  function closeScreen(screen, force = false) {
+    const layer = layers.get(screen.id);
+    // A tela tem camada aberta: o módulo fecha uma camada, e não a tela. Quem
+    // tirou a entrada da camada da pilha foi quem pediu para fechar, e por isso
+    // o módulo não mexe na pilha aqui.
+    if (layer && layer.count) {
+      if (force) {
+        layer.count = 0;
+        layer.closeAll();
+        return;
+      }
+      layer.count -= 1;
+      layer.close();
+      return;
+    }
     ownChanges.push(screen.id);
     const button = document.querySelector(`[${screen.closeAttribute}]`);
     if (button) {
@@ -134,7 +157,7 @@
       return;
     }
     historyDepth = stack.length;
-    traversing = true;
+    traversing += -delta;
     window.history.go(delta);
   }
 
@@ -163,10 +186,15 @@
     const open = stack.slice();
     stack = [];
     covered.clear();
-    // Do topo para a base, que é a ordem em que as telas foram abertas.
+    // As camadas das telas zeram antes de fechar: a pilha já esvaziou, e o X de
+    // cada tela tentaria tirar da pilha entradas que não estão mais lá.
+    layers.forEach((layer) => { layer.count = 0; });
+    // Do topo para a base, que é a ordem em que as telas foram abertas. Cada
+    // tela fecha inteira: o botão de início não desce camada por camada, ele
+    // leva o usuário para fora de todas de uma vez.
     for (let index = open.length - 1; index >= 0; index -= 1) {
       const screen = BY_ID[open[index]];
-      if (screen) closeScreen(screen);
+      if (screen) closeScreen(screen, true);
     }
     settleCovered();
     syncHistory();
@@ -179,6 +207,46 @@
     if (!stack.includes(panel.id)) stack.push(panel.id);
     covered.add(panel.id);
     syncHistory();
+  }
+
+  // Registra as duas formas de a tela fechar suas camadas e passa a contá-las.
+  // `close` fecha uma camada por vez e é o que o botão de voltar usa: a entrada
+  // da camada já saiu da pilha, porque foi ele mesmo que tirou. `closeAll` fecha
+  // a tela com todas as camadas de uma vez, que é o que o botão de início usa.
+  function setLayerCloser(panel, close, closeAll) {
+    if (!panel || !BY_ID[panel.id]) return;
+    layers.set(panel.id, { close, closeAll, count: 0 });
+  }
+
+  // Uma camada abriu: a tela continua visível e ganha uma entrada a mais na
+  // pilha, para o botão de voltar e o do aparelho fecharem uma camada por vez.
+  function layer(panel) {
+    const entry = panel && layers.get(panel.id);
+    if (!entry) return;
+    entry.count += 1;
+    stack.push(panel.id);
+    syncHistory();
+  }
+
+  // A camada fechou: a entrada extra sai da pilha e a da tela continua valendo.
+  // A tela só sai da pilha inteira quando as últimas camadas fecham, e é o
+  // atributo `hidden` dela que avisa isso, como em qualquer outra tela.
+  function unlayer(panel) {
+    const entry = panel && layers.get(panel.id);
+    if (!entry || !entry.count) return;
+    entry.count -= 1;
+    const index = stack.lastIndexOf(panel.id);
+    if (index !== -1) stack.splice(index, 1);
+    syncHistory();
+  }
+
+  // A tela inteira fechou com camadas abertas. As entradas das camadas saem da
+  // pilha junto com a da tela, e quem tira é o observador do `hidden`, de uma vez
+  // só. Aqui o contador volta a zero e o registro continua: a tela abre camadas
+  // de novo na próxima vez, e `layer()` precisa encontrá-la.
+  function unlayerAll(panel) {
+    const entry = panel && layers.get(panel.id);
+    if (entry) entry.count = 0;
   }
 
   // Uma tela que abre em cima de outra entra na pilha. Uma tela que fecha
@@ -234,8 +302,11 @@
   // histórico sozinho, então aqui só falta fechar a tela correspondente: chamar
   // syncHistory de novo faria o app dar mais um passo para trás.
   window.addEventListener('popstate', () => {
+    // Um history.go(-n) de n entradas gera n popstates. Só o último é o balanço
+    // da operação: os que chegam antes são o mesmo movimento, ainda em curso.
     if (traversing) {
-      traversing = false;
+      traversing -= 1;
+      if (traversing) return;
       if (queued) {
         const batch = queued;
         queued = null;
@@ -301,5 +372,5 @@
 
   // Mesmo formato dos outros módulos, para quem precisar chamar voltar, ir
   // para o início ou abrir uma tela por cima de outra a partir do código.
-  window.plenitudeNav = { back, home, cover, stack: () => stack.slice() };
+  window.plenitudeNav = { back, home, cover, layer, unlayer, unlayerAll, setLayerCloser, stack: () => stack.slice() };
 })();
