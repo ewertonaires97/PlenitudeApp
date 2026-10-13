@@ -78,7 +78,7 @@ h1 span { color: var(--gold); }
 .panel-header-actions { display: flex; align-items: center; gap: 5px; }.catalog-filter { max-width: 132px; min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 10px; }.service-menus { color: var(--moss) !important; font-size: 10px !important; }/* fieldset tem min-inline-size: min-content por padrao, o que estouraba a
    largura do cartao quando um item tinha um texto longo sem quebra. */
 .menu-checkboxes { min-width: 0; max-width: 100%; margin: 15px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 4px; }.menu-checkboxes legend { padding: 0 5px; color: var(--ink); font-size: 10px; font-weight: 700; }.menu-option { display: flex; align-items: center; gap: 7px; margin: 8px 0; color: var(--ink); font-size: 11px; }.menu-option input { accent-color: var(--moss); }.field-hint { color: var(--muted); font-size: 10px; }
-.inline-create-button { display: flex; align-items: center; gap: 5px; margin-top: 10px; padding: 0; color: var(--moss); background: transparent; font-size: 10px; font-weight: 700; }.inline-create-button svg { width: 14px; height: 14px; }
+.inline-create-button { background:var(--moss) ;display: flex; align-items: center; gap: 5px; margin-top: 10px; padding: 0; color: var(--moss); background: transparent; font-size: 10px; font-weight: 700; }.inline-create-button svg { width: 14px; height: 14px; }
 #menu-form-panel { z-index: 10; }
 .menu-form-image-input { font-size: 10px; }.image-preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 10px; }.image-preview { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 4px; background: var(--sage-light); }.image-preview img { width: 100%; height: 100%; object-fit: cover; }.image-preview button { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 23px; height: 23px; border-radius: 50%; color: white; background: rgba(36, 56, 46, .82); }.image-preview button svg { width: 13px; }.category-checkboxes { margin-top: 18px; }.category-option { display: inline-flex; align-items: center; gap: 6px; margin: 5px 14px 5px 0; color: var(--ink); font-size: 10px; }.category-option input { accent-color: var(--moss); }
 .menu-filter-row { display: flex; justify-content: flex-end; margin: -7px 0 10px; }.menu-filter-row .catalog-filter { max-width: 180px; width: 100%; }
@@ -169,7 +169,7 @@ h1 span { color: var(--gold); }
 .service-row .client-details span { overflow: visible; white-space: normal; font-size: 9px; color: var(--muted); display: block; margin-bottom: 1px; }
 .service-row .service-price { margin-top: 0 !important; }
 .service-row .service-status { margin-top: 0 !important; width: fit-content !important; align-self: flex-start; display: inline-flex; align-items: center; }
-.service-row .service-toggle { width: auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 8px !important; padding: 3px 5px !important; }
+.service-row .service-toggle { width: auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; padding: 3px 5px !important; }
 .service-row .client-actions { flex: 1 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 0; padding-top: 8px; border-top: 1px dashed var(--line); }
 .service-row .client-action { flex-shrink: 0; }
 .service-row .client-action.service-toggle { flex-shrink: 0; }
@@ -448,7 +448,7 @@ h1 span { color: var(--gold); }
 /* Subseções */
 .ceremonial-section-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
 .ceremonial-section-header h4 { margin: 0; font: 600 15px "Playfair Display", serif; color: var(--ink); }
-.section-subtitle { margin: 3px 0 0; font-size: 10px; color: var(--muted); }
+.section-subtitle { margin: 3px 0 0; font-size: 14px; color: var(--muted); }
 
 /* Lista de Atividades do Roteiro */
 .ceremonial-timeline-list { display: grid; gap: 8px; margin-bottom: 16px; }
@@ -699,7 +699,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
    /* Subseções */
    .ceremonial-section-header { flex-direction: column; align-items: flex-start; gap: 6px; }
    .ceremonial-section-header h4 { font-size: 14px; }
-   .section-subtitle { font-size: 10px; }
+   .section-subtitle { font-size: 14px; }
    .add-client-button { font-size: 10px; padding: 0 9px; }
 
   /* Lista de Atividades – colunas compactas */
@@ -835,7 +835,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
    .stat-sub { font-size: 10px; }
 
    .ceremonial-section-header h4 { font-size: 13px; }
-   .section-subtitle { font-size: 10px; }
+   .section-subtitle { font-size: 14px; }
 
    .timeline-activity-card { padding: 7px 6px; gap: 6px; }
    .activity-pos-badge { width: 16px; height: 16px; font-size: 10px; }

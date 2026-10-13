@@ -142,8 +142,8 @@
 
   function lockNoticeHtml() {
     return `
-      <div class="ceremonial-lock-notice">
-        <i data-lucide="lock"></i>
+      <div class="ceremonial-lock-notice" style="font-size: 12px; color: var(--gold)">
+        <i data-lucide="lock" style="width: 12px" ></i>
         <span>Este evento já aconteceu. O cerimonial está em modo somente leitura e não pode mais ser editado.</span>
       </div>
     `;
@@ -795,7 +795,7 @@
         </div>
         <div class="section-actions-right">
           ${locked ? '' : `
-            <button class="text-button template-open-btn" type="button" data-open-templates-modal>
+            <button class="text-button template-open-btn" type="button" data-open-templates-modal font-size="14px">
               <i data-lucide="copy-check"></i><span>Modelo padrão</span>
             </button>
             <button class="add-client-button" type="button" data-open-activity-modal>
@@ -889,7 +889,7 @@
         <div class="inline-form-box" style="margin-top: 16px;">
           <h5>+ Adicionar momento rápido</h5>
           <form id="inline-activity-form">
-            <div class="inline-form-row">
+            <div class="client-form-card">
               <input type="time" id="inline-act-time" placeholder="Horário" />
               <input type="text" id="inline-act-title" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required />
             </div>
@@ -1717,7 +1717,7 @@
         <input id="template-act-time" type="time" style="flex: 0 0 96px;" />
         <input id="template-act-title" type="text" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required style="flex: 1 1 130px;" />
         <input id="template-act-resp" type="text" placeholder="Responsável" style="flex: 1 1 100px;" />
-        <button class="inline-create-button" type="submit"><i data-lucide="plus"></i><span>Adicionar</span></button>
+        <button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Adicionar</span></button>
       </form>
 
       <div class="templates-activity-list" style="margin-top: 9px;">
