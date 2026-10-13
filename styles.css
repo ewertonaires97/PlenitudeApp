@@ -457,6 +457,7 @@ h1 span { color: var(--gold); }
 .timeline-activity-card.completed { background: #f9fbf9; border-color: #dce7dc; }
 .timeline-activity-card.in_progress { border-left: 3px solid var(--gold); background: #fdfbf7; }
 .timeline-activity-card.skipped { opacity: .6; background: #f8f8f8; }
+.timeline-activity-card.pending { border-left: 3px solid var(--gold); background: #fdfbf7; }
 
 /* A coluna da esquerda é a que dita a altura do card. Antes de o drag and drop
    existir, ela empilhava alça, número e as duas setas e deixava o card com

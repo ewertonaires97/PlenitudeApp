@@ -832,7 +832,7 @@
 
           return `
             <article class="timeline-activity-card ${act.status}" data-activity-id="${act.id}">
-              <div class="activity-drag-order">
+              <div class="activity-drag-order" style="${locked ? 'display:flex;flex-direction:column;align-items:center;gap:2px;' : ''}">
                 ${locked ? '' : `
                   <button class="activity-grip" type="button" data-drag-grip="${act.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
                     <i data-lucide="grip-vertical"></i>
