@@ -1000,6 +1000,23 @@
 
       if (error) throw error;
       notify('Momento adicionado ao cerimonial!');
+
+      // Cadastra automaticamente o(s) responsável(is) na equipe do cerimonial
+      if (resp) {
+        const names = resp.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+        for (const name of names) {
+          // Verifica se já existe
+          const { data: existing } = await sb
+            .from('ceremonialistas')
+            .select('id')
+            .eq('event_id', state.currentEventId)
+            .ilike('name', name)
+            .limit(1);
+          if (existing && existing.length > 0) continue;
+          await sb.from('ceremonialistas').insert({ event_id: state.currentEventId, name });
+        }
+      }
+
       await loadEventFullDetails(state.currentEventId);
     } catch (err) {
       console.error('Erro ao adicionar momento:', err);
@@ -1031,12 +1048,21 @@
   }
 
   async function deleteActivity(actId) {
+    const act = state.ceremonialActivities.find(a => a.id === actId);
+    const title = act ? `"${act.title}"` : 'este momento';
+
+    if (!confirm(`Deseja remover ${title} do roteiro?`)) return;
+
     const sb = getSupabase();
     if (!sb) return;
 
     try {
       const { error } = await sb.from('ceremonial_activities').delete().eq('id', actId);
       if (error) throw error;
+
+      // Reempacota posições para evitar buracos na sequência
+      await sb.rpc('pack_ceremonial_activities', { target_event_id: state.currentEventId });
+
       notify('Momento removido.');
       await loadEventFullDetails(state.currentEventId);
     } catch (err) {

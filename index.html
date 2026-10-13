@@ -976,7 +976,6 @@
             <label for="modal-act-status">Status atual</label>
             <select id="modal-act-status" class="movement-select">
               <option value="pending">Pendente</option>
-              <option value="in_progress">Em andamento</option>
               <option value="completed">Concluído</option>
               <option value="skipped">Ignorado</option>
             </select>
@@ -1085,18 +1084,6 @@
         <label for="modal-staff-name">Nome do profissional</label>
         <input id="modal-staff-name" type="text" placeholder="Ex.: Juliana Martins" required />
 
-        <label for="modal-staff-specialty">Função / Especialidade</label>
-        <select id="modal-staff-specialty" class="movement-select" required>
-          <option value="coordenacao">Coordenação Geral</option>
-          <option value="andamento">Andamento de Pista</option>
-          <option value="recepcao">Recepção & Portaria</option>
-          <option value="logistica">Logística & Montagem</option>
-          <option value="decoracao">Decoração & Cenografia</option>
-          <option value="som_iluminacao">Som & Iluminação</option>
-          <option value="alimentacao">Alimentação & Buffet</option>
-          <option value="outros">Outros</option>
-        </select>
-
         <div class="quote-event-fields">
           <div>
             <label for="modal-staff-phone">WhatsApp</label>
@@ -1129,9 +1116,6 @@
         <input id="modal-table-id" type="hidden" />
         <label for="modal-table-number">Identificação da mesa</label>
         <input id="modal-table-number" type="text" placeholder="Ex.: 01, Família da Noiva, Padrinhos" required />
-
-        <label for="modal-table-capacity">Capacidade (número de assentos)</label>
-        <input id="modal-table-capacity" type="number" min="1" max="50" placeholder="8" value="8" required />
 
         <label for="modal-table-notes">Localização / Observações</label>
         <textarea id="modal-table-notes" rows="2" placeholder="Ex.: Próxima à pista de dança, mesa reservada para idosos"></textarea>

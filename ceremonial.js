@@ -122,6 +122,116 @@
     return { text: `${Math.abs(diffDays)}d atrás`, type: 'past' };
   }
 
+  // Trava de edição: o cerimonial de um evento que já aconteceu não pode mais
+  // ser alterado. A comparação é feita só pela data (sem hora) e a trava vale
+  // quando hoje for estritamente maior que a data do evento — no próprio dia
+  // do evento a equipe ainda pode registrar o que está acontecendo.
+  function isEventLocked() {
+    const ev = state.selectedEvent;
+    if (!ev || !ev.event_date) return false;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const target = parseDateOnly(ev.event_date);
+    if (!target || isNaN(target.getTime())) return false;
+    target.setHours(0, 0, 0, 0);
+
+    return today.getTime() > target.getTime();
+  }
+
+  function lockNoticeHtml() {
+    return `
+      <div class="ceremonial-lock-notice">
+        <i data-lucide="lock"></i>
+        <span>Este evento já aconteceu. O cerimonial está em modo somente leitura e não pode mais ser editado.</span>
+      </div>
+    `;
+  }
+
+  // Bloqueia qualquer tentativa de alteração em evento já realizado. Retorna
+  // true quando a ação deve ser abortada.
+  function blockIfLocked() {
+    if (isEventLocked()) {
+      notify('Este evento já aconteceu. O cerimonial está em modo somente leitura.');
+      return true;
+    }
+    return false;
+  }
+
+  // Cadastra automaticamente o(s) responsável(is) informado(s) no cronograma
+  // como membros da Equipe de Cerimonial, caso ainda não existam.
+  async function ensureResponsibleInTeam(rawNames) {
+    if (!rawNames || !state.selectedEventId) return;
+    const names = rawNames.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+    if (names.length === 0) return;
+
+    const sb = getSupabase();
+    if (!sb) return;
+
+    try {
+      // Busca nomes já existentes no evento (insensível a maiúsculas)
+      const { data: existing } = await sb
+        .from('ceremonialistas')
+        .select('name')
+        .eq('event_id', state.selectedEventId);
+      const existingNames = new Set((existing || []).map(s => (s.name || '').toLowerCase()));
+
+      for (const name of names) {
+        if (existingNames.has(name.toLowerCase())) continue;
+        const { error } = await sb
+          .from('ceremonialistas')
+          .insert({ event_id: state.selectedEventId, name });
+        if (error) {
+          console.warn('Não foi possível adicionar responsável à equipe:', error);
+        } else {
+          existingNames.add(name.toLowerCase());
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao cadastrar responsáveis na equipe:', err);
+    }
+  }
+
+  // Varre todas as atividades do evento e cadastra os responsáveis
+  // encontrados na Equipe de Cerimonial, sem duplicatas.
+  async function scanActivitiesAndRegisterResponsibles() {
+    if (!state.selectedEventId) return;
+    const allNames = state.activities
+      .map(a => a.responsible)
+      .filter(Boolean)
+      .flatMap(r => r.split(/[,;]+/).map(s => s.trim()))
+      .filter(Boolean);
+
+    if (allNames.length === 0) return;
+
+    const sb = getSupabase();
+    if (!sb) return;
+
+    try {
+      const { data: existing } = await sb
+        .from('ceremonialistas')
+        .select('name')
+        .eq('event_id', state.selectedEventId);
+      const existingNames = new Set((existing || []).map(s => (s.name || '').toLowerCase()));
+
+      for (const name of allNames) {
+        const lower = name.toLowerCase();
+        if (existingNames.has(lower)) continue;
+        const { error } = await sb
+          .from('ceremonialistas')
+          .insert({ event_id: state.selectedEventId, name });
+        if (error) {
+          console.warn('Não foi possível adicionar responsável da varredura:', error);
+        } else {
+          existingNames.add(lower);
+        }
+      }
+    } catch (err) {
+      console.warn('Erro na varredura de responsáveis:', err);
+    }
+  }
+
   function sanitizeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -140,20 +250,6 @@
       return `55${digits}`;
     }
     return digits;
-  }
-
-  function specialtyLabel(spec) {
-    switch (spec) {
-      case 'coordenacao': return 'Coordenação Geral';
-      case 'andamento': return 'Andamento de Pista';
-      case 'logistica': return 'Logística & Montagem';
-      case 'decoracao': return 'Decoração & Cenografia';
-      case 'som_iluminacao': return 'Som & Iluminação';
-      case 'alimentacao': return 'Alimentação & Buffet';
-      case 'recepcao': return 'Recepção & Portaria';
-      case 'outros': return 'Outros';
-      default: return spec || 'Cerimonial';
-    }
   }
 
   function activityStatusLabel(status) {
@@ -484,6 +580,9 @@
       }
       state.staff = staffList;
 
+      // Auto-cadastra responsáveis das atividades na Equipe (varredura)
+      await scanActivitiesAndRegisterResponsibles();
+
       // 4. Mesas do evento
       const { data: tables, error: tblErr } = await sb
         .from('event_tables')
@@ -544,6 +643,8 @@
     const ev = state.selectedEvent;
     if (!heroEl || !ev) return;
 
+    const locked = isEventLocked();
+
     const formattedDate = formatDisplayDate(ev.event_date);
     const formattedTime = formatTimeOnly(ev.event_time);
     const countdown = calculateCountdown(ev.event_date);
@@ -587,6 +688,8 @@
             </button>
           </div>
         </div>
+
+        ${locked ? lockNoticeHtml() : ''}
 
         <div class="ceremonial-stats-bar">
           <div class="ceremonial-stat-tile" data-ceremonial-tab-jump="timeline">
@@ -679,9 +782,9 @@
       filtered = state.activities.filter(a => a.status === state.timelineFilter);
     }
 
+    const locked = isEventLocked();
     const total = state.activities.length;
     const completed = state.activities.filter(a => a.status === 'completed').length;
-    const inProgress = state.activities.filter(a => a.status === 'in_progress').length;
     const pending = state.activities.filter(a => a.status === 'pending').length;
 
     container.innerHTML = `
@@ -691,20 +794,23 @@
           <p class="section-subtitle">${completed} de ${total} momentos concluídos</p>
         </div>
         <div class="section-actions-right">
-          <button class="text-button template-open-btn" type="button" data-open-templates-modal>
-            <i data-lucide="copy-check"></i><span>Modelo padrão</span>
-          </button>
-          <button class="add-client-button" type="button" data-open-activity-modal>
-            <i data-lucide="plus"></i><span>Novo momento</span>
-          </button>
+          ${locked ? '' : `
+            <button class="text-button template-open-btn" type="button" data-open-templates-modal>
+              <i data-lucide="copy-check"></i><span>Modelo padrão</span>
+            </button>
+            <button class="add-client-button" type="button" data-open-activity-modal>
+              <i data-lucide="plus"></i><span>Novo momento</span>
+            </button>
+          `}
         </div>
       </div>
+
+      ${locked ? lockNoticeHtml() : ''}
 
       <!-- Filtros rápidos de status do roteiro -->
       <div class="event-filter-pills" style="margin-top: 10px;">
         <button class="event-pill ${state.timelineFilter === 'all' ? 'active' : ''}" type="button" data-timeline-filter="all">Todos (${total})</button>
         <button class="event-pill ${state.timelineFilter === 'pending' ? 'active' : ''}" type="button" data-timeline-filter="pending">Pendentes (${pending})</button>
-        <button class="event-pill ${state.timelineFilter === 'in_progress' ? 'active' : ''}" type="button" data-timeline-filter="in_progress">Em andamento (${inProgress})</button>
         <button class="event-pill ${state.timelineFilter === 'completed' ? 'active' : ''}" type="button" data-timeline-filter="completed">Concluídos (${completed})</button>
       </div>
 
@@ -713,27 +819,30 @@
         ${filtered.length === 0 ? `
           <div class="empty-clients" style="padding: 24px;">
             <p>Nenhum momento cadastrado no roteiro com o filtro selecionado.</p>
-            <button class="text-button" type="button" data-open-activity-modal style="margin-top: 8px;">
-              + Adicionar primeiro momento
-            </button>
+            ${locked ? '' : `
+              <button class="text-button" type="button" data-open-activity-modal style="margin-top: 8px;">
+                + Adicionar primeiro momento
+              </button>
+            `}
           </div>
         ` : filtered.map((act, index) => {
           const isDone = act.status === 'completed';
-          const isInProgress = act.status === 'in_progress';
           const isSkipped = act.status === 'skipped';
           const timeFmt = act.scheduled_time ? act.scheduled_time.slice(0, 5) : '';
 
           return `
             <article class="timeline-activity-card ${act.status}" data-activity-id="${act.id}">
               <div class="activity-drag-order">
-                <button class="activity-grip" type="button" data-drag-grip="${act.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
-                  <i data-lucide="grip-vertical"></i>
-                </button>
+                ${locked ? '' : `
+                  <button class="activity-grip" type="button" data-drag-grip="${act.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
+                    <i data-lucide="grip-vertical"></i>
+                  </button>
+                `}
                 <span class="activity-pos-badge">${act.position || index + 1}</span>
               </div>
 
               <div class="activity-check-col">
-                <button class="activity-checkbox-btn ${isDone ? 'checked' : ''}" type="button" data-toggle-activity-check="${act.id}" title="${isDone ? 'Desmarcar' : 'Concluir momento'}">
+                <button class="activity-checkbox-btn ${isDone ? 'checked' : ''}" type="button" data-toggle-activity-check="${act.id}" title="${isDone ? 'Desmarcar' : 'Concluir momento'}" ${locked ? 'disabled' : ''}>
                   ${isDone ? '<i data-lucide="check"></i>' : ''}
                 </button>
               </div>
@@ -759,37 +868,41 @@
               </div>
 
               <div class="activity-actions-col">
-                <div class="activity-mini-actions">
-                  <button class="client-action" type="button" data-edit-activity="${act.id}" title="Editar momento">
-                    <i data-lucide="pencil"></i>
-                  </button>
-                  <button class="client-action" type="button" data-delete-activity="${act.id}" title="Excluir momento">
-                    <i data-lucide="trash-2"></i>
-                  </button>
-                </div>
+                ${locked ? '' : `
+                  <div class="activity-mini-actions">
+                    <button class="client-action" type="button" data-edit-activity="${act.id}" title="Editar momento">
+                      <i data-lucide="pencil"></i>
+                    </button>
+                    <button class="client-action" type="button" data-delete-activity="${act.id}" title="Excluir momento">
+                      <i data-lucide="trash-2"></i>
+                    </button>
+                  </div>
+                `}
               </div>
             </article>
           `;
         }).join('')}
       </div>
 
-      <!-- Quick Add Inline Form -->
-      <div class="inline-form-box" style="margin-top: 16px;">
-        <h5>+ Adicionar momento rápido</h5>
-        <form id="inline-activity-form">
-          <div class="inline-form-row">
-            <input type="time" id="inline-act-time" placeholder="Horário" />
-            <input type="text" id="inline-act-title" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required />
-          </div>
-          <div class="inline-form-row-3">
-            <input type="text" id="inline-act-resp" placeholder="Responsável (ex.: Cerimonialista, DJ)" />
-            <input type="text" id="inline-act-desc" placeholder="Instruções / Músicas / Detalhes" />
-          </div>
-          <button class="login-button" type="submit" style="margin-top: 6px; min-height: 38px; font-size: 10px;">
-            <span>Salvar momento no roteiro</span><i data-lucide="plus"></i>
-          </button>
-        </form>
-      </div>
+      ${locked ? '' : `
+        <!-- Quick Add Inline Form -->
+        <div class="inline-form-box" style="margin-top: 16px;">
+          <h5>+ Adicionar momento rápido</h5>
+          <form id="inline-activity-form">
+            <div class="inline-form-row">
+              <input type="time" id="inline-act-time" placeholder="Horário" />
+              <input type="text" id="inline-act-title" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required />
+            </div>
+            <div class="inline-form-row-3">
+              <input type="text" id="inline-act-resp" placeholder="Responsável (ex.: Cerimonialista, DJ)" />
+              <input type="text" id="inline-act-desc" placeholder="Instruções / Músicas / Detalhes" />
+            </div>
+            <button class="login-button" type="submit" style="margin-top: 6px; min-height: 38px; font-size: 10px;">
+              <span>Salvar momento no roteiro</span><i data-lucide="plus"></i>
+            </button>
+          </form>
+        </div>
+      `}
     `;
 
     refreshIcons();
@@ -810,6 +923,7 @@
     const pending = total - arrived;
     const confirmed = state.guests.filter(g => g.status === 'confirmed').length;
     const percent = total > 0 ? Math.round((arrived / total) * 100) : 0;
+    const locked = isEventLocked();
 
     // Filtros de convidados
     let visibleGuests = state.guests.filter(g => {
@@ -839,11 +953,15 @@
           <p class="section-subtitle">Controle de presença dos convidados em tempo real</p>
         </div>
         <div class="section-actions-right">
-          <button class="add-client-button" type="button" data-open-guest-modal>
-            <i data-lucide="user-plus"></i><span>Novo convidado</span>
-          </button>
+          ${locked ? '' : `
+            <button class="add-client-button" type="button" data-open-guest-modal>
+              <i data-lucide="user-plus"></i><span>Novo convidado</span>
+            </button>
+          `}
         </div>
       </div>
+
+      ${locked ? lockNoticeHtml() : ''}
 
       <!-- Painel de Estatísticas de Recepção -->
       <div class="arrival-stats-card">
@@ -884,9 +1002,11 @@
         ${visibleGuests.length === 0 ? `
           <div class="empty-clients" style="padding: 24px;">
             <p>${state.arrivalSearch ? 'Nenhum convidado encontrado para essa busca.' : 'Nenhum convidado cadastrado na lista para os filtros selecionados.'}</p>
-            <button class="text-button" type="button" data-open-guest-modal style="margin-top: 8px;">
-              + Adicionar convidado à lista
-            </button>
+            ${locked ? '' : `
+              <button class="text-button" type="button" data-open-guest-modal style="margin-top: 8px;">
+                + Adicionar convidado à lista
+              </button>
+            `}
           </div>
         ` : visibleGuests.map(g => {
           const hasArrived = Boolean(g.arrived_at);
@@ -916,10 +1036,12 @@
               </div>
 
               <div class="arrival-actions-col">
-                <button class="arrival-check-btn ${hasArrived ? 'is-arrived' : 'not-arrived'}" type="button" data-toggle-arrival="${g.id}" title="${hasArrived ? 'Desmarcar presença' : 'Registrar chegada'}">
-                  <i data-lucide="${hasArrived ? 'user-check' : 'user-plus'}"></i>
-                  <span>${hasArrived ? 'Presente' : 'Check-in'}</span>
-                </button>
+                ${locked ? '' : `
+                  <button class="arrival-check-btn ${hasArrived ? 'is-arrived' : 'not-arrived'}" type="button" data-toggle-arrival="${g.id}" title="${hasArrived ? 'Desmarcar presença' : 'Registrar chegada'}">
+                    <i data-lucide="${hasArrived ? 'user-check' : 'user-plus'}"></i>
+                    <span>${hasArrived ? 'Presente' : 'Check-in'}</span>
+                  </button>
+                `}
 
                 ${guestWa ? `
                   <a class="client-action whatsapp-action" href="https://wa.me/${guestWa}" target="_blank" rel="noopener noreferrer" title="WhatsApp com convidado">
@@ -927,12 +1049,14 @@
                   </a>
                 ` : ''}
 
-                <button class="client-action" type="button" data-edit-guest="${g.id}" title="Editar convidado">
-                  <i data-lucide="pencil"></i>
-                </button>
-                <button class="client-action" type="button" data-delete-guest="${g.id}" title="Remover da lista">
-                  <i data-lucide="trash-2"></i>
-                </button>
+                ${locked ? '' : `
+                  <button class="client-action" type="button" data-edit-guest="${g.id}" title="Editar convidado">
+                    <i data-lucide="pencil"></i>
+                  </button>
+                  <button class="client-action" type="button" data-delete-guest="${g.id}" title="Remover da lista">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                `}
               </div>
             </article>
           `;
@@ -968,6 +1092,7 @@
     }
 
     const totalStaff = state.staff.length;
+    const locked = isEventLocked();
 
     container.innerHTML = `
       <div class="ceremonial-section-header">
@@ -976,23 +1101,28 @@
           <p class="section-subtitle">${totalStaff} profissionais alocados</p>
         </div>
         <div class="section-actions-right">
-          <button class="add-client-button" type="button" data-open-staff-modal>
-            <i data-lucide="user-plus"></i><span>Novo profissional</span>
-          </button>
+          ${locked ? '' : `
+            <button class="add-client-button" type="button" data-open-staff-modal>
+              <i data-lucide="user-plus"></i><span>Novo profissional</span>
+            </button>
+          `}
         </div>
       </div>
+
+      ${locked ? lockNoticeHtml() : ''}
 
       <div class="ceremonial-staff-grid">
         ${state.staff.length === 0 ? `
           <div class="empty-clients" style="grid-column: 1 / -1; padding: 24px;">
             <p>Nenhum cerimonialista ou membro da equipe cadastrado para este evento.</p>
-            <button class="text-button" type="button" data-open-staff-modal style="margin-top: 8px;">
-              + Adicionar cerimonialista à equipe
-            </button>
+            ${locked ? '' : `
+              <button class="text-button" type="button" data-open-staff-modal style="margin-top: 8px;">
+                + Adicionar cerimonialista à equipe
+              </button>
+            `}
           </div>
         ` : state.staff.map(member => {
           const waClean = cleanPhoneForWhatsApp(member.whatsapp);
-          const specLabel = specialtyLabel(member.specialty);
 
           return `
             <article class="staff-card" data-staff-id="${member.id}">
@@ -1000,7 +1130,6 @@
                 <span class="staff-avatar">${sanitizeHtml(member.name.charAt(0).toUpperCase())}</span>
                 <div class="staff-info-col">
                   <h5 class="staff-name">${sanitizeHtml(member.name)}</h5>
-                  <span class="staff-specialty-badge">${sanitizeHtml(specLabel)}</span>
                 </div>
               </div>
 
@@ -1022,12 +1151,14 @@
               </div>
 
               <div class="staff-card-actions">
-                <button class="client-action" type="button" data-edit-staff="${member.id}" title="Editar dados">
-                  <i data-lucide="pencil"></i>
-                </button>
-                <button class="client-action" type="button" data-delete-staff="${member.id}" title="Remover da equipe">
-                  <i data-lucide="trash-2"></i>
-                </button>
+                ${locked ? '' : `
+                  <button class="client-action" type="button" data-edit-staff="${member.id}" title="Editar dados">
+                    <i data-lucide="pencil"></i>
+                  </button>
+                  <button class="client-action" type="button" data-delete-staff="${member.id}" title="Remover da equipe">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                `}
               </div>
             </article>
           `;
@@ -1049,36 +1180,39 @@
     }
 
     const totalTables = state.tables.length;
-    let totalCapacity = 0;
-    state.tables.forEach(t => { totalCapacity += Number(t.capacity) || 0; });
+    const locked = isEventLocked();
 
     container.innerHTML = `
       <div class="ceremonial-section-header">
         <div>
           <h4>Mesas & Setores do Salão</h4>
-          <p class="section-subtitle">${totalTables} mesas cadastradas · Capacidade: ${totalCapacity} lugares</p>
+          <p class="section-subtitle">${totalTables} mesas cadastradas</p>
         </div>
         <div class="section-actions-right">
-          <button class="add-client-button" type="button" data-open-table-modal>
-            <i data-lucide="plus"></i><span>Nova mesa</span>
-          </button>
+          ${locked ? '' : `
+            <button class="add-client-button" type="button" data-open-table-modal>
+              <i data-lucide="plus"></i><span>Nova mesa</span>
+            </button>
+          `}
         </div>
       </div>
+
+      ${locked ? lockNoticeHtml() : ''}
 
       <div class="ceremonial-tables-grid">
         ${state.tables.length === 0 ? `
           <div class="empty-clients" style="grid-column: 1 / -1; padding: 24px;">
             <p>Nenhuma mesa cadastrada para este evento ainda.</p>
-            <button class="text-button" type="button" data-open-table-modal style="margin-top: 8px;">
-              + Adicionar primeira mesa
-            </button>
+            ${locked ? '' : `
+              <button class="text-button" type="button" data-open-table-modal style="margin-top: 8px;">
+                + Adicionar primeira mesa
+              </button>
+            `}
           </div>
         ` : state.tables.map(tbl => {
           // Convidados alocados nesta mesa
           const tableGuests = state.guests.filter(g => g.table_id === tbl.id);
           const occupied = tableGuests.length;
-          const capacity = tbl.capacity || 0;
-          const isFull = capacity > 0 && occupied >= capacity;
           const arrivedInTable = tableGuests.filter(g => Boolean(g.arrived_at)).length;
 
           return `
@@ -1089,20 +1223,22 @@
                   <strong class="table-num">${sanitizeHtml(tbl.table_number)}</strong>
                 </div>
                 <div class="table-header-meta">
-                  <span class="table-occupancy-badge ${isFull ? 'full' : 'avail'}">
-                    ${occupied}/${capacity > 0 ? capacity : '∞'} lugares
+                  <span class="table-occupancy-badge avail">
+                    ${occupied} convidados
                   </span>
                   <span class="table-arrived-count">
                     <i data-lucide="user-check"></i> ${arrivedInTable} presentes
                   </span>
                 </div>
                 <div class="table-actions">
-                  <button class="client-action" type="button" data-edit-table="${tbl.id}" title="Editar mesa">
-                    <i data-lucide="pencil"></i>
-                  </button>
-                  <button class="client-action" type="button" data-delete-table="${tbl.id}" title="Excluir mesa">
-                    <i data-lucide="trash-2"></i>
-                  </button>
+                  ${locked ? '' : `
+                    <button class="client-action" type="button" data-edit-table="${tbl.id}" title="Editar mesa">
+                      <i data-lucide="pencil"></i>
+                    </button>
+                    <button class="client-action" type="button" data-delete-table="${tbl.id}" title="Excluir mesa">
+                      <i data-lucide="trash-2"></i>
+                    </button>
+                  `}
                 </div>
               </div>
 
@@ -1138,7 +1274,7 @@
     }
 
     const activities = state.activities;
-    const currentActivity = activities.find(a => a.status === 'in_progress') || activities.find(a => a.status === 'pending') || activities[activities.length - 1];
+    const currentActivity = activities.find(a => a.status === 'pending') || activities[activities.length - 1];
     const currentIndex = currentActivity ? activities.indexOf(currentActivity) : -1;
     const nextActivity = currentIndex >= 0 && currentIndex + 1 < activities.length ? activities[currentIndex + 1] : null;
 
@@ -1146,6 +1282,7 @@
     const totalCount = activities.length;
     const arrivedGuests = state.guests.filter(g => Boolean(g.arrived_at)).length;
     const totalGuests = state.guests.length;
+    const locked = isEventLocked();
 
     container.innerHTML = `
       <div class="ceremonial-live-container">
@@ -1165,7 +1302,7 @@
         ${!currentActivity ? `
           <div class="empty-clients" style="padding: 30px;">
             <p>Nenhuma atividade cadastrada para execução ao vivo.</p>
-            <button class="text-button" type="button" data-open-activity-modal>+ Cadastrar cronograma</button>
+            ${locked ? '' : `<button class="text-button" type="button" data-open-activity-modal>+ Cadastrar cronograma</button>`}
           </div>
         ` : `
           <!-- Cartão do Momento Atual em Destaque -->
@@ -1194,18 +1331,16 @@
 
             <!-- Botões de Ação Imediata -->
             <div class="live-controls-grid">
-              <button class="live-btn complete" type="button" data-live-action="complete" data-activity-id="${currentActivity.id}">
-                <i data-lucide="check-circle"></i>
-                <span>Concluir Momento</span>
-              </button>
-              <button class="live-btn start" type="button" data-live-action="start" data-activity-id="${currentActivity.id}">
-                <i data-lucide="play"></i>
-                <span>Iniciar Agora</span>
-              </button>
-              <button class="live-btn skip" type="button" data-live-action="skip" data-activity-id="${currentActivity.id}">
-                <i data-lucide="fast-forward"></i>
-                <span>Pular</span>
-              </button>
+              ${locked ? '' : `
+                <button class="live-btn complete" type="button" data-live-action="complete" data-activity-id="${currentActivity.id}">
+                  <i data-lucide="check-circle"></i>
+                  <span>Concluir Momento</span>
+                </button>
+                <button class="live-btn skip" type="button" data-live-action="skip" data-activity-id="${currentActivity.id}">
+                  <i data-lucide="fast-forward"></i>
+                  <span>Pular</span>
+                </button>
+              `}
             </div>
           </div>
 
@@ -1222,28 +1357,6 @@
             </div>
           `}
         `}
-
-        <!-- Contatos Rápidos de Emergência da Equipe -->
-        <div class="live-quick-staff-box">
-          <h5><i data-lucide="phone-call"></i> Contatos Rápidos da Equipe</h5>
-          <div class="live-staff-scroll">
-            ${state.staff.length === 0 ? `
-              <span class="field-hint">Nenhum cerimonialista cadastrado na equipe</span>
-            ` : state.staff.map(s => {
-              const wa = cleanPhoneForWhatsApp(s.whatsapp);
-              return `
-                <div class="live-staff-pill">
-                  <span class="live-staff-name">${sanitizeHtml(s.name)} (${sanitizeHtml(specialtyLabel(s.specialty))})</span>
-                  ${wa ? `
-                    <a class="live-wa-btn" href="https://wa.me/${wa}" target="_blank" rel="noopener noreferrer">
-                      <i data-lucide="message-circle"></i>
-                    </a>
-                  ` : ''}
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
       </div>
     `;
 
@@ -1276,6 +1389,7 @@
 
   // --- Atividades ---
   async function toggleActivityCheck(actId) {
+    if (blockIfLocked()) return;
     const sb = getSupabase();
     if (!sb) return;
 
@@ -1302,6 +1416,7 @@
   }
 
   async function updateActivityStatus(actId, newStatus) {
+    if (blockIfLocked()) return;
     const sb = getSupabase();
     if (!sb) return;
 
@@ -1339,6 +1454,7 @@
   }
 
   async function persistActivityOrder(orderedIds) {
+    if (blockIfLocked()) return;
     const sb = getSupabase();
     if (!sb || !state.selectedEventId) return;
 
@@ -1944,6 +2060,7 @@
   }
 
   async function deleteActivity(actId) {
+    if (blockIfLocked()) return;
     const act = state.activities.find(a => a.id === actId);
     const title = act ? `"${act.title}"` : 'este momento';
 
@@ -1970,6 +2087,7 @@
 
   // --- Convidados & Recepção ---
   async function toggleGuestArrival(guestId) {
+    if (blockIfLocked()) return;
     const sb = getSupabase();
     if (!sb) return;
 
@@ -2002,6 +2120,7 @@
   }
 
   async function deleteGuest(guestId) {
+    if (blockIfLocked()) return;
     const guest = state.guests.find(g => g.id === guestId);
     const name = guest ? `"${guest.name}"` : 'este convidado';
 
@@ -2023,6 +2142,7 @@
 
   // --- Equipe / Cerimonialistas ---
   async function deleteStaff(staffId) {
+    if (blockIfLocked()) return;
     const member = state.staff.find(s => s.id === staffId);
     const name = member ? `"${member.name}"` : 'este profissional';
 
@@ -2044,6 +2164,7 @@
 
   // --- Mesas ---
   async function deleteTable(tableId) {
+    if (blockIfLocked()) return;
     const tbl = state.tables.find(t => t.id === tableId);
     const name = tbl ? `Mesa ${tbl.table_number}` : 'esta mesa';
 
@@ -2121,7 +2242,7 @@
     const tableSelect = document.getElementById('modal-guest-table');
     if (tableSelect) {
       tableSelect.innerHTML = '<option value="">Sem mesa definida</option>' +
-        state.tables.map(t => `<option value="${t.id}">Mesa ${sanitizeHtml(t.table_number)} (${t.capacity || 'Livre'} lugares)</option>`).join('');
+        state.tables.map(t => `<option value="${t.id}">Mesa ${sanitizeHtml(t.table_number)}</option>`).join('');
     }
 
     if (guestData) {
@@ -2169,7 +2290,6 @@
       if (titleEl) titleEl.textContent = 'Editar Cerimonialista';
       document.getElementById('modal-staff-id').value = staffData.id || '';
       document.getElementById('modal-staff-name').value = staffData.name || '';
-      document.getElementById('modal-staff-specialty').value = staffData.specialty || 'coordenacao';
       document.getElementById('modal-staff-phone').value = staffData.whatsapp || '';
       document.getElementById('modal-staff-email').value = staffData.email || '';
       document.getElementById('modal-staff-notes').value = staffData.notes || '';
@@ -2177,7 +2297,6 @@
       state.editingStaffId = null;
       if (titleEl) titleEl.textContent = 'Adicionar à Equipe de Cerimonial';
       document.getElementById('modal-staff-id').value = '';
-      document.getElementById('modal-staff-specialty').value = 'coordenacao';
     }
 
     panel.hidden = false;
@@ -2207,7 +2326,6 @@
       if (titleEl) titleEl.textContent = 'Editar Mesa';
       document.getElementById('modal-table-id').value = tableData.id || '';
       document.getElementById('modal-table-number').value = tableData.table_number || '';
-      document.getElementById('modal-table-capacity').value = tableData.capacity || '8';
       document.getElementById('modal-table-notes').value = tableData.notes || '';
     } else {
       state.editingTableId = null;
@@ -2215,7 +2333,6 @@
       document.getElementById('modal-table-id').value = '';
       const nextNum = state.tables.length + 1;
       document.getElementById('modal-table-number').value = String(nextNum).padStart(2, '0');
-      document.getElementById('modal-table-capacity').value = '8';
     }
 
     panel.hidden = false;
@@ -2234,6 +2351,7 @@
 
   async function handleActivitySubmit(e) {
     e.preventDefault();
+    if (blockIfLocked()) return;
     const sb = getSupabase();
     if (!sb || !state.selectedEventId) return;
 
@@ -2271,6 +2389,10 @@
         notify('Momento adicionado ao cronograma!');
       }
 
+      if (resp) {
+        await ensureResponsibleInTeam(resp);
+      }
+
       closeActivityModal();
       await loadSelectedEventDetails(state.selectedEventId);
     } catch (err) {
@@ -2281,6 +2403,7 @@
 
   async function handleInlineActivitySubmit(e) {
     e.preventDefault();
+    if (blockIfLocked()) return;
     const sb = getSupabase();
     if (!sb || !state.selectedEventId) return;
 
@@ -2306,6 +2429,11 @@
       notify('Momento adicionado ao cronograma!');
       document.getElementById('inline-act-title').value = '';
       document.getElementById('inline-act-desc').value = '';
+
+      if (resp) {
+        await ensureResponsibleInTeam(resp);
+      }
+
       await loadSelectedEventDetails(state.selectedEventId);
     } catch (err) {
       console.error('Erro ao adicionar inline:', err);
@@ -2363,12 +2491,12 @@
 
   async function handleStaffSubmit(e) {
     e.preventDefault();
+    if (blockIfLocked()) return;
     const sb = getSupabase();
     if (!sb) return;
 
     const id = document.getElementById('modal-staff-id').value.trim();
     const name = document.getElementById('modal-staff-name').value.trim();
-    const specialty = document.getElementById('modal-staff-specialty').value || 'coordenacao';
     const phone = document.getElementById('modal-staff-phone').value.trim() || null;
     const email = document.getElementById('modal-staff-email').value.trim() || null;
     const notes = document.getElementById('modal-staff-notes').value.trim() || null;
@@ -2383,7 +2511,6 @@
       const payload = {
         event_id: state.selectedEventId,
         name,
-        specialty,
         whatsapp: phone,
         email,
         notes
@@ -2409,12 +2536,12 @@
 
   async function handleTableSubmit(e) {
     e.preventDefault();
+    if (blockIfLocked()) return;
     const sb = getSupabase();
     if (!sb || !state.selectedEventId) return;
 
     const id = document.getElementById('modal-table-id').value.trim();
     const tableNumber = document.getElementById('modal-table-number').value.trim();
-    const capacity = parseInt(document.getElementById('modal-table-capacity').value, 10) || 8;
     const notes = document.getElementById('modal-table-notes').value.trim() || null;
     const feedbackEl = document.getElementById('ceremonial-table-feedback');
 
@@ -2427,7 +2554,6 @@
       const payload = {
         event_id: state.selectedEventId,
         table_number: tableNumber,
-        capacity,
         notes
       };
 
@@ -2712,8 +2838,6 @@
         const actId = target.dataset.activityId;
         if (action === 'complete') {
           updateActivityStatus(actId, 'completed');
-        } else if (action === 'start') {
-          updateActivityStatus(actId, 'in_progress');
         } else if (action === 'skip') {
           updateActivityStatus(actId, 'skipped');
         }
@@ -2758,8 +2882,12 @@
     const actForm = document.getElementById('ceremonial-activity-form');
     if (actForm) actForm.addEventListener('submit', handleActivitySubmit);
 
-    const inlineActForm = document.getElementById('inline-activity-form');
-    if (inlineActForm) inlineActForm.addEventListener('submit', handleInlineActivitySubmit);
+    // inline-activity-form é renderizado dinamicamente, usa delegação
+    document.addEventListener('submit', e => {
+      if (e.target.id === 'inline-activity-form') {
+        handleInlineActivitySubmit(e);
+      }
+    });
 
     const guestForm = document.getElementById('ceremonial-guest-form');
     if (guestForm) guestForm.addEventListener('submit', handleGuestSubmit);
