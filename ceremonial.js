@@ -41,7 +41,9 @@
     drag: { activityId: null, beforeId: null, started: false, card: null, pointerY: 0 },
     // Arraste em andamento nos momentos do modelo padrão. State separado do
     // roteiro porque a lista alvo é outra e o commit é outro.
-    templateDrag: { activityId: null, beforeId: null, started: false, row: null, pointerY: 0 }
+    templateDrag: { activityId: null, beforeId: null, started: false, row: null, pointerY: 0 },
+    // Habilita drag-and-drop do roteiro (padrão desligado para evitar arrastes acidentais)
+    dragEnabled: false
   };
 
   // Toast utilitário
@@ -793,13 +795,17 @@
           <h4>Cronograma & Roteiro da Cerimônia</h4>
           <p class="section-subtitle">${completed} de ${total} momentos concluídos</p>
         </div>
-        <div class="section-actions-right">
+        <div class="section-actions-right" style="flex-direction: column;">
           ${locked ? '' : `
-            <button class="text-button template-open-btn" type="button" data-open-templates-modal font-size="14px">
+            <button class="add-client-button" type="button" data-open-templates-modal style="font-size: 15px;">
               <i data-lucide="copy-check"></i><span>Modelo padrão</span>
             </button>
-            <button class="add-client-button" type="button" data-open-activity-modal>
+            <button class="add-client-button" type="button" data-open-activity-modal >
               <i data-lucide="plus"></i><span>Novo momento</span>
+            </button>
+            <button class="add-client-button ${state.dragEnabled ? 'active' : ''}" type="button" data-toggle-drag-enabled>
+              <i data-lucide="${state.dragEnabled ? 'grip-vertical' : 'lock'}"></i>
+              <span>Reordenar</span>
             </button>
           `}
         </div>
@@ -833,7 +839,7 @@
           return `
             <article class="timeline-activity-card ${act.status}" data-activity-id="${act.id}">
               <div class="activity-drag-order" style="${locked ? 'display:flex;flex-direction:column;align-items:center;gap:2px;' : ''}">
-                ${locked ? '' : `
+                ${(locked || !state.dragEnabled) ? '' : `
                   <button class="activity-grip" type="button" data-drag-grip="${act.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
                     <i data-lucide="grip-vertical"></i>
                   </button>
@@ -1714,9 +1720,9 @@
       </div>
 
       <form id="template-activity-form" class="templates-create-form" style="flex-wrap: wrap;">
-        <input id="template-act-time" type="time" style="flex: 0 0 96px;" />
-        <input id="template-act-title" type="text" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required style="flex: 1 1 130px;" />
-        <input id="template-act-resp" type="text" placeholder="Responsável" style="flex: 1 1 100px;" />
+        <input class="inline-form-box" id="template-act-time" type="time" />
+        <input class="inline-form-box" id="template-act-title" type="text" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required />
+        <input class="inline-form-box" id="template-act-resp" type="text" placeholder="Responsável" />
         <button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Adicionar</span></button>
       </form>
 
@@ -2861,9 +2867,23 @@
       });
     }
 
+    // Toggle para habilitar/desabilitar drag-and-drop do roteiro
+    document.addEventListener('click', e => {
+      const toggle = e.target.closest('[data-toggle-drag-enabled]');
+      if (toggle) {
+        e.preventDefault();
+        state.dragEnabled = !state.dragEnabled;
+        renderTimelineTab(document.getElementById('ceremonial-tab-timeline'));
+        notify(state.dragEnabled ? 'Modo reordenar ativado. Arraste pelos punhos.' : 'Modo reordenar desativado.');
+      }
+    });
+
     // 2c. Arraste do roteiro. Delegado porque os cards são redesenhados a
     // cada recarga e um listener direto seria perdido.
-    document.addEventListener('pointerdown', onGripPointerDown);
+    document.addEventListener('pointerdown', e => {
+      if (!state.dragEnabled) return;
+      onGripPointerDown(e);
+    });
 
     // 2d. Arraste dos momentos do modelo padrão, mesma técnica e pelo mesmo
     // motivo: as linhas são redesenhadas a cada render do modal.

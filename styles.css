@@ -1,5 +1,63 @@
+/* ==========================================================================
+   SUMÁRIO — PlenitudeApp / styles.css
+   Cada bloco abaixo corresponde a uma tela ou a um grupo de telas do
+   app. Os comentarios servem de índice: procure pelo nome da tela em vez
+   de varrer o arquivo inteiro.
+   ==========================================================================
+   MAPA DE TELAS
+     01. Login ..................... .auth-*
+     02. Casca do app .............. .app-shell
+     03. Topbar (topo) ............. .topbar, .brand, .avatar
+     04. Início .................... .welcome-*
+     05. Resumo do dia ............. .today-row
+     06. Ações rápidas ............. .quick-action*
+     07. Módulos (atalhos) ......... .modules-section, .module-card
+     08. Navegação inferior ........ .bottom-nav, .nav-item
+     09. Aviso flutuante (toast) ... .toast
+     10. Casca dos painéis ......... .service-panel / .client-panel
+     11. Clientes .................. .client-*
+     12. Estoque ................... .inventory-*
+     13. Serviços .................. .service-*
+     14. Cardápios ................. .menu-*, .linked-menu-chip
+     15. Orçamento ................. .quote-*
+     16. Eventos ................... .event-*
+     17. Financeiro ................ .finance-*
+     18. Visão geral ............... .overview-*
+     19. Cerimônia ................ .ceremonial-* / .live-*
+     20. Convidados e mesas ........ .guest-* / .arrival-* / .table-*
+     21. Equipe .................... .staff-*
+     22. Roteiro (linha do tempo) .. .timeline-* / .activity-*
+     23. Modelos de roteiro ........ .templates-*
+     24. Configurações ............. .settings-*
+     25. Usuários e acessos ........ .user-*, .permission-*, .role-*
+     26. Avisos e lembretes ........ .notice-*, .quote-reminder-*
+     27. Impressão (PDF) ........... .print-doc, .pd-*
+   BLOCOS TRANSVERSAIS
+     - Design tokens ( :root ) e reset base
+     - Regras globais de toque e foco de teclado
+     - Camadas de precedência por z-index
+   ========================================================================== */
+
+/* ==========================================================================
+   BLOCO 00 — CASCA COMPARTILHADA DE PAINÉIS (no topo do arquivo)
+   ========================================================================== */
+/* Este bloco ficou antes dos design tokens, e não é por acaso: ele declara a
+   casca <section class="service-panel"> usada ao mesmo tempo pelo
+   inventário, serviços, cardápios, categorias, usuários, orçamentos, eventos,
+   financeiro e cerimônia. Está aqui em vez do BLOCO 12 porque o .service-panel
+   é a única tela sem um prefixo próprio — as demais reaproveitam o
+   .client-panel/.client-form-panel, declarado mais abaixo. */
 .whatsapp-action { color: #4d9361; }.whatsapp-action:hover { color: #287b42; }
+/* Atalho de WhatsApp em linha de card. A variante de botão de tela cheia
+   (.whatsapp-action-button) está no BLOCO 48. */
+/* O resto da linha: .service-panel (a casca), .service-panel-card, .service-row
+   e .service-status — a linha de serviço da tela de serviços. */
 .service-panel { position: fixed; z-index: 8; inset: 0; display: flex; justify-content: center; padding: 22px; overflow-y: auto; background: rgba(36, 56, 46, .55); backdrop-filter: blur(4px); }.service-panel[hidden] { display: none; }.service-panel-card { width: min(100%, 480px); min-height: calc(100vh - 44px); margin: auto; padding: 25px 21px 92px; background: var(--paper); }.service-row { align-items: flex-start; }.service-row .client-details { padding-top: 1px; }.service-description { display: block !important; white-space: normal !important; overflow: visible !important; }.service-price { display: block; margin-top: 6px; color: var(--moss); font-size: 11px; font-weight: 700; }.service-status { display: inline-block; width: fit-content; margin-top: 5px; padding: 3px 6px; border-radius: 3px; color: #4d7b58; background: #e1eee1; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }.service-status.inactive { color: #8b7450; background: #f1e6d1; }.service-status.ceremonial { margin-top: 5px; color: #fff; background: var(--moss); }.service-active-field input { accent-color: var(--moss); }
+/* ==========================================================================
+   BLOCO 01 — DESIGN TOKENS (:root)
+   ========================================================================== */
+/* Paleta e tipografia base. Toda cor do app sai daqui — trocar uma */
+/* variável redesenha o app inteiro sem tocar em nenhuma regra. */
 :root {
   --moss: #31483b;
   --moss-deep: #24382e;
@@ -16,16 +74,33 @@
   background: #e7e4dc;
 }
 
+/* ==========================================================================
+   BLOCO 02 — RESET E BASE DO DOCUMENTO
+   ========================================================================== */
+/* box-sizing, reset de body/button e cor de fundo da página. */
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; background: #e7e4dc; }
 button { border: 0; font: inherit; cursor: pointer; }
+/* ==========================================================================
+   BLOCO 03 — TELA DE LOGIN (.auth-*)
+   ========================================================================== */
+/* Tela de acesso mostrada antes do app-shell existir. */
 .auth-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; background: var(--moss); }
 .auth-screen[hidden] { display: none; }
 .auth-card { width: min(100%, 390px); padding: 36px 28px 32px; border-radius: 6px; background: var(--paper); box-shadow: 0 20px 60px rgba(19, 34, 26, .2); }
 .auth-brand { margin-bottom: 28px; }.auth-brand .brand-mark { width: 44px; height: 44px; font-size: 13px; }
 .auth-card h1 { color: var(--ink); font-size: 31px; line-height: 1.1; }.auth-card h1 span { color: var(--gold); }.auth-intro { margin: 10px 0 20px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .login-form { display: grid; gap: 8px; }.login-form label { margin-top: 7px; color: var(--ink); font-size: 10px; font-weight: 700; }.login-form input { width: 100%; min-height: 45px; padding: 0 13px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.login-form input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(179, 138, 77, .12); }.login-button { display: flex; align-items: center; justify-content: space-between; min-height: 47px; margin-top: 13px; padding: 0 15px 0 17px; border-radius: 4px; color: var(--paper); background: var(--moss); font-size: 11px; font-weight: 700; }.login-button svg { width: 16px; height: 16px; }.login-button:disabled { cursor: wait; opacity: .65; }.login-feedback { min-height: 16px; margin: 5px 0 0; color: #a0483d; font-size: 11px; line-height: 1.4; }
-.app-shell { display: none; width: min(100%, 520px); min-height: 100vh; margin: 0 auto; overflow: hidden; background: var(--paper); }.app-shell.ready { display: block; }
+/* ==========================================================================
+   BLOCO 04 — CASCA DO APP (.app-shell)
+   ========================================================================== */
+/* Container de largura máxima (mobile-first, 520px). Fica oculto até */
+/* a permissão ser resolvida — ver BLOCO 27 (Controle de acesso). */
+.app-shell { display: none; width: min(100%, 520px); min-height: 100vh; margin: 0 auto; overflow: hidden; background: var(--paper); position: relative; }.app-shell.ready { display: block; }
+/* ==========================================================================
+   BLOCO 05 — TOPO / BARRA DE MARCA (.topbar, .brand, .avatar)
+   ========================================================================== */
+/* Cabeçalho fixo do app: marca à esquerda, ações à direita. */
 .topbar { display: flex; align-items: center; justify-content: space-between; height: 76px; padding: 0 22px; background: var(--paper); }
 .brand, .topbar-actions, .quick-action, .module-card, .nav-item { display: flex; align-items: center; }
 .brand { gap: 10px; color: var(--ink); text-decoration: none; }
@@ -37,6 +112,11 @@ button { border: 0; font: inherit; cursor: pointer; }
 .icon-button svg, .more-button svg { width: 19px; height: 19px; stroke-width: 1.6; }
 .notification-dot { position: absolute; top: 7px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--gold); }
 .avatar { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 50%; color: var(--paper); background: var(--moss); font-size: 11px; font-weight: 700; }
+/* ==========================================================================
+   BLOCO 06 — PAINEL DE BOAS-VINDAS DO INÍCIO (.welcome-*)
+   ========================================================================== */
+/* Faixa verde com a saudação e a ilustração decorativa (círculos, sol */
+/* e folhas) desenhada só com bordas em CSS. */
 .welcome-panel { position: relative; min-height: 183px; padding: 33px 26px; overflow: hidden; color: var(--paper); background: var(--moss); }
 .welcome-copy { position: relative; z-index: 1; }
 .eyebrow { margin: 0 0 9px; color: var(--gold); font-size: 10px; font-weight: 700; letter-spacing: .16em; }
@@ -50,14 +130,41 @@ h1 span { color: var(--gold); }
 .sun-line { position: absolute; top: 44px; left: 44px; width: 61px; height: 61px; border: 1px solid rgba(206, 181, 125, .55); border-radius: 50%; }
 .leaf { position: absolute; display: block; border: 1px solid rgba(206, 181, 125, .6); border-radius: 100% 0; transform: rotate(28deg); }
 .leaf-one { top: 82px; left: 83px; width: 45px; height: 78px; }.leaf-two { top: 90px; left: 53px; width: 28px; height: 57px; transform: rotate(-17deg); }.leaf-three { top: 72px; left: 115px; width: 28px; height: 55px; transform: rotate(67deg); }
+/* ==========================================================================
+   BLOCO 07 — RESUMO DO DIA (.today-row)
+   ========================================================================== */
+/* Linha com a data de hoje e o atalho de ver o dia inteiro. */
 .today-row { display: flex; align-items: center; justify-content: space-between; padding: 21px 24px 17px; }
 .today-label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .14em; }.today-row strong { font-size: 14px; font-weight: 600; }
 .text-button { display: inline-flex; align-items: center; gap: 3px; padding: 0; color: var(--moss); background: transparent; font-size: 11px; font-weight: 700; }.text-button svg { width: 14px; height: 14px; }
+/* ==========================================================================
+   BLOCO 08 — AÇÕES RÁPIDAS (.quick-action)
+   ========================================================================== */
+/* Três botões logo abaixo da saudação. */
 .quick-actions { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 8px; padding: 0 22px 27px; }.quick-action { justify-content: center; gap: 6px; min-height: 45px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font-size: 10px; font-weight: 600; }.quick-action.primary { border-color: var(--moss); color: var(--paper); background: var(--moss); }.quick-icon { display: grid; place-items: center; }.quick-icon svg { width: 15px; height: 15px; stroke-width: 1.7; }
+/* ==========================================================================
+   BLOCO 09 — MÓDULOS DO INÍCIO (.modules-section, .module-card)
+   ========================================================================== */
+/* Grade de atalhos para os módulos. As cores de fundo vêm das */
+/* classes .card-* no fim do bloco. */
 .modules-section { padding: 25px 22px 100px; background: var(--cream); border-top: 1px solid #eee9df; }.section-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 16px; }.section-heading .eyebrow { margin-bottom: 4px; }.section-heading h2 { font-size: 20px; }
 .module-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }.module-card { position: relative; align-items: flex-start; min-height: 119px; padding: 16px 13px; border: 1px solid transparent; border-radius: 5px; text-align: left; overflow: hidden; }.module-card::after { position: absolute; right: -21px; bottom: -26px; width: 83px; height: 83px; border: 1px solid currentColor; border-radius: 50%; content: ""; opacity: .15; }.module-icon { display: grid; place-items: center; width: 31px; height: 31px; margin-right: 9px; border-radius: 50%; background: rgba(255,255,255,.55); }.module-icon svg { width: 16px; height: 16px; stroke-width: 1.7; }.module-text { display: flex; flex-direction: column; gap: 3px; padding-top: 1px; }.module-text strong { font: 600 15px "Playfair Display", serif; }.module-text small { max-width: 91px; color: currentColor; opacity: .7; font-size: 10px; line-height: 1.25; }.module-arrow { position: absolute; right: 11px; top: 12px; width: 14px; height: 14px; opacity: .65; }.card-clientes { color: #40573f; background: #dce4d5; }.card-orcamentos { color: #785d32; background: #f0e2c8; }.card-servicos { color: #5d6552; background: #e5e3d4; }.card-estoque { color: #56614b; background: #d5dfd1; }.card-config { color: #4a5a6b; background: #dde4ea; }.card-cerimonial { color: #3d5849; background: #cedbd0; }.card-financeiro { color: #765a2e; background: #eadfc8; }
+/* ==========================================================================
+   BLOCO 10 — NAVEGAÇÃO INFERIOR (.bottom-nav, .nav-item)
+   ========================================================================== */
+/* Barra fixa no rodapé, ancorada pelo centro (translateX -50%). */
 .bottom-nav { position: fixed; z-index: 5; bottom: 0; left: 50%; display: flex; justify-content: space-around; width: min(100%, 520px); height: 71px; padding: 10px 48px 8px; border-top: 1px solid var(--line); transform: translateX(-50%); background: rgba(252,250,246,.96); backdrop-filter: blur(8px); }.nav-item { flex-direction: column; gap: 4px; padding: 0 15px; color: #a0a39c; background: transparent; font-size: 10px; font-weight: 600; }.nav-item svg { width: 20px; height: 20px; stroke-width: 1.6; }.nav-item.active { color: var(--moss); }.nav-item.active svg { stroke-width: 2.2; }
+/* ==========================================================================
+   BLOCO 11 — TOAST / AVISO FLUTUANTE (.toast)
+   ========================================================================== */
+/* Mensagem curta que aparece e some sozinha. */
 .toast { position: fixed; z-index: 10; left: 50%; bottom: 87px; padding: 11px 16px; border-radius: 4px; color: white; background: var(--moss-deep); box-shadow: 0 8px 24px rgba(36,56,46,.2); font-size: 12px; opacity: 0; pointer-events: none; transform: translate(-50%, 10px); transition: opacity .2s, transform .2s; }.toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* ==========================================================================
+   BLOCO 12 — CASCA DOS PAINÉIS (.service-panel, .client-panel)
+   ========================================================================== */
+/* Sobreposição modal usada por todas as telas internas: fundo */
+/* escurecido com blur, cartão central rolável. Existem duas cascas: */
+/* .service-panel (lista) e .client-panel/.client-form-panel (formulário). */
 .client-panel, .client-form-panel { position: fixed; z-index: 8; inset: 0; display: flex; justify-content: center; padding: 22px; overflow-y: auto; background: rgba(36, 56, 46, .55); backdrop-filter: blur(4px); }.client-panel[hidden], .client-form-panel[hidden] { display: none; }.client-panel-card, .client-form-card { width: min(100%, 480px); min-height: calc(100vh - 44px); margin: auto; padding: 25px 21px 92px; background: var(--paper); }.client-form-panel { z-index: 9; align-items: center; }.client-form-card { min-height: auto; padding-bottom: 28px; border-radius: 5px; }.client-panel-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 21px; }.client-panel-header h2 { font-size: 25px; }
 /* Voltar e início à esquerda de todo cabeçalho de tela. O título é a única
    peça que cresce, então o grupo da esquerda encosta nele e as ações da tela
@@ -74,19 +181,71 @@ h1 span { color: var(--gold); }
 .image-viewer > .screen-nav { position: absolute; top: 16px; left: 16px; margin: 0; }
 .image-viewer > .screen-nav .icon-button { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: #fff; background: rgba(255, 255, 255, .16); }
 .image-viewer > .screen-nav .icon-button:hover { color: #fff; background: rgba(255, 255, 255, .28); }
+/* ==========================================================================
+   BLOCO 13 — PAINEL DE CLIENTES (.client-panel)
+   ========================================================================== */
+/* Fim do bloco do visualizador de imagem; daqui em diante é a lista de */
+/* clientes: cabeçalho, busca, mensagens e a linha de cada cliente. */
 .image-viewer > .screen-nav svg { width: 20px; height: 20px; }.client-panel-header .eyebrow { margin-bottom: 5px; }.client-toolbar { display: flex; gap: 8px; margin-bottom: 13px; }.search-field { display: flex; align-items: center; flex: 1; gap: 8px; min-width: 0; padding: 0 11px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }.search-field svg { flex: 0 0 auto; width: 16px; color: var(--muted); }.search-field input { width: 100%; min-width: 0; height: 40px; border: 0; outline: 0; color: var(--ink); background: transparent; font: inherit; font-size: 11px; }.add-client-button { display: inline-flex; align-items: center; gap: 5px; padding: 0 11px; border-radius: 4px; color: var(--paper); background: var(--moss); font-size: 10px; font-weight: 700; }.add-client-button svg { width: 15px; }.client-feedback, .client-form-feedback { min-height: 17px; margin: 8px 0; color: var(--muted); font-size: 11px; }.client-form-feedback { color: #a0483d; }.client-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }.client-row { display: flex; align-items: center; gap: 11px; padding: 13px 11px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }.client-initial { display: grid; flex: 0 0 auto; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: var(--moss); background: var(--sage-light); font: 600 15px "Playfair Display", serif; }.client-details { flex: 1; min-width: 0; }.client-details strong, .client-details span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.client-details strong { margin-bottom: 3px; font: 600 14px "Playfair Display", serif; }.client-details span { color: var(--muted); font-size: 10px; }.client-actions { display: flex; gap: 2px; }.client-action { display: grid; place-items: center; width: 29px; height: 29px; padding: 0; color: var(--muted); background: transparent; }.client-action:hover { color: var(--moss); }.client-action svg { width: 15px; }.empty-clients { padding: 33px 15px; border: 1px dashed #d7d3c9; color: var(--muted); text-align: center; font-size: 11px; line-height: 1.5; }.client-form-card > label { display: block; margin: 12px 0 6px; color: var(--ink); font-size: 10px; font-weight: 700; }.client-form-card > input:not([type="hidden"]), .client-form-card textarea { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; resize: vertical; }.client-form-card > input:focus, .client-form-card textarea:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(179, 138, 77, .12); }.client-form-card .login-button { width: 100%; }
+/* Ações à direita do cabeçalho de qualquer painel (filtros, menus, */
+/* botões extras). O .catalog-filter é o select de filtro reaproveitado */
+/* por todas as telas. */
 .panel-header-actions { display: flex; align-items: center; gap: 5px; }.catalog-filter { max-width: 132px; min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 10px; }.service-menus { color: var(--moss) !important; font-size: 10px !important; }/* fieldset tem min-inline-size: min-content por padrao, o que estouraba a
    largura do cartao quando um item tinha um texto longo sem quebra. */
 .menu-checkboxes { min-width: 0; max-width: 100%; margin: 15px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 4px; }.menu-checkboxes legend { padding: 0 5px; color: var(--ink); font-size: 10px; font-weight: 700; }.menu-option { display: flex; align-items: center; gap: 7px; margin: 8px 0; color: var(--ink); font-size: 11px; }.menu-option input { accent-color: var(--moss); }.field-hint { color: var(--muted); font-size: 10px; }
+/* ==========================================================================
+   BLOCO 14 — AÇÃO "CRIAR AGORA" DENTRO DE UM FORMULÁRIO
+   ========================================================================== */
+/* Botão .inline-create-button: abre um item novo sem sair da tela, */
+/* usado por categorias e por cardápios. */
 .inline-create-button { background:var(--moss) ;display: flex; align-items: center; gap: 5px; margin-top: 10px; padding: 0; color: var(--moss); background: transparent; font-size: 10px; font-weight: 700; }.inline-create-button svg { width: 14px; height: 14px; }
+/* ==========================================================================
+   BLOCO 15 — FORMULÁRIO DE CARDÁPIO (imagens e categorias)
+   ========================================================================== */
+/* Casca do modal de cardápio (#menu-form-panel) e do seletor de */
+/* categorias logo abaixo. */
 #menu-form-panel { z-index: 10; }
 .menu-form-image-input { font-size: 10px; }.image-preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 10px; }.image-preview { position: relative; aspect-ratio: 1; overflow: hidden; border-radius: 4px; background: var(--sage-light); }.image-preview img { width: 100%; height: 100%; object-fit: cover; }.image-preview button { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 23px; height: 23px; border-radius: 50%; color: white; background: rgba(36, 56, 46, .82); }.image-preview button svg { width: 13px; }.category-checkboxes { margin-top: 18px; }.category-option { display: inline-flex; align-items: center; gap: 6px; margin: 5px 14px 5px 0; color: var(--ink); font-size: 10px; }.category-option input { accent-color: var(--moss); }
+/* ==========================================================================
+   BLOCO 16 — FILTRO DA TELA DE CARDÁPIOS (.menu-filter-row)
+   ========================================================================== */
+/* Alinhado à direita, logo abaixo do cabeçalho do painel. */
 .menu-filter-row { display: flex; justify-content: flex-end; margin: -7px 0 10px; }.menu-filter-row .catalog-filter { max-width: 180px; width: 100%; }
+/* ==========================================================================
+   BLOCO 17 — ESTOQUE E MOVIMENTAÇÕES (.inventory-*)
+   ========================================================================== */
+/* Filtro de estoque baixo, linha de item com miniatura, saldo */
+/* (inventory-balance) e o formulário de entrada/saída. */
 .inventory-filter-row { display: flex; justify-content: flex-end; margin: -5px 0 10px; }.inventory-low-filter { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }.inventory-low-filter input { accent-color: var(--gold); }.inventory-row .client-initial { color: var(--gold); background: #f0e2c8; }.inventory-row .client-initial svg { width: 17px; height: 17px; }.inventory-balance { margin-top: 5px; color: var(--moss) !important; font-size: 11px !important; font-weight: 700; }.inventory-balance.low { color: #a0483d !important; }.inventory-actions { align-self: center; }.movement-item-name { margin: -8px 0 17px; color: var(--moss); font-size: 12px; font-weight: 700; }.movement-select { width: 100%; min-height: 43px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.movement-select:focus { outline: 2px solid rgba(179, 138, 77, .2); }
+/* ==========================================================================
+   BLOCO 18 — ESTOQUE (continuação) e VISUALIZADOR DE IMAGEM
+   ========================================================================== */
+/* A miniatura do item abre o .image-viewer em tela cheia, que tem */
+/* z-index 30 — acima de qualquer painel. */
 .inventory-filter-row { justify-content: space-between; align-items: center; }.inventory-filter-row .catalog-filter { max-width: 180px; width: 100%; }.inventory-thumb { display: block; flex: 0 0 auto; width: 38px; height: 38px; padding: 0; overflow: hidden; border: 0; border-radius: 50%; background: var(--sage-light); }.inventory-thumb img { width: 100%; height: 100%; object-fit: cover; }.image-preview { cursor: zoom-in; }.image-preview-open { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }.image-preview-open img { cursor: zoom-in; }.image-preview-remove { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 23px; height: 23px; padding: 0; border: 0; border-radius: 50%; color: white; background: rgba(36, 56, 46, .82); cursor: pointer; }.image-preview-remove svg { width: 13px; }.image-viewer { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 45px 20px 25px; background: rgba(16, 25, 20, .92); }.image-viewer[hidden] { display: none; }.image-viewer > img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; box-shadow: 0 10px 50px rgba(0, 0, 0, .35); }.image-viewer-close { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: white; background: rgba(255, 255, 255, .16); }.image-viewer-close svg { width: 20px; }
-.image-preview .image-preview-open { position: static; width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 0; border-radius: 0; color: inherit; background: transparent; }.image-preview .image-preview-open img { display: block; width: 100%; height: 100%; object-fit: cover; }.detail-trigger { cursor: pointer; }.detail-view { position: fixed; z-index: 25; inset: 0; display: flex; justify-content: center; padding: 22px; overflow-y: auto; background: rgba(36, 56, 46, .58); backdrop-filter: blur(5px); }.detail-view[hidden] { display: none; }.detail-card { width: min(100%, 480px); margin: auto; padding: 25px 21px 35px; border-radius: 6px; background: var(--paper); box-shadow: 0 18px 60px rgba(19, 34, 26, .22); }.detail-summary { display: flex; align-items: center; gap: 12px; padding: 14px; margin-bottom: 14px; border-radius: 5px; background: var(--sage-light); }.detail-summary strong, .detail-summary span { display: block; }.detail-summary strong { font: 600 17px "Playfair Display", serif; }.detail-summary span { margin-top: 3px; color: var(--muted); font-size: 10px; }.detail-initial, .detail-icon { display: grid !important; place-items: center; flex: 0 0 auto; width: 42px; height: 42px; margin: 0 !important; border-radius: 50%; color: var(--moss) !important; background: rgba(255,255,255,.65); font: 600 18px "Playfair Display", serif; }.detail-icon svg { width: 20px; height: 20px; }.detail-row { display: flex; justify-content: space-between; gap: 18px; padding: 13px 0; border-bottom: 1px solid var(--line); }.detail-row span { color: var(--muted); font-size: 10px; }.detail-row strong { max-width: 65%; color: var(--ink); text-align: right; font-size: 11px; line-height: 1.4; }.detail-images { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }.detail-images button { aspect-ratio: 1.35; padding: 0; overflow: hidden; border: 0; border-radius: 4px; cursor: zoom-in; }.detail-images img { width: 100%; height: 100%; object-fit: cover; }
+/* ==========================================================================
+   BLOCO 19 — MODAL DE DETALHES (.detail-view, .detail-card)
+   ========================================================================== */
+/* Aba de detalhe com resumo no topo, linhas de dados e a grade de */
+/* fotos. Abre com z-index 25, acima dos painéis e abaixo do viewer. */
+.image-preview .image-preview-open { position: static; width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 0; border-radius: 0; color: inherit; background: transparent; }.image-preview .image-preview-open img { display: block; width: 100%; height: 100%; object-fit: cover; }.detail-trigger { cursor: pointer; }.detail-view { position: fixed; z-index: 25; inset: 0; display: flex; justify-content: center; padding: 22px; overflow-y: auto; background: rgba(36, 56, 46, .58); backdrop-filter: blur(5px); }.detail-view[hidden] { display: none; }.detail-card { width: min(100%, 480px); margin: auto; padding: 25px 21px 35px; border-radius: 6px; background: var(--paper); box-shadow: 0 18px 60px rgba(19, 34, 26, .22); }.detail-summary { display: flex; align-items: center; gap: 12px; padding: 14px; margin-bottom: 14px; border-radius: 5px; background: var(--sage-light); }.detail-summary strong, .detail-summary span { display: block; }.detail-summary strong { font: 600 17px "Playfair Display", serif; }.detail-summary span { margin-top: 3px; color: var(--muted); font-size: 12px; }.detail-initial, .detail-icon { display: grid !important; place-items: center; flex: 0 0 auto; width: 42px; height: 42px; margin: 0 !important; border-radius: 50%; color: var(--moss) !important; background: rgba(255,255,255,.65); font: 600 18px "Playfair Display", serif; }.detail-icon svg { width: 20px; height: 20px; }.detail-row { display: flex; justify-content: space-between; gap: 18px; padding: 13px 0; border-bottom: 1px solid var(--line); }.detail-row span { color: var(--muted); font-size: 12px; }.detail-row strong { max-width: 65%; color: var(--ink); text-align: right; font-size: 11px; line-height: 1.4; }.detail-images { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }.detail-images button { aspect-ratio: 1.35; padding: 0; overflow: hidden; border: 0; border-radius: 4px; cursor: zoom-in; }.detail-images img { width: 100%; height: 100%; object-fit: cover; }
+/* ==========================================================================
+   BLOCO 20 — CARTÕES VISUAIS (.visual-card)
+   ========================================================================== */
+/* Padrão de card com foto grande, título, status, preço e miniaturas. */
+/* É o card reaproveitado por cardápios, serviços e itens de estoque. */
 .visual-card { overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: 0 5px 16px rgba(45, 57, 47, .06); }.visual-card-hero { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 1.65; padding: 0; overflow: hidden; border: 0; color: var(--muted); background: var(--sage-light); cursor: zoom-in; }.visual-card-hero img { width: 100%; height: 100%; object-fit: cover; transition: transform .25s ease; }.visual-card-hero:hover img { transform: scale(1.04); }.visual-card-placeholder { gap: 5px; cursor: default; background: linear-gradient(135deg, #e5e3d4, #cedbd0); font-size: 10px; }.visual-card-placeholder svg { width: 25px; height: 25px; }.visual-card-body { position: relative; padding: 13px; }.visual-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }.visual-card-heading > div { min-width: 0; }.visual-card-heading strong, .visual-card-heading span { display: block; }.visual-card-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 15px "Playfair Display", serif; }.visual-card-heading div > span { margin-top: 4px; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }.visual-card-heading .service-status { flex: 0 0 auto; margin-top: 0; }.visual-card-meta { display: flex; align-items: center; justify-content: space-between; min-height: 26px; color: var(--muted); font-size: 10px; }.visual-card-meta .service-price { margin-top: 0; }.visual-card-thumbs { display: flex; gap: 5px; margin-top: 7px; }.visual-card-thumbs button { width: 38px; height: 32px; padding: 0; overflow: hidden; border: 0; border-radius: 3px; cursor: zoom-in; }.visual-card-thumbs img { width: 100%; height: 100%; object-fit: cover; }.visual-card-actions { display: flex; justify-content: flex-end; gap: 2px; margin-top: 4px; }.visual-card .inventory-balance { display: block; }.visual-card .service-menus { display: block; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.visual-card .service-status { margin-top: 0; }
+/* ==========================================================================
+   BLOCO 21 — ORÇAMENTOS: PAINEL E FORMULÁRIO (.quote-*)
+   ========================================================================== */
+/* Lista de orçamentos, status (rascunho/confirmado/cancelado) e o */
+/* formulário de criação com os campos do evento. */
 .quote-panel-card { padding-bottom: 92px; }.quote-form-card { max-height: calc(100vh - 44px); overflow-y: auto; }.quote-event-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }.quote-event-fields label { margin-top: 12px; }.quote-event-fields input { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.quote-service-picker { display: grid; gap: 7px; max-height: 210px; overflow-y: auto; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }.quote-service-option { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; align-items: start; gap: 7px; padding: 8px 5px; border-bottom: 1px solid var(--line); font-size: 10px; }.quote-service-option:last-child { border-bottom: 0; }.quote-service-option input[type="checkbox"] { accent-color: var(--moss); }.quote-service-option input[type="number"] { width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 3px; font: inherit; font-size: 10px; }.quote-service-name { font-size: 11px; font-weight: 600; color: var(--ink); line-height: 1.35; }.quote-service-price { color: var(--moss); font-weight: 700; }.quote-totals { display: grid; grid-template-columns: 1fr auto; gap: 9px 12px; align-items: center; margin-top: 15px; padding: 13px; border-radius: 4px; color: var(--ink); background: var(--cream); font-size: 11px; }.quote-totals strong { color: var(--moss); font-size: 14px; }.quote-totals input { width: 100px; padding: 7px; border: 1px solid var(--line); border-radius: 3px; font: inherit; }.quote-card { cursor: pointer; }.quote-status { display: inline-block; padding: 4px 7px; border-radius: 3px; color: #647565; background: var(--sage-light); font-size: 10px; font-weight: 700; text-transform: uppercase; }.quote-status.confirmed { color: #4d7b58; background: #d5ead6; }.quote-status.cancelled { color: #9a554c; background: #f1dcd8; }.quote-total { color: var(--moss) !important; font-weight: 700; }
+/* ==========================================================================
+   BLOCO 22 — ORÇAMENTOS: SELEÇÃO DE SERVIÇOS E TOTAIS
+   ========================================================================== */
+/* Cada linha do seletor de serviços, os campos de quantidade/preço */
+/* e o quadro de totais do orçamento. */
 .quote-form-card > label, .quote-event-fields label { display: block; margin: 13px 0 6px; color: var(--ink); font-size: 10px; font-weight: 700; letter-spacing: .02em; }.quote-event-fields label { margin-top: 0; }.quote-service-option.selected { border-color: rgba(49, 72, 59, .25); background: var(--sage-light); }.quote-service-copy { min-width: 0; }.quote-service-copy strong, .quote-service-copy small { display: block; }.quote-service-copy strong { font-size: 11px; line-height: 1.35; }.quote-service-copy small { margin-top: 3px; color: var(--muted); font-size: 10px; }.quote-service-option.selected .quote-service-copy strong { color: var(--moss-deep); }.quote-qty-label, .quote-price-label { display: block; width: 100%; margin: 0 0 2px; color: var(--muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }.quote-service-choice { display: none; color: var(--moss); font-size: 10px; font-weight: 700; }.quote-service-option.selected .quote-service-choice { display: block; }
 /* Cardápios vinculados ao serviço. O cardápio não é escolhido no orçamento: ele acompanha o serviço marcado. */
 .linked-menu-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--moss); background: #fff; font: inherit; font-size: 10px; font-weight: 600; line-height: 1.3; text-align: left; cursor: pointer; }
@@ -98,6 +257,11 @@ h1 span { color: var(--gold); }
 .quote-service-option.selected .quote-service-menus { display: flex; }
 .quote-service-menus-label { color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .menu-owner { color: var(--moss); font-size: 10px; font-weight: 600; }
+/* ==========================================================================
+   BLOCO 23 — CARDÁPIOS VINCULADOS AO SERVIÇO
+   ========================================================================== */
+/* Seleção de quais cardápios acompanham um serviço dentro do */
+/* formulário de serviço. */
 .service-menu-option { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 7px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .service-menu-option.selected { border-color: var(--sage); background: var(--sage-light); }
 .service-menu-check { display: grid; place-items: center; flex: 0 0 auto; }
@@ -112,6 +276,11 @@ h1 span { color: var(--gold); }
    sanfona (details/summary): com tudo aberto a lista fica longa e o resto do
    formulario perde o foco. O marcador nativo do summary e escondido porque o
    icone do lucide ja mostra o estado. */
+/* ==========================================================================
+   BLOCO 24 — CARDÁPIOS POR CATEGORIA (sanfona)
+   ========================================================================== */
+/* Agrupa os cardápios por categoria no formulário de serviço e */
+/* na tela de cardápios. */
 .menu-category-group { border-top: 1px solid var(--line); }.menu-category-group:first-child { border-top: 0; }
 .menu-category-summary { display: flex; align-items: center; gap: 7px; padding: 9px 2px; cursor: pointer; list-style: none; color: var(--ink); font-size: 11px; font-weight: 700; }
 .menu-category-summary::-webkit-details-marker { display: none; }.menu-category-summary::marker { content: ''; }
@@ -128,6 +297,11 @@ h1 span { color: var(--gold); }
 .menu-group-head strong { font: 600 15px "Playfair Display", serif; color: var(--moss); }
 .menu-group-head span { color: var(--muted); font-size: 10px; }
 .menu-group-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+/* ==========================================================================
+   BLOCO 25 — RESUMO DE SERVIÇOS E CARDÁPIOS NO DETALHE
+   ========================================================================== */
+/* Blocos .detail-box: itens do orçamento, cardápios vinculados e */
+/* linha de total dentro do modal de detalhes. */
 .detail-box { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .detail-box-title { display: block; margin-bottom: 8px; color: var(--moss); font-size: 10px; font-weight: 700; }
 .detail-service-row { padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 10px; }
@@ -140,7 +314,15 @@ h1 span { color: var(--gold); }
 .detail-menu-group + .detail-menu-group { margin-top: 9px; }
 .detail-menu-group-label { display: block; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .detail-total-line { display: flex; justify-content: space-between; padding: 8px 0 0; font-size: 11px; font-weight: 700; color: var(--moss); }
+/* ==========================================================================
+   BLOCO 26 — RESPONSIVO: ORÇAMENTOS (<= 430px)
+   ========================================================================== */
+/* O seletor de serviços passa de tabela para lista empilhada. */
 @media (max-width: 430px) { .quote-service-picker { max-height: 60vh; }.quote-service-option { grid-template-columns: 1fr; gap: 5px; padding: 8px 10px; }.quote-service-copy strong { font-size: 12px; }.quote-service-price { grid-column: 1; color: var(--moss); font-weight: 700; font-size: 11px; }.quote-qty-label, .quote-price-label { display: inline-block; width: auto; margin: 0 4px 0 0; font-size: 9px; }.quote-service-option input[type="number"] { width: 100px; min-width: 0; font-size: 10px; }.quote-service-choice { grid-column: 1; font-size: 9px; }.quote-service-check { justify-self: start; }.quote-service-menus { gap: 6px; }.linked-menu-chip { padding: 5px 9px; font-size: 11px; }.linked-menu-chip svg { width: 13px; height: 13px; }}
+/* ==========================================================================
+   BLOCO 27 — RESPONSIVO: TELA LARGA (>= 600px)
+   ========================================================================== */
+/* Sombra no app-shell e a barra inferior deixa de ser fixa. */
 @media (min-width: 600px) { .app-shell { box-shadow: 0 0 45px rgba(40, 48, 39, .13); } .bottom-nav { position: absolute; } }
 /* Módulos responsivos - padrão do event-card */
 .quote-card { flex-direction: row; align-items: stretch; padding: 10px 12px; gap: 10px; }
@@ -149,24 +331,34 @@ h1 span { color: var(--gold); }
 /* Com quatro botoes de acao o texto ficava espremido a ~0px, entao a acao vai
    para a linha de baixo e o texto passa a quebrar em vez de ser cortado. */
 .quote-card { flex-wrap: wrap; row-gap: 9px; }
-.quote-card .client-details strong { margin-bottom: 2px; font-size: 11px; overflow: visible; white-space: normal; }
-.quote-card .client-details span { font-size: 9px; color: var(--muted); display: block; margin-bottom: 1px; overflow: visible; white-space: normal; }
+.quote-card .client-details strong { margin-bottom: 2px; font-size: 14px; overflow: visible; white-space: normal; }
+.quote-card .client-details span { font-size: 12px; color: var(--muted); display: block; margin-bottom: 1px; overflow: visible; white-space: normal; }
 .quote-card .quote-total { flex-shrink: 0; font-size: 10px; color: var(--moss) !important; font-weight: 700; }
 .quote-card .client-actions { flex: 1 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .quote-card .quote-status { flex-shrink: 0; white-space: nowrap; padding: 3px 6px; font-size: 8px; }
 .quote-card .client-action { width: 28px; height: 28px; flex-shrink: 0; }
 .quote-card .client-action svg { width: 14px; height: 14px; }
+/* ==========================================================================
+   BLOCO 28 — CARD DE CLIENTE RESPONSIVO
+   ========================================================================== */
+/* Mesmas regras do card de orçamento aplicadas ao painel de */
+/* clientes: ações descem para a linha de baixo. */
 /* Mesmo tratamento dos demais cards: acoes na linha de baixo, texto quebrando. */
 #client-panel .client-row { flex-wrap: wrap; row-gap: 9px; }
 #client-panel .client-details { flex: 1 1 0%; }
 #client-panel .client-details strong,
 #client-panel .client-details span { overflow: visible; white-space: normal; text-overflow: clip; }
 #client-panel .client-actions { flex: 1 0 100%; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding-top: 8px; border-top: 1px dashed var(--line); }
+/* ==========================================================================
+   BLOCO 29 — CARD DE SERVIÇO RESPONSIVO
+   ========================================================================== */
+/* Mesmas regras aplicadas à linha de serviço, com o botão de */
+/* ativação e o status do lado direito. */
 .service-row { flex-direction: row; align-items: stretch; flex-wrap: wrap; row-gap: 9px; }
 .service-row .client-initial { width: 34px; height: 34px; margin-bottom: 0; flex-shrink: 0; }
 .service-row .client-details { display: flex; flex-direction: column; justify-content: center; flex: 1 1 0%; min-width: 0; border-top: none; padding-top: 0; }
 .service-row .client-details strong { margin-bottom: 2px; font-size: 13px; overflow: visible; white-space: normal; }
-.service-row .client-details span { overflow: visible; white-space: normal; font-size: 9px; color: var(--muted); display: block; margin-bottom: 1px; }
+.service-row .client-details span { overflow: visible; white-space: normal; font-size: 12px; color: var(--muted); display: block; margin-bottom: 1px; }
 .service-row .service-price { margin-top: 0 !important; }
 .service-row .service-status { margin-top: 0 !important; width: fit-content !important; align-self: flex-start; display: inline-flex; align-items: center; }
 .service-row .service-toggle { width: auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; padding: 3px 5px !important; }
@@ -177,21 +369,38 @@ h1 span { color: var(--gold); }
 /* ==========================================================================
    MÓDULO DE EVENTOS
    ========================================================================== */
+/* ==========================================================================
+   BLOCO 30 — MÓDULO DE EVENTOS: FILTROS (.event-pill)
+   ========================================================================== */
+/* Pílulas de status roláveis na horizontal. */
 .event-filter-pills { display: flex; gap: 6px; margin: -4px 0 13px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: none; }
 .event-filter-pills::-webkit-scrollbar { display: none; }
 .event-pill { flex: 0 0 auto; padding: 6px 13px; border: 1px solid var(--line); border-radius: 20px; color: var(--muted); background: #fff; font-size: 10px; font-weight: 600; transition: all .15s ease; cursor: pointer; }
 .event-pill:hover { border-color: var(--sage); color: var(--moss); }
 .event-pill.active { border-color: var(--moss); color: var(--paper); background: var(--moss); font-weight: 700; }
 
+/* ==========================================================================
+   BLOCO 31 — MÓDULO DE EVENTOS: LISTA (.event-card)
+   ========================================================================== */
+/* Cards de evento com caixa de data, título, metadados e ações. */
 .event-list { display: grid; gap: 9px; }
 .event-card { display: flex; align-items: stretch; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: #fff; cursor: pointer; transition: border-color .2s, box-shadow .2s; }
 .event-card:hover { border-color: rgba(179, 138, 77, .45); box-shadow: 0 4px 16px rgba(45, 57, 47, .06); }
 
+/* ==========================================================================
+   BLOCO 32 — CAIXA DE DATA DO EVENTO (.event-date-box)
+   ========================================================================== */
+/* Dia, mês e contagem regressiva. */
 .event-date-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 54px; padding: 7px 5px; border-radius: 4px; color: var(--moss-deep); background: var(--sage-light); text-align: center; flex: 0 0 auto; }
 .event-date-box .event-day { font: 700 18px "Playfair Display", serif; line-height: 1; color: var(--moss-deep); }
 .event-date-box .event-month { margin-top: 3px; color: var(--gold); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .event-date-box .event-countdown { margin-top: 4px; padding: 2px 4px; border-radius: 2px; color: var(--moss); background: rgba(255, 255, 255, .75); font-size: 10px; font-weight: 700; white-space: nowrap; }
 
+/* ==========================================================================
+   BLOCO 33 — MÓDULO DE EVENTOS: CONTEÚDO E BADGES
+   ========================================================================== */
+/* Título, linha de metadados e os selos de status e de orçamento */
+/* vinculado. */
 .event-card-body { display: flex; flex-direction: column; justify-content: space-between; flex: 1; min-width: 0; }
 .event-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .event-card-title { margin: 0; font: 600 14.5px "Playfair Display", serif; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -326,6 +535,11 @@ h1 span { color: var(--gold); }
 /* Etiqueta do recebimento que veio do sinal do orçamento. Diz onde o valor pode
    ser corrigido, porque aqui ele não tem lápis. */
 .finance-receipt-row .finance-deposit-tag { flex: 0 0 auto; color: #7a5c2e !important; font-size: 9px; font-weight: 700; white-space: nowrap; }
+/* ==========================================================================
+   BLOCO 34 — RESPONSIVO: FINANCEIRO (<= 480px)
+   ========================================================================== */
+/* A linha de evento empilha os números e os formulários do rateio */
+/* caem para uma coluna. */
 @media (max-width: 480px) {
    .finance-event-row { grid-template-columns: 38px minmax(0, 1fr) 28px; }
    .finance-event-numbers { grid-column: 2; align-items: flex-start; flex-direction: row; }
@@ -350,6 +564,10 @@ h1 span { color: var(--gold); }
 .overview-quote-item { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); }
 .overview-quote-item strong { color: var(--ink); }
 
+/* ==========================================================================
+   BLOCO 35 — VISÃO GERAL: LINHA DO TEMPO DO CERIMONIAL
+   ========================================================================== */
+/* Bloco resumido do roteiro dentro da visão geral do evento. */
 /* Cronograma / Cerimonial */
 .ceremonial-header-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .ceremonial-header-bar h4 { margin: 0; font: 600 14px "Playfair Display", serif; color: var(--ink); }
@@ -364,6 +582,11 @@ h1 span { color: var(--gold); }
 .ceremonial-checkbox { width: 17px; height: 17px; accent-color: var(--moss); cursor: pointer; flex: 0 0 auto; }
 .ceremonial-actions { display: flex; gap: 2px; flex: 0 0 auto; }
 
+/* ==========================================================================
+   BLOCO 36 — FORMULÁRIOS EMBUTIDOS (.inline-form-box)
+   ========================================================================== */
+/* Caixas de formulário que aparecem dentro de outra tela, sem */
+/* virar modal. */
 .inline-form-box { padding: 13px; border: 1px dashed #d7d3c9; border-radius: 4px; background: var(--cream); margin-top: 14px; }
 .inline-form-box h5 { margin: 0 0 10px; font: 600 12px "Playfair Display", serif; color: var(--moss-deep); }
 .inline-form-row { display: grid; grid-template-columns: 85px 1fr; gap: 7px; margin-bottom: 7px; }
@@ -404,6 +627,11 @@ h1 span { color: var(--gold); }
 .ceremonial-filter-hint svg { flex: 0 0 13px; width: 13px; height: 13px; margin-top: 1px; color: var(--gold); }
 .ceremonial-filter-hint strong { color: #5d4a25; }
 
+/* ==========================================================================
+   BLOCO 37 — CERIMONIAL: CARTÃO DO EVENTO E CONTAGEM
+   ========================================================================== */
+/* Hero com status, contagem regressiva e ações rápidas */
+/* (WhatsApp, modo ao vivo). */
 /* Hero do Cerimonial */
 .ceremonial-hero-card { position: relative; padding: 16px; margin-bottom: 16px; border-radius: 6px; color: var(--paper); background: linear-gradient(135deg, var(--moss) 0%, #1e2e26 100%); overflow: hidden; }
 .ceremonial-hero-card::after { position: absolute; right: -25px; bottom: -30px; width: 130px; height: 130px; border: 1px solid rgba(255, 255, 255, .1); border-radius: 50%; content: ""; pointer-events: none; }
@@ -431,6 +659,10 @@ h1 span { color: var(--gold); }
 .ceremonial-action-btn.live { color: var(--moss-deep); background: var(--paper); }
 .ceremonial-action-btn.live svg { width: 13px; height: 13px; color: var(--gold); }
 
+/* ==========================================================================
+   BLOCO 38 — CERIMIAL: BARRA DE ESTATÍSTICAS
+   ========================================================================== */
+/* Azulejos com rótulo, valor, barra de progresso e subtítulo. */
 /* Barra de Estatísticas do Cerimonial */
 .ceremonial-stats-bar { display: grid; grid-template-columns: 1.4fr 1.4fr 1fr 1fr; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .15); }
 .ceremonial-stat-tile { padding: 8px 10px; border-radius: 4px; background: rgba(0, 0, 0, .18); cursor: pointer; transition: background .15s; }
@@ -445,11 +677,20 @@ h1 span { color: var(--gold); }
 .ceremonial-stat-tile.small { text-align: center; }
 .ceremonial-stat-tile.small .stat-number { display: block; font: 700 15px "Playfair Display", serif; color: #fff; line-height: 1.1; margin: 2px 0; }
 
+/* ==========================================================================
+   BLOCO 39 — CERIMONIAL: CABEÇALHOS DE SEÇÃO
+   ========================================================================== */
+/* Títulos e subtítulos reutilizados dentro do painel. */
 /* Subseções */
 .ceremonial-section-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
 .ceremonial-section-header h4 { margin: 0; font: 600 15px "Playfair Display", serif; color: var(--ink); }
 .section-subtitle { margin: 3px 0 0; font-size: 14px; color: var(--muted); }
 
+/* ==========================================================================
+   BLOCO 40 — CERIMONIAL: ROTEIRO DO DIA (LINHA DO TEMPO)
+   ========================================================================== */
+/* Cards de atividade: concluir, título, horário, descrição, */
+/* responsável, status e ações. */
 /* Lista de Atividades do Roteiro */
 .ceremonial-timeline-list { display: grid; gap: 8px; margin-bottom: 16px; }
 .timeline-activity-card { position: relative; display: flex; align-items: stretch; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; transition: border-color .15s, background .15s; width: 100%; box-sizing: border-box; max-width: 100vw; overflow: hidden; }
@@ -473,11 +714,21 @@ h1 span { color: var(--gold); }
 .order-btn:hover:not(:disabled) { color: var(--moss); }
 .order-btn:disabled { opacity: .2; cursor: default; }
 
+/* ==========================================================================
+   BLOCO 41 — CERIMONIAL: ARRASTE E REORDENAÇÃO DO ROTEIRO
+   ========================================================================== */
+/* Alça, posição e setas de ordenação, além do estado de arraste */
+/* do card (classes .dragging / .drag-over-*). */
 /* Arraste do roteiro. O punho é a alça; o card segue o dedo via transform. */
 body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-select: none; }
 .timeline-activity-card.dragging { opacity: .55; border-color: var(--gold); box-shadow: 0 8px 20px rgba(37, 49, 41, .16); }
 .timeline-activity-card.drag-over-top { box-shadow: inset 0 3px 0 0 var(--gold); }
 .timeline-activity-card.drag-over-bottom { box-shadow: inset 0 -3px 0 0 var(--gold); }
+
+/* Botão toggle de reordenar */
+.drag-toggle-btn { position: relative; }
+.drag-toggle-btn.active { color: var(--moss); background: var(--sage-light); }
+.drag-toggle-btn.active:hover { background: var(--sage); }
 
 /* Modelos padrão de roteiro */
 .templates-modal-card { width: min(100%, 760px); }
@@ -513,10 +764,20 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .templates-apply-box label { display: flex; align-items: center; gap: 6px; color: #7a5c2e; font-size: 10px; font-weight: 600; cursor: pointer; }
 .templates-apply-box label input { width: 13px; height: 13px; accent-color: #a0483d; }
 .templates-empty-detail { padding: 22px 12px; border: 1px dashed var(--line); border-radius: 4px; color: var(--muted); font-size: 10.5px; text-align: center; }
-.template-open-btn { display: inline-flex; align-items: center; gap: 5px; margin-right: 6px; color: var(--moss); font-size: 10px; font-weight: 700; }
+.template-open-btn { display: inline-flex; align-items: center; gap: 5px; margin-right: 6px; color: var(--moss); font-size: 14px; font-weight: 700; }
 .template-open-btn svg { width: 13px; height: 13px; }
+#template-new-name { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; font: inherit; font-size: 11px; outline: none; background: #fff; }
+/* ==========================================================================
+   BLOCO 42 — RESPONSIVO: MODELOS DE ROTEIRO (<= 720px)
+   ========================================================================== */
+/* As duas colunas do modal viram uma. */
 @media (max-width: 720px) { .templates-columns { grid-template-columns: 1fr; } .templates-list { max-height: 160px; } }
 
+/* ==========================================================================
+   BLOCO 43 — CERIMONIAL: COLUNAS DO CARD DE ATIVIDADE
+   ========================================================================== */
+/* Cada coluna do card de atividade isolada: concluir, conteúdo, */
+/* ações. Vale para desktop e para as media queries do fim. */
 .activity-check-col { display: flex; align-items: center; justify-content: center; flex: 0 0 24px; min-width: 24px; max-width: 24px; }
 .activity-checkbox-btn { display: grid; place-items: center; width: 24px; height: 24px; border: 1.5px solid var(--sage); border-radius: 4px; background: #fff; color: white; cursor: pointer; transition: all .15s; }
 .activity-checkbox-btn:hover { border-color: var(--moss); }
@@ -641,6 +902,10 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .live-instructions-box strong { display: block; font-size: 10px; color: var(--gold); text-transform: uppercase; margin-bottom: 3px; }
 .live-instructions-box p { margin: 0; font-size: 11px; line-height: 1.45; color: var(--ink); }
 
+/* ==========================================================================
+   BLOCO 44 — CERIMONIAL: CONTROLES DO MODO AO VIVO
+   ========================================================================== */
+/* Botões de concluir/pular o momento atual e o card do próximo. */
 .live-controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .live-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; padding: 8px 12px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all .15s; }
 .live-btn.complete { color: #fff; background: var(--moss); }
@@ -655,6 +920,10 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .live-next-label svg { width: 12px; height: 12px; }
 .live-next-title { flex: 1; font: 600 12.5px "Playfair Display", serif; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ==========================================================================
+   BLOCO 45 — CERIMONIAL: EQUIPE RÁPIDA NO MODO AO VIVO
+   ========================================================================== */
+/* Lista rolável da equipe com contato por WhatsApp. */
 .live-quick-staff-box { padding: 12px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .live-quick-staff-box h5 { margin: 0 0 8px; font: 600 12px "Playfair Display", serif; color: var(--ink); display: flex; align-items: center; gap: 5px; }
 .live-quick-staff-box h5 svg { width: 13px; height: 13px; color: var(--gold); }
@@ -717,7 +986,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
    .activity-time-tag svg { width: 8px; height: 8px; }
    .activity-description { font-size: 10px; margin: 3px 0 4px; }
    .activity-footer-meta { font-size: 10px; gap: 3px; flex-wrap: wrap; }
-   .activity-responsible-tag { padding: 1px 4px; font-size: 10px; }
+   .activity-responsible-tag { padding: 1px 4px; font-size: 12px; }
    .activity-status-tag { font-size: 10px; padding: 1px 3px; }
 
 .activity-actions-col { display: flex; flex-direction: row; align-items: center; gap: 3px; flex: 0 0 auto; max-width: 95px; justify-content: flex-end; }
@@ -812,6 +1081,11 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .live-wa-btn svg { width: 9px; height: 9px; }
 }
 
+/* ==========================================================================
+   BLOCO 46 — RESPONSIVO: CERIMONIAL (<= 320px)
+   ========================================================================== */
+/* Telas muito estreitas: linha do tempo com alça e ações */
+/* sobrepostas ao conteúdo. */
 /* Telas muito pequenas (ex. iPhone SE 1ª geração) */
 @media (max-width: 320px) {
   /* Timeline: empilha verticalmente para eliminar qualquer overflow */
@@ -821,6 +1095,10 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .activity-actions-col { flex-direction: row; justify-content: flex-end; width: 100%; max-width: none; }
 }
 
+/* ==========================================================================
+   BLOCO 47 — RESPONSIVO: CERIMONIAL (<= 360px)
+   ========================================================================== */
+/* Ajuste intermediário entre 320px e 480px. */
 /* Telas muito pequenas (ex. iPhone SE 1ª geração) */
 @media (max-width: 360px) {
   .ceremonial-panel-card { padding: 16px 10px 70px; }
@@ -865,6 +1143,10 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 /* ORÇAMENTO EM PDF (impressão do navegador)                                   */
 /* ========================================================================== */
 .print-doc { display: none; }
+/* ==========================================================================
+   BLOCO 48 — AÇÕES DO ORÇAMENTO SALVO
+   ========================================================================== */
+/* Botões de largura total exibidos depois de salvar o orçamento. */
 .quote-saved-actions { display: grid; gap: 8px; margin: 14px 0 4px; }
 .quote-saved-actions button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 44px; padding: 0 14px; border-radius: 4px; font-size: 11px; font-weight: 700; }
 .quote-saved-actions svg { width: 16px; height: 16px; }
@@ -873,6 +1155,11 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .whatsapp-action-button { color: #fff; background: #4d9361; }
 .whatsapp-action-button:hover { background: #287b42; }
 
+/* ==========================================================================
+   BLOCO 49 — DOCUMENTO IMPRESSO (.print-doc, .pd-*)
+   ========================================================================== */
+/* Estrutura do orçamento impresso/PDF. Só aparece via @media */
+/* print no fim do arquivo. */
 .print-doc { color: var(--ink); font-family: "DM Sans", sans-serif; font-size: 10pt; line-height: 1.5; }
 .pd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 2px solid var(--moss); }
 .pd-brand { display: flex; align-items: center; gap: 9px; }
@@ -1002,6 +1289,11 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .templates-activity-index { width: 26px; height: 26px; flex-basis: 26px; font-size: 11px; }
   .templates-list-item { min-height: 44px; }
 
+/* ==========================================================================
+   BLOCO 50 — ÍCONES NOS PAINÉIS CERIMONIAIS
+   ========================================================================== */
+/* Ajuste do tamanho dos botões de ícone dentro do painel de */
+/* cerimônia e dos modais de roteiro e atividade. */
   /* O X de fechar os modais do módulo também é um alvo de toque frequente */
   .ceremonial-panel .icon-button,
   #ceremonial-templates-modal .icon-button,
@@ -1009,8 +1301,14 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .ceremonial-panel .icon-button svg,
   #ceremonial-templates-modal .icon-button svg,
   #ceremonial-activity-modal .icon-button svg { width: 22px; height: 22px; }
+  .
 }
 
+/* ==========================================================================
+   BLOCO 51 — IMPRESSÃO (@media print)
+   ========================================================================== */
+/* Esconde o app e imprime só o .print-doc, com regras de page */
+/* para não quebrar cabeçalho, tabela e blocos de total. */
 @media print {
   @page { size: A4; margin: 14mm 12mm; }
   html, body { background: #fff !important; }
@@ -1061,6 +1359,11 @@ a:focus-visible,
 .access-empty-note[hidden] { display: none !important; }
 .card-usuarios { color: #4c4a6b; background: #e0dcec; }
 
+/* ==========================================================================
+   BLOCO 52 — TELA DE USUÁRIOS: LISTA
+   ========================================================================== */
+/* Cada usuário com papel (dono/admin/sem acesso) e resumo das */
+/* permissões herdadas. */
 /* Lista de usuários                                                     */
 .user-row .client-details strong { display: flex; align-items: center; gap: 6px; }
 .user-self-tag { padding: 2px 5px; border-radius: 3px; color: var(--moss); background: var(--sage-light); font-family: "DM Sans", sans-serif; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
@@ -1070,6 +1373,10 @@ a:focus-visible,
 .role-badge.admin { color: #fff; background: var(--gold); }
 .role-badge.off { color: #8a5a52; background: #f2dfda; }
 
+/* ==========================================================================
+   BLOCO 53 — TELA DE USUÁRIOS: MATRIZ DE PERMISSÕES
+   ========================================================================== */
+/* Grade de permissões por módulo e a opção de herdar do papel. */
 /* Grade de telas dentro do formulário e dos padrões de nível             */
 .permission-grid { display: grid; gap: 4px; }
 .permission-option { align-items: flex-start; margin: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
@@ -1118,12 +1425,22 @@ a:focus-visible,
    qualquer outra. */
 .access-warning { margin: 0 22px 14px; padding: 13px 14px; border: 1px solid #d9b8b0; border-left: 3px solid #a0483d; border-radius: 4px; color: #7d3a30; background: #fbf0ed; font-size: 11px; line-height: 1.55; }
 .access-warning[hidden] { display: none !important; }
+/* ==========================================================================
+   BLOCO 54 — RECEBIMENTOS E SINAL DO ORÇAMENTO
+   ========================================================================== */
+/* Linha de depósito compartilhada entre o painel financeiro e o */
+/* formulário de sinal do orçamento. */
 .finance-receipt-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; min-width: 0; box-sizing: border-box; }
 .finance-receipt-row > div { min-width: 0; overflow-wrap: anywhere; }
 .finance-receipt-row span { max-width: 100%; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .quote-deposit-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-width: 0; box-sizing: border-box; }
 .quote-deposit-row > div { min-width: 0; overflow-wrap: anywhere; }
 .quote-deposit-row span { max-width: 100%; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+/* ==========================================================================
+   BLOCO 55 — VALIDADE E SINAL DO ORÇAMENTO
+   ========================================================================== */
+/* Etiqueta de prazo ("vence em breve") e o resumo do sinal já pago, */
+/* com o saldo que falta. */
 /* Sinal do orçamento: a etiqueta de validade diz o que ainda falta na lista e o
    painel transforma essa frase em um formulário com o total atualizado. */
 .quote-validity-tag { display: inline-flex; align-items: center; gap: 5px; width: fit-content; max-width: 100%; margin-top: 5px; padding: 3px 7px; border-radius: 3px; color: var(--moss); background: var(--cream); font-size: 10px; font-weight: 700; }
@@ -1221,9 +1538,18 @@ a:focus-visible,
 .notice-row.is-critical .notice-copy strong { color: #a0483d; }
 .notice-copy span { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .notice-row .client-action-button { flex: 0 0 auto; padding: 7px 11px; font-size: 10px; }
+/* ==========================================================================
+   BLOCO 56 — BARRA DE LEMBRETES DE COBRANÇA
+   ========================================================================== */
+/* Ações em lote da tela de lembretes. */
 .quote-reminder-toolbar { display: flex; justify-content: flex-end; margin: -3px 0 10px; }
 .quote-reminder-toolbar button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 13px; font-size: 10px; font-weight: 700; }
 .quote-reminder-toolbar svg { width: 15px; height: 15px; }
+/* ==========================================================================
+   BLOCO 57 — EDITOR DE MODELO DE MENSAGEM
+   ========================================================================== */
+/* Mensagem padrão de cobrança, com tokens clicáveis e */
+/* pré-visualização ao vivo. */
 .quote-template-editor { display: grid; gap: 8px; margin-bottom: 12px; padding: 13px; border: 1px solid var(--line); border-radius: 4px; background: var(--cream); }
 .quote-template-editor > label { margin: 0; color: var(--ink); font-size: 10px; font-weight: 700; }
 .quote-template-tokens { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -1239,6 +1565,11 @@ a:focus-visible,
 /* O vencido é a única lista em que a data já foi perdida, então ela se separa
    da de vencimento pela cor de alerta e não só pelo título do grupo. */
 .quote-reminder-card.is-overdue { border-left-color: #a0483d; }
+/* ==========================================================================
+   BLOCO 58 — LEMBRETES: LISTAS E MENSAGEM PERSONALIZADA
+   ========================================================================== */
+/* Agrupamento por cliente, tag de lembrete sob medida e o editor da */
+/* mensagem personalizada. */
 .quote-reminder-group { display: flex; align-items: center; gap: 7px; margin: 4px 0 0; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .quote-reminder-group svg { width: 14px; height: 14px; color: var(--gold); }
 .quote-reminder-custom-tag { display: inline-flex; align-items: center; gap: 4px; width: fit-content; margin-top: 4px; padding: 2px 6px; border-radius: 3px; color: #4a5a6b; background: #dde4ea; font-size: 9px; font-weight: 700; }
@@ -1257,6 +1588,10 @@ a:focus-visible,
 .quote-reminder-count[hidden], .module-card .quote-module-count[hidden] { display: none !important; }
 .notice-count[hidden], .notification-dot[hidden] { display: none !important; }
 .quote-alert-banner[hidden], .quote-template-editor[hidden], .quote-reminder-custom-editor[hidden] { display: none !important; }
+/* ==========================================================================
+   BLOCO 59 — CUSTOS DO EVENTO (.finance-cost-row)
+   ========================================================================== */
+/* Linha de custo dentro do painel financeiro do evento. */
 .finance-cost-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .finance-cost-row > div:first-child { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .finance-cost-row > div:first-child strong { overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
@@ -1280,6 +1615,12 @@ a:focus-visible,
    .finance-cost-row > div:first-child strong, .finance-cost-amount { font-size: 14px; }
 }
 
+/* ==========================================================================
+   BLOCO 60 — REFORÇO TIPOGRÁFICO GLOBAL
+   ========================================================================== */
+/* Este bloco repete tipografia e tamanhos de linha em tamanho maior */
+/* sem media query: é o tamanho final de leitura do painel */
+/* financeiro e vale para qualquer largura de tela. */
 /* Financeiro */
 .finance-panel-card { padding-bottom: 90px; }
 .finance-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; }
