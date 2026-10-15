@@ -89,6 +89,9 @@
   // Lote de mudanças que chegou com o histórico em movimento.
   let queued = null;
 
+  // Objeto guardado em cada entrada do histórico do navegador. Carrega apenas
+  // um marcador e uma cópia da pilha — não há estado de formulário aqui, é só
+  // o retrato de quais telas estavam abertas naquele passo.
   function stateFor(screens) {
     return { plenitudeNavigation: true, screens: screens.slice() };
   }
@@ -330,6 +333,10 @@
       <i data-lucide="house"></i>
     </button>`;
 
+  // Injeta os botões voltar/início no cabeçalho de cada tela de uma vez só.
+  // É feito por código (e não no HTML) para TODA tela ganhar os dois botões
+  // sem precisar editar o index.html a cada tela nova; o clone evita o mesmo
+  // nó preso em vários cabeçalhos.
   function buildNav() {
     const group = document.createElement('div');
     group.className = 'screen-nav';

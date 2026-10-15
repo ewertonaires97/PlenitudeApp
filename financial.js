@@ -1,8 +1,28 @@
+// ==========================================================================
+// Plenitude Realizações - Módulo Financeiro
+// ==========================================================================
+// Rateio de cada evento confirmado: recebimentos menos custos, sobre o
+// resultado incide o dízimo, e o saldo é dividido entre os cerimonialistas
+// (por percentual ou valor fixo). A tela do evento é onde essa conta é
+// conferida e salva.
+//
+// Regras que não são óbvias só de ler o código:
+//   - O valor "contratado" vem do orçamento confirmado; o que o evento
+//     recebeu de fato são os recebimentos lançados um a um.
+//   - O sinal do orçamento é o MESMO dinheiro visto no Orçamento e aqui:
+//     por isso ele vira um recebimento marcado e não pode ser editado nem
+//     apagado nesta tela (só estornado, pelas functions da migration 020).
+//   - Recebimentos não escrevem direto na tabela: passam por functions da
+//     migration 019, que conferem se o novo valor não deixa dízimo/repasses
+//     acima do saldo. Custos, sim, escrevem direto (migration 018).
+// ==========================================================================
 (() => {
   'use strict';
 
   const sb = () => window.plenitudeSupabase || null;
   const permissions = () => window.plenitudePermissions || null;
+  // Referências fixas do DOM. A tela só é montada uma vez no index.html;
+  // estas constantes evitam reconsultar o documento a cada render.
   const panel = document.querySelector('#finance-panel');
   const eventPanel = document.querySelector('#finance-event-panel');
   const feedback = document.querySelector('#finance-feedback');
@@ -25,6 +45,9 @@
   const tithePercent = document.querySelector('#finance-tithe-percent');
   const titheFixed = document.querySelector('#finance-tithe-fixed');
 
+  // Cache local dos dados do Supabase. O realtime recarrega tudo por
+  // loadFinance() em vez de aplicar o payload, então esta é a única fonte
+  // para os cálculos e re-renders.
   const state = {
     events: [],
     receipts: [],
@@ -37,11 +60,17 @@
   };
 
   const formatMoney = (value) => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // Todo HTML desta tela é montado por template string com dados do banco e
+  // digitados pelo usuário; sem isto, um nome com "<" viraria marcação.
   const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  // Data local em YYYY-MM-DD sem passar por toISOString(): a conversão para UTC
+  // mudaria o dia perto da meia-noite e o "hoje" do lançamento sairia errado.
   const localDateString = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   };
+  // Reaproveita o mesmo elemento .toast global do app; guarda o timer em uma
+  // propriedade da própria função para não criar um segundo toast concorrente.
   const notify = (message) => {
     const toast = document.querySelector('.toast');
     if (!toast) return;
@@ -51,6 +80,8 @@
     notify.timer = setTimeout(() => toast.classList.remove('show'), 2600);
   };
 
+  // Trava de tela. Não é a regra de escrita (essa é a RLS no banco): serve só
+  // para não abrir o Financeiro para quem não tem a permissão.
   function requireAccess() {
     if (permissions()?.allow('financeiro')) return true;
     if (!permissions()) setFeedback('O controle de acesso ainda está carregando. Tente novamente.', true);
@@ -62,14 +93,29 @@
     feedback.style.color = isError ? '#a0483d' : '';
   }
 
+  // Núcleo do módulo: recalcula todo o dinheiro de um evento a partir do cache
+  // local e devolve as peças que as telas exibem. É usado tanto no dashboard
+  // (soma por evento) quanto no detalhe e nas validações antes de salvar.
+  //
+  // Ordem da conta, que é a ordem em que as telas mostram:
+  //   recebido (soma dos lançamentos não estornados) - custos = resultado
+  //   operacional; sobre ele incide o dízimo; o que sobra é a base do rateio;
+  //   cada participante recebe percentual da base ou um valor fixo.
+  // O arredondamento a 2 casas em cada passo evita centavo fantasma quando o
+  // valor volta como number do Postgres.
   function financeFor(eventId) {
     const event = state.events.find((item) => item.id === eventId);
+    // Sem configuração salva ainda, assume o padrão: dízimo de 10% sobre o
+    // resultado (quando o evento tem recebimentos, é o caso mais comum).
     const setting = state.settings.get(eventId) || { tithe_mode: 'percentage', tithe_percent: 10, tithe_fixed_amount: 0 };
+    // Recebimento estornado continua no histórico, mas não conta como caixa.
     const receipts = state.receipts.filter((item) => item.event_id === eventId && !item.voided_at);
     const collected = receipts.reduce((sum, receipt) => sum + Number(receipt.amount), 0);
     const costs = state.costs.filter((item) => item.event_id === eventId);
     const costsTotal = costs.reduce((sum, cost) => sum + Number(cost.amount), 0);
     const operatingResult = collected - costsTotal;
+    // Dízimo percentual incide sobre o resultado positivo (prejuízo não gera
+    // dízimo negativo); o modo fixo usa o valor informado, independente disso.
     const tithe = setting.tithe_mode === 'fixed' ? Number(setting.tithe_fixed_amount) : Math.round(Math.max(0, operatingResult) * Number(setting.tithe_percent) / 100 * 100) / 100;
     const base = Math.max(0, operatingResult - tithe);
     const shares = state.allocations.get(eventId) || [];
@@ -77,13 +123,18 @@
     return { event, setting, receipts, costs, collected, costsTotal, operatingResult, tithe, base, shares, allocated, netProfit: operatingResult - tithe - allocated };
   }
 
+  // Eventos exibidos no dashboard: todos, ou só os do mês selecionado. O
+  // filtro mensal compara o início da string YYYY-MM-DD do evento, sem montar
+  // Date — o agrupamento é por mês civil da data do evento.
   function monthEvents() {
     if (allPeriods.checked || !monthInput.value) return state.events;
     return state.events.filter((event) => (event.event_date || '').startsWith(monthInput.value));
   }
 
+  // Monta os cartões de total do período e a lista de eventos do mês.
   function renderDashboard() {
     const events = monthEvents();
+    // Acumula os totais somando o financeFor de cada evento do filtro.
     const totals = events.reduce((acc, event) => {
       const amount = financeFor(event.id);
       acc.received += amount.collected;
@@ -116,6 +167,11 @@
     window.lucide?.createIcons();
   }
 
+  // Carrega tudo do módulo de uma vez: primeiro os eventos confirmados (o
+  // `quotes!inner` + o filtro por status garantem que só entra evento com
+  // orçamento confirmado e traz junto cliente e total do orçamento), depois as
+  // cinco tabelas do rateio em paralelo por conta própria. Ler cada uma
+  // separada é proposital: uma tabela ausente não pode derrubar a lista toda.
   async function loadFinance() {
     if (!requireAccess()) return;
     setFeedback('Carregando dados financeiros...');
@@ -182,6 +238,8 @@
     renderDashboard();
   }
 
+  // Abre o painel principal e garante um mês no filtro (o mês corrente), para
+  // a tela nunca abrir com o filtro vazio mostrando todos os eventos.
   function openFinance() {
     if (!requireAccess()) return;
     panel.hidden = false;
@@ -189,6 +247,9 @@
     loadFinance();
   }
 
+  // Desenha as linhas do rateio a partir de um array. Serve tanto para o que
+  // está salvo quanto para um rascunho (adicionar/remover participante), por
+  // isso sempre substitui todo o conteúdo em vez de fazer append.
   function renderShareRows(rows) {
     state.draftShares = rows.map((row) => ({
       ceremonialista_id: row.ceremonialista_id || null,
@@ -208,6 +269,9 @@
     window.lucide?.createIcons();
   }
 
+  // Lê o que está no DOM (e não o rascunho em memória) para montar as linhas
+  // do rateio. O usuário pode ter digitado desde o último render, e é esse
+  // valor que precisa ir para o save. Linha sem nome é descartada.
   function readDraftShares() {
     return [...shareRows.querySelectorAll('.finance-share-row')].map((row) => {
       const mode = row.querySelector('[data-share-mode]').value;
@@ -223,6 +287,11 @@
     }).filter((share) => share.participant_name);
   }
 
+  // Recalcula, a cada digitação, a prévia de cada repasse e os totais da tela
+  // do evento. Usa os valores ainda não salvos dos campos de dízimo e do
+  // rateio, para o administrador conferir antes de gravar. A base de cálculo
+  // (resultado operacional) sai do recebido atual menos os custos; o recebido
+  // fica guardado em data-amount porque o texto já está formatado como moeda.
   function updateSharePreviews() {
     const collected = Number(document.querySelector('#finance-event-received').dataset.amount || 0);
     const eventAmounts = financeFor(state.activeEventId);
@@ -270,7 +339,7 @@
       } else {
         actions = `<div class="finance-receipt-row-actions">${fromQuote
           ? '<span class="finance-deposit-tag" title="Valor do sinal do orçamento. Para mudar, use a tela de sinal do orçamento.">Sinal do orçamento</span>'
-          : `<button class="client-action" type="button" data-edit-finance-receipt="${receipt.id}" aria-label="Editar recebimento de ${label}" title="Editar"><i data-lucide="pencil"></i></button>`}<button class="client-action" type="button" data-void-receipt="${receipt.id}" aria-label="Estornar recebimento de ${label}" title="Estornar"><i data-lucide="rotate-ccw"></i></button>${fromQuote ? '' : `<button class="client-action" type="button" data-delete-finance-receipt="${receipt.id}" aria-label="Excluir recebimento de ${label}" title="Excluir"><i data-lucide="trash-2"></i></button>`}</div>`;
+          : `<button class="client-action" type="button" data-edit-finance-receipt="${receipt.id}" aria-label="Editar recebimento de ${label}" title="Editar"><i data-lucide="pencil"></i></button>`}<button class="client-action" type="button" data-duplicate="finance-receipt" data-duplicate-id="${receipt.id}" aria-label="Duplicar recebimento de ${label}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-void-receipt="${receipt.id}" aria-label="Estornar recebimento de ${label}" title="Estornar"><i data-lucide="rotate-ccw"></i></button>${fromQuote ? '' : `<button class="client-action" type="button" data-delete-finance-receipt="${receipt.id}" aria-label="Excluir recebimento de ${label}" title="Excluir"><i data-lucide="trash-2"></i></button>`}</div>`;
       }
       return `<div class="finance-receipt-row ${receipt.voided_at ? 'voided' : ''}">
       <div><strong>${label}</strong><span>${new Date(`${receipt.received_on}T12:00:00`).toLocaleDateString('pt-BR')} · ${methodLabels[receipt.payment_method] || 'Outra'}${receipt.notes ? ` · ${escapeHTML(receipt.notes)}` : ''}</span></div>
@@ -280,6 +349,8 @@
     window.lucide?.createIcons();
   }
 
+  // Custos do evento. Diferente dos recebimentos, custos são apagados de fato
+  // (não há histórico de estorno), então a lista é só o que existe hoje.
   function renderCosts(eventId) {
     const costs = state.costs.filter((cost) => cost.event_id === eventId);
     const total = costs.reduce((sum, cost) => sum + Number(cost.amount), 0);
@@ -290,10 +361,13 @@
       costsList.innerHTML = '<p class="field-hint">Ainda não há custos registrados para este evento.</p>';
       return;
     }
-    costsList.innerHTML = costs.map((cost) => `<div class="finance-cost-row"><div><strong>${escapeHTML(cost.name)}</strong><span>${new Date(`${cost.incurred_on}T12:00:00`).toLocaleDateString('pt-BR')}${cost.notes ? ` · ${escapeHTML(cost.notes)}` : ''}</span></div><strong class="finance-cost-amount">${formatMoney(cost.amount)}</strong><div class="finance-cost-row-actions"><button class="client-action" type="button" data-edit-finance-cost="${cost.id}" aria-label="Editar custo ${escapeHTML(cost.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-finance-cost="${cost.id}" aria-label="Excluir custo ${escapeHTML(cost.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></div>`).join('');
+    costsList.innerHTML = costs.map((cost) => `<div class="finance-cost-row"><div><strong>${escapeHTML(cost.name)}</strong><span>${new Date(`${cost.incurred_on}T12:00:00`).toLocaleDateString('pt-BR')}${cost.notes ? ` · ${escapeHTML(cost.notes)}` : ''}</span></div><strong class="finance-cost-amount">${formatMoney(cost.amount)}</strong><div class="finance-cost-row-actions"><button class="client-action" type="button" data-edit-finance-cost="${cost.id}" aria-label="Editar custo ${escapeHTML(cost.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="finance-cost" data-duplicate-id="${cost.id}" aria-label="Duplicar custo ${escapeHTML(cost.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-finance-cost="${cost.id}" aria-label="Excluir custo ${escapeHTML(cost.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></div>`).join('');
     window.lucide?.createIcons();
   }
 
+  // Cada formulário tem dois modos: cadastrar (id oculto vazio) e editar
+  // (id preenchido). O reset volta ao modo cadastrar e já preenche a data com
+  // hoje, para o campo mais usado não exigir digitação.
   function resetCostForm() {
     costForm.reset();
     document.querySelector('#finance-cost-id').value = '';
@@ -312,6 +386,9 @@
     receiptFeedback.textContent = '';
   }
 
+  // Preenche o formulário com um recebimento existente. O sinal do orçamento é
+  // recusado aqui: ele tem uma ponta no Orçamento e editar só deste lado
+  // deixaria as duas telas discordando do mesmo valor.
   function editReceipt(receiptId) {
     const receipt = state.receipts.find((item) => item.id === receiptId);
     if (!receipt) return;
@@ -329,6 +406,7 @@
     receiptFeedback.textContent = '';
   }
 
+  // Preenche o formulário de custo com um registro existente (modo edição).
   function editCost(costId) {
     const cost = state.costs.find((item) => item.id === costId);
     if (!cost) return;
@@ -341,6 +419,35 @@
     document.querySelector('[data-cancel-finance-cost]').hidden = false;
   }
 
+  // Duplicação de recebimento. O reset já deixa o formulário no modo criação
+  // (id oculto vazio, botão de cancelar escondido); aqui só os campos do
+  // original entram. O id e o vínculo com o sinal (quote_deposit_id) ficam de
+  // fora, então a cópia nasce como um recebimento manual comum.
+  function duplicateReceipt(receiptId) {
+    const receipt = state.receipts.find((item) => item.id === receiptId);
+    if (!receipt || receipt.voided_at) return;
+    resetReceiptForm();
+    document.querySelector('#finance-receipt-amount').value = receipt.amount;
+    document.querySelector('#finance-receipt-date').value = receipt.received_on;
+    document.querySelector('#finance-receipt-method').value = receipt.payment_method;
+    document.querySelector('#finance-receipt-notes').value = receipt.notes || '';
+  }
+
+  // Duplicação de custo: mesma ideia, no formulário de custo.
+  function duplicateCost(costId) {
+    const cost = state.costs.find((item) => item.id === costId);
+    if (!cost) return;
+    resetCostForm();
+    document.querySelector('#finance-cost-name').value = cost.name;
+    document.querySelector('#finance-cost-amount').value = cost.amount;
+    document.querySelector('#finance-cost-date').value = cost.incurred_on;
+    document.querySelector('#finance-cost-notes').value = cost.notes || '';
+  }
+
+  // Abre a tela interna de um evento e preenche todos os campos: cabeçalho,
+  // totais, config do dízimo, rateio, recebimentos e custos. Se o rateio ainda
+  // não existe, parte da equipe vinculada ao evento com 0% — é mais rápido que
+  // digitar nome por nome.
   function openFinanceEvent(eventId) {
     if (!requireAccess()) return;
     const event = state.events.find((item) => item.id === eventId);
@@ -367,11 +474,17 @@
     updateSharePreviews();
   }
 
+  // Salva a config do dízimo + a divisão inteira pela function
+  // save_event_finance, que no banco revalida dízimo e repasses contra o saldo
+  // (o front repete a checagem só para dar erro na hora, sem ida ao servidor).
+  // A function substitui todas as allocations do evento de uma vez.
   async function saveAllocations(event) {
     event.preventDefault();
     if (!requireAccess()) return;
     const button = allocationForm.querySelector('button[type="submit"]');
     const allocations = readDraftShares();
+    // Percentuais que somam mais de 100% estourariam a base; valor fixo não
+    // entra nesta soma porque não é percentual.
     const percentageSum = allocations.filter((share) => share.calculation_mode === 'percentage').reduce((sum, share) => sum + share.percentage, 0);
     if (percentageSum > 100) {
       allocationFeedback.textContent = 'A soma dos percentuais da equipe não pode passar de 100%.';
@@ -407,6 +520,8 @@
     openFinanceEvent(state.activeEventId);
   }
 
+  // Cria ou edita um recebimento pela function (insert direto foi revogado na
+  // migration 019). O id oculto decide o modo; o banco confere o saldo.
   async function saveReceipt(event) {
     event.preventDefault();
     if (!requireAccess()) return;
@@ -438,6 +553,9 @@
     notify(receiptId ? 'Recebimento atualizado.' : 'Recebimento registrado.');
   }
 
+  // Exclui um recebimento de verdade (não estorna). O sinal do orçamento segue
+  // bloqueado: apagá-lo só deste lado deixaria o Orçamento ainda dando o valor
+  // como pago.
   async function deleteReceipt(receiptId) {
     if (!requireAccess()) return;
     const receipt = state.receipts.find((item) => item.id === receiptId && item.event_id === state.activeEventId);
@@ -458,6 +576,9 @@
     notify('Recebimento excluído.');
   }
 
+  // Custos escrevem direto na tabela (a RLS controla o acesso); a diferença
+  // para os recebimentos é essa, por isso aqui é insert/update em vez de RPC.
+  // O id oculto decide entre criar e editar.
   async function saveCost(event) {
     event.preventDefault();
     if (!requireAccess()) return;
@@ -489,6 +610,8 @@
     notify(costId ? 'Custo atualizado.' : 'Custo registrado.');
   }
 
+  // Exclusão definitiva de custo (sem histórico). O confirm evita o clique
+  // acidental, já que não há como desfazer.
   async function deleteCost(costId) {
     if (!requireAccess() || !window.confirm('Excluir este custo do evento?')) return;
     const { error } = await sb().from('event_finance_costs').delete().eq('id', costId);
@@ -501,6 +624,10 @@
     notify('Custo excluído.');
   }
 
+  // Estorno preserva o registro (marca voided_at) em vez de apagar. Antes de
+  // estornar, simula a conta sem este recebimento: se o dízimo ou os repasses
+  // já salvos passariam do novo saldo, recusa e pede para ajustar o rateio —
+  // senão o banco recusaria depois e a mensagem seria mais confusa.
   async function voidReceipt(receiptId) {
     if (!requireAccess()) return;
     const receipt = state.receipts.find((item) => item.id === receiptId && item.event_id === state.activeEventId);
@@ -537,6 +664,12 @@
     notify(fromQuote ? 'Sinal estornado.' : 'Recebimento estornado.');
   }
 
+  // ==========================================================================
+  // Ligações de eventos
+  // ==========================================================================
+  // Os botões das listas usam delegação (um listener no container, resolvendo
+  // o alvo por closest) porque cada render troca o innerHTML das linhas: um
+  // listener preso a um botão morreria junto com a linha redesenhada.
   document.querySelector('[data-open-finance]')?.addEventListener('click', openFinance);
   document.querySelector('[data-close-finance]')?.addEventListener('click', () => { panel.hidden = true; });
   document.querySelector('[data-close-finance-event]')?.addEventListener('click', () => { eventPanel.hidden = true; });
@@ -591,6 +724,9 @@
   [titheMode, tithePercent, titheFixed].forEach((control) => control?.addEventListener('input', updateSharePreviews));
   titheMode?.addEventListener('change', updateSharePreviews);
 
+  // API exposta ao realtime.js. `reload` recarrega o cache e, se o detalhe de
+  // um evento estiver aberto, redesenha essa tela também, senão os totais
+  // ficariam velhos depois de uma alteração feita em outro aparelho.
   window.plenitudeFinance = {
     open: openFinance,
     reload: async () => {
@@ -598,5 +734,10 @@
       if (state.activeEventId && !eventPanel.hidden) openFinanceEvent(state.activeEventId);
     }
   };
+
+  // Duplicação: os handlers abrem o formulário já no modo criação preenchido.
+  // Só funcionam com o detalhe de um evento aberto (é de lá que os ids vêm).
+  window.plenitudeDuplicate?.register('finance-receipt', duplicateReceipt);
+  window.plenitudeDuplicate?.register('finance-cost', duplicateCost);
   if (monthInput && !monthInput.value) monthInput.value = localDateString().slice(0, 7);
 })();

@@ -152,6 +152,10 @@
     return false;
   }
 
+  // Espelha o acesso resolvido na tela: some com tudo que tem
+  // data-permission sem a permissão correspondente, fecha telas já abertas que
+  // perderam o acesso e mostra a identidade. Não decide nada — a decisão é do
+  // banco; aqui é só o que fica visível.
   function applyToUI() {
     document.querySelectorAll('[data-permission]').forEach((element) => {
       element.hidden = !can(element.dataset.permission);
@@ -186,6 +190,8 @@
 
   // O cabeçalho mostrava "Ana" fixo no HTML desde o começo do projeto. Agora o
   // nome vem do perfil, que é o mesmo dado que o cadastro de usuários edita.
+  // A saudação e o avatar do topo. A frase muda com a hora do dia (bom dia /
+  // boa tarde / boa noite) e o avatar usa as duas primeiras iniciais do nome.
   function applyIdentity() {
     const name = state.profile?.full_name?.trim();
     if (!name) return;
@@ -220,6 +226,9 @@
   // Carga do perfil e do catálogo
   // ==========================================================================
 
+  // Catálogo de níveis (app_roles) e o padrão de telas de cada um
+  // (app_role_permissions). Vem do banco porque o dono edita esses padrões na
+  // própria tela; nada aqui é fixo no código.
   async function loadCatalog() {
     const sb = getSupabase();
     if (!sb) return;
@@ -235,6 +244,8 @@
     }
 
     state.roles = rolesResult.data || [];
+    // Os padrões chegam como linhas soltas (role_code, permission); o Map
+    // agrupa por nível para o resto do arquivo consultar em O(1).
     state.roleDefaults = new Map();
     (defaultsResult.data || []).forEach((row) => {
       if (!state.roleDefaults.has(row.role_code)) state.roleDefaults.set(row.role_code, new Set());
@@ -335,6 +346,10 @@
     return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
   }
 
+  // Resumo que aparece embaixo do nome na lista: para owner/admin é sempre
+  // "Acesso total"; `permissions === null` significa herdar o padrão do nível
+  // (por isso o texto fala em padrão, e não em lista); caso contrário conta as
+  // telas marcadas uma a uma.
   function permissionSummary(profile) {
     if (profile.role === 'owner' || profile.role === 'admin') return 'Acesso total';
     if (profile.permissions === null) {
@@ -345,6 +360,9 @@
     return total ? `${total} ${total === 1 ? 'tela' : 'telas'}` : 'Sem telas';
   }
 
+  // Filtro é local (a lista inteira já está em memória), busca por nome,
+  // e-mail ou WhatsApp. O usuário logado leva a etiqueta "você" e o nível
+  // ganha a cor de owner/admin quando for o caso.
   function renderUsers() {
     const term = (usersSearch?.value || '').trim().toLowerCase();
     const visible = state.users.filter((profile) =>
@@ -385,6 +403,9 @@
     lucide.createIcons();
   }
 
+  // Lista de perfis cadastrados. Só quem tem a permissão 'usuarios' chega
+  // aqui — a RLS nega a leitura para os demais, então nem vale disparar a
+  // consulta sem ela.
   async function loadUsers() {
     const sb = getSupabase();
     if (!sb || !can('usuarios')) return;
@@ -441,6 +462,9 @@
   // Padrão de telas de cada nível
   // ==========================================================================
 
+  // Um <details> por nível. owner e admin aparecem só como texto (têm acesso
+  // total por definição, o padrão não se edita); os demais trazem a grade de
+  // telas marcável e o botão que grava o padrão via save_role_defaults.
   function renderRoleDefaults() {
     if (!roleDefaultsList) return;
 
@@ -522,6 +546,8 @@
   // Formulário de usuário
   // ==========================================================================
 
+  // Grade reutilizada em dois lugares: no formulário de usuário (marcável) e
+  // no padrão de cada nível (readonly quando a pessoa está em modo herança).
   function permissionGridMarkup(selectedKeys, disabled) {
     return PERMISSIONS.map((permission) => `
       <label class="menu-option permission-option">
@@ -534,6 +560,8 @@
     `).join('');
   }
 
+  // Chaves marcadas numa grade qualquer. Fica genérico porque a mesma função
+  // serve o formulário de usuário e os <details> de cada nível.
   function selectedPermissionKeys(container) {
     if (!container) return [];
     return Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
@@ -545,6 +573,9 @@
     ).join('');
   }
 
+  // Frase que explica o nível escolhido no formulário (descrição do banco +
+  // o escopo: "acesso a todas as telas" para owner/admin, senão a contagem do
+  // padrão daquele nível).
   function describeRole(code) {
     const role = state.roles.find((entry) => entry.code === code);
     if (!role) return '';
@@ -760,6 +791,9 @@
   // Inicialização
   // ==========================================================================
 
+  // Reage a login/logout. Não resolve o acesso de forma síncrona aqui: o
+  // callback do Supabase precisa retornar rápido (ver o comentário do
+  // setTimeout abaixo), então só dispara reloadAccess fora do tick.
   function bindAuth() {
     const sb = getSupabase();
     if (!sb) return;

@@ -1,7 +1,46 @@
+/* ========================================================================== */
+/* APP.JS — O NÚCLEO DO PLENITUDE REALIZAÇÕES                                 */
+/*                                                                           */
+/* Este arquivo é o coração do app e não um módulo entre vários: login,       */
+/* clientes, serviços, cardápios, categorias, estoque, orçamentos, ficha de   */
+/* detalhes, visualizador de imagem, avisos de sinal e lembretes de vencimento */
+/* vivem todos aqui. Cada tela tem seus loaders, seus renderizadores e seus    */
+/* formulários, mas todos compartilham o mesmo espelho em memória e as        */
+/* mesmas tabelas do Supabase.                                                 */
+/*                                                                           */
+/* Não há framework, build nem router: cada tela é uma <section> que aparece   */
+/* e some pelo atributo `hidden`, e o HTML é montado por template string. Por  */
+/* isso os dois motivos que mais explicam este arquivo são:                */
+/*                                                                           */
+/*   - os estados em memória (`clients`, `services`, `menus`, `quotes`...)     */
+/*     existem para o filtro e a ficha de detalhes não precisarem consultar */
+/*     o banco a cada clique;                                                    */
+/*   - quase todo campo que vem do banco é digitado por alguém e por isso     */
+/*     passa por escapeHTML antes de virar HTML.                              */
+/*                                                                           */
+/* Os módulos irmãos (alerts.js, navigation.js, realtime.js, permissions.js)  */
+/* conversam com este arquivo pela janela: window.plenitudeApp exporta os     */
+/* loaders, e window.plenitudeNav / window.plenitudeAlerts são consumidos     */
+/* aqui. O export está no fim do arquivo.                                     */
+/* ========================================================================== */
+
+// Os ícones do Lucide chegam no HTML como <i data-lucide="..."> e só viram
+// SVG depois desta chamada. Ela roda antes de qualquer coisa para que a
+// primeira pintura da tela já mostre os ícones, e não um monte de tags vazias.
+// Os renderizadores voltaram a chamar lucide.createIcons() depois de reescrever
+// um innerHTML, porque cada trecho novo nasce com os <i> sem converter.
 lucide.createIcons();
 
+// Os dias e os meses por extenso do cabeçalho. Ficam em maiúsculas aqui e não
+// por conta do CSS: o texto é montado num único lugar e quem abrir o console
+// precisa ver exatamente o que aparece na tela.
 const days = ['DOMINGO', 'SEGUNDA-FEIRA', 'TERÇA-FEIRA', 'QUARTA-FEIRA', 'QUINTA-FEIRA', 'SEXTA-FEIRA', 'SÁBADO'];
 const months = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+
+// A saudação do início mostra a data de hoje uma única vez, no carregamento.
+// Não é um relógio: ninguém fica olhando a tela inicial à meia-noite esperando
+// o "SEGUNDA-FEIRA" virar "TERÇA-FEIRA", e recarregar a data não traz nenhum
+// dado novo do banco.
 function updateWelcomeDate() {
   const now = new Date();
   const dayName = days[now.getDay()];
@@ -12,6 +51,10 @@ function updateWelcomeDate() {
 }
 updateWelcomeDate();
 
+// Modo offline. O registro espera o evento `load` para não competir com a
+// primeira renderização, e a falha é apenas um erro no console: o app
+// funciona inteiro sem service worker, então não vale derrubar o carregamento
+// por causa dele.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch((error) => {
@@ -20,6 +63,18 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+/* ========================================================================== */
+/* REFERÊNCIAS DO DOM E ESTADO EM MEMÓRIA                                      */
+/* ========================================================================== */
+
+// Sem framework, tudo é `document.querySelector`. Feito uma vez e guardado em
+// `const` funciona bem para os elementos que existem desde o carregamento e
+// nunca saem do DOM — painéis, listas, formulários, feedbacks.
+//
+// Os que nascem e morrem a cada render não podem ser fixados: por isso os
+// inputs dos formulários são buscados com `document.querySelector('#client-name')`
+// na hora de ler, e não na de cima. É a diferença entre `clientForm` (fixo) e
+// os campos dentro dele (procurados a cada uso).
 const authScreen = document.querySelector('#auth-screen');
 const appShell = document.querySelector('.app-shell');
 const loginForm = document.querySelector('#login-form');
@@ -106,12 +161,32 @@ const quoteTotalPreview = document.querySelector('#quote-total-preview');
 const quoteDepositPercentInput = document.querySelector('#quote-deposit-percent');
 const quoteValidUntilInput = document.querySelector('#quote-valid-until');
 const quoteDepositPreview = document.querySelector('#quote-deposit-preview');
+
+// O espelho em memória do que está no banco. Existe para o filtro, a ficha de
+// detalhes e os seletores de referência não fazerem uma consulta ao banco a cada
+// clique: quem abre a ficha de um cliente lê o objeto que veio junto com a
+// lista.
+//
+// O preço é que esses valores só são confiáveis depois do loader
+// correspondente rodar. Por isso `loadQuotes()` é disparado já no login e não
+// só ao abrir a tela de Orçamentos: o sino do topo precisa saber o que está
+// vencendo mesmo com a lista fechada. O mesmo vale para menus, que o orçamento,
+// a ficha de serviço e o PDF leem sem nunca chamar o próprio loader.
 let clients = [];
 let services = [];
 let menus = [];
 let menuImages = [];
 let menuCategories = [];
 let menuCategoryLinks = [];
+
+// As duas filas de imagem do cardápio. `pendingMenuImages` são os arquivos que
+// a pessoa escolheu mas que ainda não subiram: o upload só acontece no submit,
+// para não gastar banda com uma imagem que ela ainda pode remover.
+// `removedMenuImageIds` são os ids que já estavam no banco e saíram da tela: o X
+// marca, o save apaga o arquivo no storage e a linha em menu_images.
+//
+// Sem essas filas, fechar o formulário sem salvar deixaria arquivo no bucket e
+// linha no banco que ninguém está mais vendo.
 let pendingMenuImages = [];
 let removedMenuImageIds = [];
 let quotes = [];
@@ -119,9 +194,20 @@ let inventoryItems = [];
 let inventoryImages = [];
 let inventoryCategories = [];
 let inventoryCategoryLinks = [];
+
+// Mesmas duas filas, para as imagens do estoque. Não são compartilhadas com as
+// do cardápio de propósito: um item de estoque aberto enquanto um cardápio está
+// sendo editado não pode roubar a seleção de imagens do outro formulário.
 let pendingInventoryImages = [];
 let removedInventoryImageIds = [];
 
+/* ========================================================================== */
+/* AUTENTICAÇÃO                                                               */
+/* ========================================================================== */
+
+// Entra e sai da sessão. Este é o único ponto do arquivo que troca a tela de
+// login pelo app: tanto a sessão carregada no começo quanto o onAuthStateChange
+// passam por aqui, então nunca há dois lugares decidindo quem está logado.
 function setAuthenticated(isAuthenticated) {
   authScreen.hidden = isAuthenticated;
   appShell.classList.toggle('ready', isAuthenticated);
@@ -142,6 +228,10 @@ function setAuthenticated(isAuthenticated) {
   }
 }
 
+// A mensagem de erro do login. Ela também devolve os dois botões ao estado
+// inicial: eles são desabilitados enquanto a chamada está no ar, e sem desfazer
+// isso aqui uma senha errada deixaria a tela travada num botão morto em vez de
+// devolver a pessoa para tentar de novo.
 function showLoginError(message) {
   loginFeedback.textContent = message;
   loginButton.disabled = false;
@@ -238,6 +328,10 @@ supabaseClient.auth.onAuthStateChange((_event, session) => {
   setAuthenticated(Boolean(session));
 });
 
+// Login por e-mail e senha. O formulário é preventDefault porque o app trata a
+// sessão sozinho: quem autentica é o onAuthStateChange acima, que é quem troca
+// a tela. O botão volta ao normal antes do return para o caso de o erro estar
+// no `showLoginError` acima — ali quem o destrava é o próprio showLoginError.
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   loginFeedback.textContent = '';
@@ -260,6 +354,9 @@ loginForm.addEventListener('submit', async (event) => {
   loginButton.querySelector('span').textContent = 'Entrar no backoffice';
 });
 
+// Sair da sessão. O logout é desenhado para o caso feliz: quando dá erro o
+// botão não muda de estado, a sessão continua valendo e o app segue como estava,
+// que é melhor do que fingir que saiu.
 logoutButton.addEventListener('click', async () => {
   const { error } = await supabaseClient.auth.signOut();
   if (error) showToast('Não foi possível sair');
@@ -275,15 +372,31 @@ function permitir(permission) {
   return access.allow(permission);
 }
 
+/* ========================================================================== */
+/* AJUDANTES COMPARTILHADOS                                                   */
+/* ========================================================================== */
+
+// A linha de feedback de cada tela: um status ("12 clientes cadastrados") ou um
+// erro. O erro é só uma cor vermelha e não um toast, porque o texto precisa
+// ficar ali depois que a pessoa tira o dedo da tela — um toast some antes de ser
+// lido.
 function setClientFeedback(message, isError = false) {
   clientFeedback.textContent = message;
   clientFeedback.style.color = isError ? '#a0483d' : '';
 }
 
+// A bolinha colorida da lista: a inicial do nome. O `|| '?'` cobre o cliente
+// sem nome preenchido, que a RLS não impede — o campo é obrigatório só no
+// formulário, e o banco aceita linha sem ele.
 function clientInitial(name) {
   return name.trim().charAt(0).toUpperCase() || '?';
 }
 
+// Quase todo o HTML deste arquivo é montado por template string, inclusive com
+// o que alguém digitou (nome do cliente, observação, nome do cardápio,
+// descrição do serviço). Sem escapar, um `<script>` no campo de nome viraria
+// HTML executado dentro do app. Todo campo vindo do banco passa por aqui antes
+// de entrar em um innerHTML.
 function escapeHTML(value) {
   return String(value || '').replace(/[&<>'"]/g, (character) => ({
     '&': '&amp;',
@@ -294,11 +407,21 @@ function escapeHTML(value) {
   }[character]));
 }
 
+// O link do WhatsApp só funciona com o número no formato internacional, e o
+// cadastro guarda o que a pessoa digitou. O 55 é assumido porque o app só
+// atende o Brasil; quem já digitou com o 55 escrito não ganha um 5555.
 function whatsappNumber(value) {
   const digits = String(value || '').replace(/\D/g, '');
   return digits ? (digits.startsWith('55') ? digits : `55${digits}`) : '';
 }
 
+/* ========================================================================== */
+/* CLIENTES                                                                   */
+/* O filtro roda no navegador, e não no banco: a lista inteira já está em      */
+/* memória e o volume cabe sem paginação. Cada linha recebe `detail-trigger`,  */
+/* que é o atributo que o clique delegado do fim do arquivo lê para abrir a     */
+/* ficha de detalhes.                                                          */
+/* ========================================================================== */
 function renderClients() {
   const searchTerm = clientSearch.value.trim().toLowerCase();
   const visibleClients = clients.filter((client) => [client.name, client.whatsapp, client.email].some((value) => (value || '').toLowerCase().includes(searchTerm)));
@@ -317,6 +440,7 @@ function renderClients() {
       </div>
       <div class="client-actions">
         <button class="client-action" type="button" data-edit-client="${client.id}" aria-label="Editar ${client.name}" title="Editar"><i data-lucide="pencil"></i></button>
+        <button class="client-action" type="button" data-duplicate="client" data-duplicate-id="${client.id}" aria-label="Duplicar ${escapeHTML(client.name)}" title="Duplicar"><i data-lucide="copy"></i></button>
         ${client.whatsapp ? `<button class="client-action whatsapp-action" type="button" data-whatsapp="${whatsappNumber(client.whatsapp)}" aria-label="Abrir WhatsApp de ${escapeHTML(client.name)}" title="WhatsApp"><i data-lucide="message-circle"></i></button>` : ''}
         <button class="client-action" type="button" data-delete-client="${client.id}" aria-label="Excluir ${client.name}" title="Excluir"><i data-lucide="trash-2"></i></button>
       </div>
@@ -325,6 +449,9 @@ function renderClients() {
   lucide.createIcons();
 }
 
+// Recarrega a lista do banco. Em caso de erro a lista é esvaziada em vez de ficar
+// com o conteúdo antigo: depois de uma falha, mostrar o que estava lá antes é
+// pior do que mostrar a tela vazia com o aviso do lado.
 async function loadClients() {
   setClientFeedback('Carregando clientes...');
   const { data, error } = await supabaseClient.from('clients').select('id, name, whatsapp, email, notes, created_at').order('name');
@@ -345,6 +472,9 @@ function openClients() {
   loadClients();
 }
 
+// Abre a tela ou o formulário vazio ou preenchido. O `reset()` vem antes
+// porque é ele que limpa o campo #client-id: sem ele, um "editar" seguido de um
+// "novo" abriria o segundo formulário editando o cliente anterior.
 function openClientForm(client = null) {
   clientForm.reset();
   document.querySelector('#client-id').value = client?.id || '';
@@ -352,17 +482,27 @@ function openClientForm(client = null) {
   document.querySelector('#client-whatsapp').value = client?.whatsapp || '';
   document.querySelector('#client-email').value = client?.email || '';
   document.querySelector('#client-notes').value = client?.notes || '';
-  clientFormTitle.textContent = client ? 'Editar cliente' : 'Novo cliente';
+  clientFormTitle.textContent = client?.id ? 'Editar cliente' : 'Novo cliente';
   clientFormFeedback.textContent = '';
   clientFormPanel.hidden = false;
 }
 
+// Os botões que abrem e fecham telas são procurados por atributo, e não por id:
+// o mesmo botão aparece em mais de um lugar — o menu lateral, os cards do início
+// e a faixa do topo — e nenhum deles pode ficar sem listener por causa de outro
+// ter sido escolhido.
 document.querySelectorAll('[data-open-clients]').forEach((button) => button.addEventListener('click', openClients));
 document.querySelectorAll('[data-close-clients]').forEach((button) => button.addEventListener('click', () => { clientPanel.hidden = true; }));
 document.querySelectorAll('[data-new-client]').forEach((button) => button.addEventListener('click', () => openClientForm()));
 document.querySelectorAll('[data-close-client-form]').forEach((button) => button.addEventListener('click', () => { clientFormPanel.hidden = true; }));
 clientSearch.addEventListener('input', renderClients);
 
+// Salvar o cliente. O mesmo formulário serve para os dois casos e o que decide
+// é o #client-id: vazio é insert, preenchido é update.
+//
+// Campo em branco vai como null e não como string vazia: no Postgres a
+// diferença aparece no filtro, no botão do WhatsApp da lista e no PDF, que
+// verificam se o contato existe antes de usá-lo.
 clientForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = clientForm.querySelector('button[type="submit"]');
@@ -395,6 +535,12 @@ clientForm.addEventListener('submit', async (event) => {
   showToast(clientId ? 'Cliente atualizado' : 'Cliente cadastrado');
 });
 
+// Um listener só para a lista inteira, apesar de os botões nascerem a cada
+// render: eles são procurados no alvo do clique, então um cliente que acabou de
+// carregar já funciona sem nada ser ligado de novo.
+//
+// O botão do WhatsApp vem antes dos outros porque ele não tem um data-* próprio
+// e usa o atributo com o número já normalizado.
 clientList.addEventListener('click', async (event) => {
   const editButton = event.target.closest('[data-edit-client]');
   const deleteButton = event.target.closest('[data-delete-client]');
@@ -425,10 +571,23 @@ function setServiceFeedback(message, isError = false) {
   serviceFeedback.style.color = isError ? '#a0483d' : '';
 }
 
+/* ========================================================================== */
+/* SERVIÇOS                                                                   */
+/* ========================================================================== */
+
+// Dinheiro no formato pt-BR. O Number() cobre o caso do Postgres devolver
+// `numeric` como string: sem ele o toLocaleString receberia texto e a máscara
+// sairia com o valor bruto no meio.
 function formatCurrency(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+// Filtros da tela de serviços: a busca e o cardápio. Eles se combinam por
+// E: escolher um cardápio mostra só os serviços que participam dele, e a busca
+// continua valendo em cima desse resultado.
+//
+// Desativar um serviço não o remove da lista. Serviços inativos ainda aparecem
+// porque eles continuam citados em orçamentos antigos e no cardápio do PDF.
 function renderServices() {
   const searchTerm = serviceSearch.value.trim().toLowerCase();
   const selectedMenuId = serviceMenuFilter.value;
@@ -458,6 +617,7 @@ function renderServices() {
       <div class="client-actions">
         <button class="client-action service-toggle" type="button" data-toggle-service="${service.id}" aria-label="${service.active ? 'Desativar' : 'Ativar'} ${escapeHTML(service.name)}" title="${service.active ? 'Desativar' : 'Ativar'}">${service.active ? 'Desativar' : 'Ativar'}</button>
         <button class="client-action" type="button" data-edit-service="${service.id}" aria-label="Editar ${escapeHTML(service.name)}" title="Editar"><i data-lucide="pencil"></i></button>
+        <button class="client-action" type="button" data-duplicate="service" data-duplicate-id="${service.id}" aria-label="Duplicar ${escapeHTML(service.name)}" title="Duplicar"><i data-lucide="copy"></i></button>
         <button class="client-action" type="button" data-delete-service="${service.id}" aria-label="Excluir ${escapeHTML(service.name)}" title="Excluir"><i data-lucide="trash-2"></i></button>
       </div>
     </article>
@@ -465,6 +625,11 @@ function renderServices() {
   lucide.createIcons();
 }
 
+// Além da lista, este loader refaz os vínculos cardápio <-> serviço e, se a
+// tela de cardápios estiver aberta, redesenha ela também: o nome do serviço
+// aparece nos cards de cardápio, e salvar ou renomear um serviço muda esse nome.
+// Sem isso, alguém deixaria a tela de cardápios aberta em uma aba e o serviço
+// novo em outra sem nunca ver o resultado.
 async function loadServices() {
   setServiceFeedback('Carregando serviços...');
   const { data, error } = await supabaseClient.from('services').select('id, name, description, category, default_price, active, is_ceremonial, created_at').order('name');
@@ -536,6 +701,10 @@ function hydrateMenuServiceLinks() {
   }));
 }
 
+// Cardápios e serviços carregam juntos porque nenhum dos dois sabe o nome do
+// outro sem o vínculo, e a tela de serviços já abre com o filtro de cardápios
+// montado — um deles esperando o outro deixaria a lista sem filtro uma fração
+// de segundo.
 function openServices() {
   if (!permitir('servicos')) return;
   servicePanel.hidden = false;
@@ -629,13 +798,21 @@ async function openServiceForm(service = null) {
   document.querySelector('#service-description').value = service?.description || '';
   document.querySelector('#service-active').checked = service?.active ?? true;
   document.querySelector('#service-is-ceremonial').checked = service?.is_ceremonial ?? false;
-  serviceFormTitle.textContent = service ? 'Editar serviço' : 'Novo serviço';
+  serviceFormTitle.textContent = service?.id ? 'Editar serviço' : 'Novo serviço';
   serviceFormFeedback.textContent = '';
   serviceFormPanel.hidden = false;
   await Promise.all([loadMenus(), loadServices()]);
-  serviceMenusBefore = service ? menus.filter((menu) => menu.serviceIds.includes(service.id)).map((menu) => menu.id) : [];
+  // O estado anterior dos vínculos é fotografado aqui, antes de renderizar, e é
+  // ele que permite distinguir na hora de salvar entre "o vínculo já existia" e
+  // "a pessoa acabou de marcar": sem isso, todo save tentaria reinserir as
+  // linhas que já estavam em menu_services e bateria na chave única.
+  serviceMenusBefore = service?.id ? menus.filter((menu) => menu.serviceIds.includes(service.id)).map((menu) => menu.id) : [];
   renderServiceMenuOptions(service?.id || '');
-  serviceMenuCreate.hidden = !service;
+  // Criar um cardápio de dentro do serviço já o marca no cardápio novo: o
+  // `presetServiceId` acima evita que a pessoa tenha de marcar de novo. Num
+  // serviço novo o botão some, porque o serviço ainda nem tem id no banco para
+  // ser gravado como vínculo.
+  serviceMenuCreate.hidden = !service?.id;
 }
 
 document.querySelectorAll('[data-open-services]').forEach((button) => button.addEventListener('click', openServices));
@@ -645,6 +822,10 @@ document.querySelectorAll('[data-close-service-form]').forEach((button) => butto
 serviceSearch.addEventListener('input', renderServices);
 serviceMenuFilter.addEventListener('change', renderServices);
 
+// Salvamento do serviço. O `.select('id').single()` no insert e no update existe
+// porque o formulário precisa do id gravado antes de mexer em menu_services —
+// e porque, se a RLS negar o insert, vem `error` sem `data`, o que o bloco
+// abaixo trata separadamente.
 serviceForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = serviceForm.querySelector('button[type="submit"]');
@@ -719,6 +900,10 @@ serviceForm.addEventListener('submit', async (event) => {
   showToast(serviceId ? 'Serviço atualizado' : 'Serviço cadastrado');
 });
 
+// Ações da linha: editar, ativar/desativar e excluir. Desativar é um UPDATE de
+// uma coluna e não uma tela de edição, porque é a decisão que se toma todos os
+// dias e a mais rápida de desfazer. Excluir leva junto os vínculos em
+// menu_services, por causa do ON DELETE CASCADE no banco.
 serviceList.addEventListener('click', async (event) => {
   const editButton = event.target.closest('[data-edit-service]');
   const deleteButton = event.target.closest('[data-delete-service]');
@@ -751,6 +936,15 @@ serviceList.addEventListener('click', async (event) => {
   }
 });
 
+/* ========================================================================== */
+/* CARDÁPIOS E CATEGORIAS                                                      */
+/* Cardápio e serviço se ligam por uma tabela N:N (menu_services), e cardápio   */
+/* e categoria também (menu_category_links). Nenhuma das duas junções vira      */
+/* consulta aninhada do Supabase: as tabelas de vínculo são carregadas inteiras */
+/* e a montagem acontece no navegador, em hydrateMenuServiceLinks e            */
+/* renderMenus. O mesmo desenho vale para o estoque, com                         */
+/* inventory_category_links.                                                    */
+/* ========================================================================== */
 function setMenuFeedback(message, isError = false) {
   menuFeedback.textContent = message;
   menuFeedback.style.color = isError ? '#a0483d' : '';
@@ -761,6 +955,10 @@ function setCategoryFeedback(message, isError = false) {
   categoryFeedback.style.color = isError ? '#a0483d' : '';
 }
 
+// A lista de categorias. O número de cardápios vem do vínculo e não de um
+// contador guardado na categoria: um cardápio pode estar em duas categorias ao
+// mesmo tempo, e é o vínculo que diz quantos são — o mesmo critério do filtro da
+// tela de cardápios.
 function renderCategories() {
   if (!menuCategories.length) {
     categoryList.innerHTML = '<div class="empty-clients">Ainda não há categorias cadastradas.</div>';
@@ -768,17 +966,22 @@ function renderCategories() {
   }
   categoryList.innerHTML = menuCategories.map((category) => {
     const menuCount = menuCategoryLinks.filter((link) => link.category_id === category.id).length;
-    return `<article class="client-row detail-trigger" data-detail-type="category" data-detail-id="${category.id}"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${menuCount} ${menuCount === 1 ? 'cardápio' : 'cardápios'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+    return `<article class="client-row detail-trigger" data-detail-type="category" data-detail-id="${category.id}"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${menuCount} ${menuCount === 1 ? 'cardápio' : 'cardápios'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="menu-category" data-duplicate-id="${category.id}" aria-label="Duplicar ${escapeHTML(category.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
   }).join('');
   lucide.createIcons();
 }
 
+// Recria o filtro de cardápios da tela de serviços. A seleção anterior só
+// sobrevive se o cardápio escolhido ainda existir: excluir um cardápio em outra
+// aba deixaria a lista vazia sem explicação se o id fosse mantido.
 function renderMenuFilter() {
   const selectedValue = serviceMenuFilter.value;
   serviceMenuFilter.innerHTML = '<option value="">Todos os cardápios</option>' + menus.map((menu) => `<option value="${menu.id}">${escapeHTML(menu.name)}</option>`).join('');
   serviceMenuFilter.value = menus.some((menu) => menu.id === selectedValue) ? selectedValue : '';
 }
 
+// O filtro de categoria da tela de cardápios, com o mesmo cuidado de preservar
+// a seleção do filtro de cardápios acima.
 function renderMenuCategoryFilter() {
   const selectedValue = menuCategoryFilter.value;
   menuCategoryFilter.innerHTML = '<option value="">Todas as categorias</option>' + menuCategories.map((category) => `<option value="${category.id}">${escapeHTML(category.name)}</option>`).join('');
@@ -786,12 +989,20 @@ function renderMenuCategoryFilter() {
 }
 
 function renderMenus() {
+  // O filtro é aplicado antes do agrupamento, e não depois: a categoria escolhida
+  // tem que decidir quais cardápios existem antes de eles serem distribuídos
+  // nos blocos, ou apareceria um bloco vazio com nome de categoria.
   const selectedCategoryId = menuCategoryFilter.value;
   const visibleMenus = menus.filter((menu) => !selectedCategoryId || menuCategoryLinks.some((link) => link.menu_id === menu.id && link.category_id === selectedCategoryId));
   if (!visibleMenus.length) {
     menuList.innerHTML = '<div class="empty-clients">Ainda não há cardápios cadastrados.</div>';
     return;
   }
+// O card do cardápio. A primeira imagem (a de menor sort_order) é a capa e as
+  // seguintes viram miniaturas. O limite de quatro mantém o card com a mesma
+  // altura mesmo com vinte fotos enviadas, e o placeholder reserva o mesmo
+  // espaço quando não há imagem nenhuma — sem isso a grade quebraria a cada
+  // cardápio sem foto.
   const card = (menu) => {
     const images = menuImages.filter((image) => image.menu_id === menu.id).slice(0, 4);
     const heroImage = images[0]?.public_url;
@@ -800,7 +1011,7 @@ function renderMenus() {
       <div class="visual-card-body"><div class="visual-card-heading"><div><strong>${escapeHTML(menu.name)}</strong><span>${escapeHTML(menu.description || 'Sem descrição')}</span></div><span class="service-status${menu.active ? '' : ' inactive'}">${menu.active ? 'Ativo' : 'Inativo'}</span></div>
         <div class="visual-card-meta"><span class="menu-owner">${menu.serviceNames.length ? escapeHTML(menu.serviceNames.join(' · ')) : 'Sem serviço vinculado'}</span>${images.length > 1 ? `<span>${images.length} imagens</span>` : ''}</div>
         ${images.length > 1 ? `<div class="visual-card-thumbs">${images.slice(1).map((image) => `<button type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ver imagem do cardápio"><img src="${escapeHTML(image.public_url)}" alt="" /></button>`).join('')}</div>` : ''}
-        <div class="visual-card-actions"><button class="client-action" type="button" data-edit-menu="${menu.id}" aria-label="Editar ${escapeHTML(menu.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-menu="${menu.id}" aria-label="Excluir ${escapeHTML(menu.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div>
+        <div class="visual-card-actions"><button class="client-action" type="button" data-edit-menu="${menu.id}" aria-label="Editar ${escapeHTML(menu.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="menu" data-duplicate-id="${menu.id}" aria-label="Duplicar ${escapeHTML(menu.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-menu="${menu.id}" aria-label="Excluir ${escapeHTML(menu.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div>
       </div>
     </article>`;
   };
@@ -821,6 +1032,11 @@ function renderMenus() {
 }
 
 async function loadMenus() {
+  // O formulário pode estar aberto e visível quando este loader roda: o
+  // realtime de outro usuário chega aqui, e abrir a tela de serviços também
+  // carrega cardápios. O que está marcado é lido do DOM antes de re-renderizar
+  // qualquer coisa, para ser devolvido marcado depois — sem isso, salvar um
+  // serviço derrubaria as seleções de quem estava preenchendo o formulário.
   const selectedCategoryIds = !menuFormPanel.hidden ? [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value) : [];
   const openMenuId = !menuFormPanel.hidden ? document.querySelector('#menu-id').value || null : null;
   const checkedServiceIds = !menuFormPanel.hidden ? [...menuServiceOptions.querySelectorAll('input:checked')].map((input) => input.value) : [];
@@ -832,10 +1048,17 @@ async function loadMenus() {
     supabaseClient.from('menu_categories').select('id, name').order('name'),
     supabaseClient.from('menu_category_links').select('menu_id, category_id')
   ]);
+  // Só a falha em `menus` interrompe o carregamento. As outras respostas viram
+  // lista vazia, o que degrada a tela em vez de impedi-la de abrir: imagens e
+  // categorias vêm de migrações separadas (003 e seguintes) e um projeto que não
+  // rodou tudo ainda precisa deixar o usuário cadastrar cardápios.
   if (menusResult.error) {
     setMenuFeedback(`Não foi possível carregar os cardápios: ${menusResult.error.message}`, true);
     return;
   }
+  // serviceIdsByMenu achata menu_services em id do cardápio -> lista de
+  // serviços, que é a forma que o resto do arquivo consome. O menu em si
+  // continua vindo da consulta de `menus`, sem a coluna de vínculo.
   const serviceIdsByMenu = new Map();
   (linksResult.data || []).forEach((link) => {
     if (!serviceIdsByMenu.has(link.menu_id)) serviceIdsByMenu.set(link.menu_id, []);
@@ -858,12 +1081,18 @@ async function loadMenus() {
   if (!serviceFormPanel.hidden) renderServiceMenuOptions(document.querySelector('#service-id').value);
 }
 
+// Cardápios e serviços juntos: o card de cardápio mostra o nome dos serviços que
+// o usam, e o serviço mostra os cardápios que o acompanham. Um sem o outro
+// deixaria a tela com metade da informação.
 function openMenus() {
   if (!permitir('cardapios')) return;
   menuPanel.hidden = false;
   Promise.all([loadMenus(), loadServices()]);
 }
 
+// O checkbox de serviços dentro do cardápio. O nome do serviço é um segundo
+// <label> ligado ao mesmo input, e não um <span>: clicar no nome marca o serviço
+// também, que é o que se espera num formulário.
 function renderMenuServiceOptions(selectedServiceIds = []) {
   if (!services.length) {
     menuServiceOptions.innerHTML = '<span class="field-hint">Cadastre um serviço primeiro.</span>';
@@ -881,6 +1110,10 @@ menuServiceOptions.addEventListener('change', (event) => {
   if (checkbox) checkbox.closest('.service-menu-option').classList.toggle('selected', checkbox.checked);
 });
 
+// Abrir o formulário zera as duas filas de imagem. São rascunhos do formulário
+// anterior, e sem o reset a próxima edição começaria com arquivos marcados para
+// apagar que já não estavam na tela — e o save apagaria imagens do cardápio
+// errado.
 async function openMenuForm(menu = null, presetServiceId = '') {
   menuForm.reset();
   pendingMenuImages = [];
@@ -889,15 +1122,17 @@ async function openMenuForm(menu = null, presetServiceId = '') {
   document.querySelector('#menu-name').value = menu?.name || '';
   document.querySelector('#menu-description').value = menu?.description || '';
   document.querySelector('#menu-active').checked = menu?.active ?? true;
-  menuFormTitle.textContent = menu ? 'Editar cardápio' : 'Novo cardápio';
+  menuFormTitle.textContent = menu?.id ? 'Editar cardápio' : 'Novo cardápio';
   menuFormFeedback.textContent = '';
   menuFormPanel.hidden = false;
   await Promise.all([loadServices(), loadMenus()]);
-  renderMenuServiceOptions(menu ? menu.serviceIds : (presetServiceId ? [presetServiceId] : []));
-  renderMenuCategoryOptions(menu ? menuCategoryLinks.filter((link) => link.menu_id === menu.id).map((link) => link.category_id) : []);
+  renderMenuServiceOptions(menu?.id ? menu.serviceIds : (presetServiceId ? [presetServiceId] : []));
+  renderMenuCategoryOptions(menu?.id ? menuCategoryLinks.filter((link) => link.menu_id === menu.id).map((link) => link.category_id) : []);
   renderMenuImagePreviews(menu?.id || null);
 }
 
+// Os botões de abrir cardápio pelo serviço. `data-new-menu-from-service` é
+// outro botão, ligado logo abaixo com o id do serviço já preenchido.
 document.querySelectorAll('[data-open-menus]').forEach((button) => button.addEventListener('click', openMenus));
 document.querySelectorAll('[data-close-menus]').forEach((button) => button.addEventListener('click', () => { fecharPainelDeApoio(menuPanel); }));
 document.querySelectorAll('[data-new-menu]').forEach((button) => button.addEventListener('click', () => openMenuForm()));
@@ -916,6 +1151,10 @@ document.querySelector('[data-open-categories]').addEventListener('click', () =>
 /* Reúne as telas de apoio que antes só eram acessadas por ícones pequenos    */
 /* dentro de outros módulos.                                                  */
 /* ========================================================================== */
+// Abrir Configurações. A tela é um índice de atalhos, não um painel de opções:
+// quase tudo o que ela mostra também existe como botão em outra tela. O que ela
+// guarda de verdade é o acesso a categorias, que não têm botão próprio nas
+// telas de cardápio e estoque.
 function openSettings() {
   if (!permitir('configuracoes')) return;
   settingsPanel.hidden = false;
@@ -929,6 +1168,9 @@ function fecharPainelDeApoio(panel) {
   panel.hidden = true;
 }
 
+// `cover` antes de esconder: o navigation.js precisa saber que Configurações
+// continua na pilha mesmo escondida, senão fechar a tela de apoio pulava direto
+// para o início em vez de voltar para o índice.
 function abrirDeConfiguracoes(destino) {
   // As telas de apoio têm permissão própria: quem abre Configurações nem
   // sempre pode abrir o que está dentro dela.
@@ -949,6 +1191,9 @@ document.querySelectorAll('[data-open-settings]').forEach((button) => button.add
 document.querySelectorAll('[data-close-settings]').forEach((button) => button.addEventListener('click', () => {
   settingsPanel.hidden = true;
 }));
+// Clicar fora do painel fecha, como o X. Um listener só para o painel inteiro
+// porque os itens são procurados por atributo: a lista é curta e vive no HTML,
+// mas os itens crescem conforme as telas de apoio entram no índice.
 settingsPanel.addEventListener('click', (event) => {
   if (event.target === settingsPanel) { settingsPanel.hidden = true; return; }
   const item = event.target.closest('[data-settings-goto]');
@@ -962,6 +1207,9 @@ function setInventoryCategoryFeedback(message, isError = false) {
   inventoryCategoryFeedback.style.color = isError ? '#a0483d' : '';
 }
 
+// Categorias do estoque: a mesma ideia das de cardápio, com as mesmas duas
+// tabelas (inventory_categories e inventory_category_links) e o mesmo painel de
+// prompt/confirm. Ficam em funções próprias porque os dados são outros.
 async function loadInventoryCategories() {
   const [categoriesResult, linksResult] = await Promise.all([
     supabaseClient.from('inventory_categories').select('id, name').order('name'),
@@ -976,6 +1224,9 @@ async function loadInventoryCategories() {
   renderInventoryCategories();
 }
 
+// A lista de categorias do estoque. Sem `detail-trigger` aqui, ao contrário do
+// painel de cardápios: não existe ficha de categoria de item, e o clique na
+// linha não abre nada.
 function renderInventoryCategories() {
   if (!inventoryCategories.length) {
     inventoryCategoryList.innerHTML = '<div class="empty-clients">Ainda não há categorias cadastradas.</div>';
@@ -983,11 +1234,14 @@ function renderInventoryCategories() {
   }
   inventoryCategoryList.innerHTML = inventoryCategories.map((category) => {
     const itemCount = inventoryCategoryLinks.filter((link) => link.category_id === category.id).length;
-    return `<article class="client-row"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${itemCount} ${itemCount === 1 ? 'item' : 'itens'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-inventory-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-inventory-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+    return `<article class="client-row"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${itemCount} ${itemCount === 1 ? 'item' : 'itens'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-inventory-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="inventory-category" data-duplicate-id="${category.id}" aria-label="Duplicar ${escapeHTML(category.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-inventory-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
   }).join('');
   lucide.createIcons();
 }
 
+// Criar e editar categoria de estoque recarrega o estoque junto com o painel de
+// categorias: o filtro de categoria da tela de estoque é montado a partir daqui,
+// e ele ficaria sem a categoria que acabou de ser criada.
 async function createInventoryCategory() {
   const name = window.prompt('Nome da nova categoria:');
   if (!name?.trim()) return;
@@ -1036,6 +1290,11 @@ inventoryCategoryList.addEventListener('click', async (event) => {
 });
 document.querySelector('[data-close-categories]').addEventListener('click', () => { fecharPainelDeApoio(categoryPanel); });
 
+// Salvamento do cardápio, e a ordem importa: primeiro a linha em `menus`,
+// depois os vínculos de serviço, depois os de categoria e só no fim as imagens.
+// Cada etapa fala o que conseguiu fazer — "cardápio salvo, mas não foi possível
+// atualizar os serviços" — porque interromper no meio devolveria a pessoa ao
+// formulário com o cardápio já gravado e ela tentaria de novo, duplicando.
 menuForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = menuForm.querySelector('button[type="submit"]');
@@ -1094,6 +1353,11 @@ menuForm.addEventListener('submit', async (event) => {
       return;
     }
   }
+  // As imagens são o último passo de propósito: o cardápio e os dois vínculos já
+  // estão gravados, então uma falha de upload avisa sem deixar o cardápio sem
+  // existir. Remover imagem é apagar o arquivo no bucket e a linha em
+  // menu_images, nessa ordem — o storage vai primeiro porque arquivo sobrando
+  // sem linha apontando para ele é o tipo de pendência que ninguém vai perceber.
   if (removedMenuImageIds.length) {
     const removedImages = menuImages.filter((image) => removedMenuImageIds.includes(image.id));
     await supabaseClient.storage.from('menu-images').remove(removedImages.map((image) => image.storage_path));
@@ -1103,8 +1367,14 @@ menuForm.addEventListener('submit', async (event) => {
     const uploadedImages = [];
     for (const [index, file] of pendingMenuImages.entries()) {
       const extension = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      // O nome do arquivo no storage é o id do cardápio + um UUID: o id mantém as
+      // imagens de um cardápio juntas dentro do bucket e o UUID garante que duas
+      // imagens com o mesmo nome de arquivo não se sobrescrevam.
       const storagePath = `${savedMenuId}/${crypto.randomUUID()}.${extension}`;
       const { error: uploadError } = await supabaseClient.storage.from('menu-images').upload(storagePath, file, { contentType: file.type, upsert: false });
+      // Uma imagem que falha não cancela as outras: o `continue` mantém o envio das
+      // restantes e o aviso no fim diz que uma não pôde ser enviada. O resto do
+      // cardápio já está salvo, então a pessoa pode reenviar só a que faltou.
       if (uploadError) {
         menuFormFeedback.textContent = 'Cardápio salvo, mas uma imagem não pôde ser enviada.';
         continue;
@@ -1143,6 +1413,8 @@ menuList.addEventListener('click', async (event) => {
   }
 });
 
+// As caixas de categoria dentro do formulário. Cada uma é um <label> ligado ao
+// próprio input, para que clicar no nome da categoria marque junto.
 function renderMenuCategoryOptions(selectedCategoryIds = []) {
   if (!menuCategories.length) {
     menuCategoryOptions.innerHTML = '<span class="field-hint">Adicione categorias para organizar este cardápio.</span>';
@@ -1151,6 +1423,11 @@ function renderMenuCategoryOptions(selectedCategoryIds = []) {
   menuCategoryOptions.innerHTML = menuCategories.map((category) => `<label class="category-option" for="menu-category-${category.id}"><input id="menu-category-${category.id}" type="checkbox" value="${category.id}" ${selectedCategoryIds.includes(category.id) ? 'checked' : ''} /><span>${escapeHTML(category.name)}</span></label>`).join('');
 }
 
+// A prévia mostra o que está no banco e o que está na fila lado a lado: quem
+// abre o formulário precisa ver o resultado final, não o que já foi salvo. As
+// imagens marcadas para remover somem da lista mas continuam no array até o
+// save — por isso o filtro de `removedMenuImageIds` acontece aqui e não no
+// carregamento.
 function renderMenuImagePreviews(menuId = null) {
   const existingImages = menuImages.filter((image) => image.menu_id === menuId && !removedMenuImageIds.includes(image.id));
   const existingMarkup = existingImages.map((image) => `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ampliar imagem"><img src="${escapeHTML(image.public_url)}" alt="Imagem do cardápio" /></button><button class="image-preview-remove" type="button" data-remove-existing-image="${image.id}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
@@ -1159,12 +1436,21 @@ function renderMenuImagePreviews(menuId = null) {
   lucide.createIcons();
 }
 
+// Cada escolha soma ao que já estava na fila porque o input é limpo logo em
+// baixo: sem o acúmulo, escolher duas vezes seguidas a segunda substituiria a
+// primeira. Zerar o `value` é o que faz o evento de change disparar de novo
+// com o mesmo arquivo, e o filtro por `image/` descarta o que a pessoa tenha
+// arrastado junto por engano.
 menuImageInput.addEventListener('change', () => {
   pendingMenuImages = [...pendingMenuImages, ...menuImageInput.files].filter((file) => file.type.startsWith('image/'));
   menuImageInput.value = '';
   renderMenuImagePreviews(document.querySelector('#menu-id').value || null);
 });
 
+// Remover imagem é só marcar: o X de uma imagem que já estava no banco entra em
+// removedMenuImageIds, e o de uma que ainda estava na fila sai do array. Nada é
+// apagado antes do submit, para que fechar o formulário sem salvar não destrua
+// nada.
 menuImagePreviews.addEventListener('click', (event) => {
   const existingButton = event.target.closest('[data-remove-existing-image]');
   const pendingButton = event.target.closest('[data-remove-pending-image]');
@@ -1178,6 +1464,20 @@ menuImagePreviews.addEventListener('click', (event) => {
   }
 });
 
+/* ========================================================================== */
+/* CATEGORIAS DE CARDÁPIO                                                      */
+/* O mesmo botão de "Nova categoria" aparece no painel de categorias e dentro   */
+/* do formulário de cardápio. Por isso createCategory também redesenha as      */
+/* opções do formulário aberto: quem cria uma categoria no meio do cadastro de  */
+/* um cardápio precisa marcar a que acabou de criar sem sair da tela.           */
+/* ========================================================================== */
+// Abrir, renomear e excluir categoria usam prompt e confirm em vez de um
+// formulário: é uma palavra só, e uma tela inteira para isso só custaria um
+// passo a mais. Renomear sem mudar o texto é ignorado em vez de gravar de novo.
+//
+// Os códigos do Postgres viram texto que a pessoa entende: 42P01 é a tabela que
+// ainda não existe (a migração 003 não foi rodada no projeto) e 23505 é nome
+// repetido, que é o único jeito de errar aqui já que o campo é livre.
 async function createCategory() {
   const name = window.prompt('Nome da nova categoria:');
   if (!name?.trim()) return;
@@ -1229,11 +1529,20 @@ categoryList.addEventListener('click', async (event) => {
   }
 });
 
+// O filtro de categoria redesenha a lista de cardápios, e não o formulário: o
+// formulário tem as próprias caixas de categoria, que não são o mesmo filtro.
 menuCategoryFilter.addEventListener('change', renderMenus);
 
 const toast = document.querySelector('.toast');
 let toastTimer;
 
+/* ========================================================================== */
+/* AVISOS E MENU LATERAL                                                       */
+/* ========================================================================== */
+// O toast de confirmação. Ele sempre acrescenta "em breve" ao texto: os botões
+// de ação que ainda não têm tela própria chamam showToast com o nome da ação
+// ("Agenda"), e é esse sufixo que transforma o nome solto num aviso. Só um por
+// vez — um novo aviso reinicia o tempo do anterior em vez de empilhar.
 function showToast(message) {
   toast.textContent = `${message} em breve`;
   toast.classList.add('show');
@@ -1241,10 +1550,16 @@ function showToast(message) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
 }
 
+// Botões de ação sem tela própria: mostram o aviso com o nome da ação. É o que
+// sobrou do menu inicial e precisa continuar funcionando, para uma ação que
+// ainda não foi ligada não quebrar a navegação inteira.
 document.querySelectorAll('[data-action]').forEach((button) => {
   button.addEventListener('click', () => showToast(button.dataset.action));
 });
 
+// Os itens do menu lateral. Todos marcam o ativo; só Início e Menu abrem ou
+// fecham alguma coisa daqui. Quem abre uma tela de verdade é o módulo dono do
+// botão, escutando o mesmo elemento — o item do menu não pode abrir duas vezes.
 document.querySelectorAll('[data-nav]').forEach((button) => {
   button.addEventListener('click', () => {
     document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
@@ -1269,10 +1584,24 @@ function setInventoryFeedback(message, isError = false) {
   inventoryFeedback.style.color = isError ? '#a0483d' : '';
 }
 
+/* ========================================================================== */
+/* ESTOQUE                                                                    */
+/* O saldo do item é uma coluna em inventory_items, mas quem muda esse saldo é  */
+/* sempre a função record_inventory_movement no banco, que valida a saída       */
+/* contra o que existe e grava a linha de histórico na mesma transação. Nenhuma */
+/* tela escreve quantity direto.                                               */
+/* ========================================================================== */
+// Estoque baixo é "chegou no mínimo", e o mínimo zero significa que o item não
+// tem mínimo nenhum. Um item com minimum_quantity = 0 nunca entra na lista de
+// baixa, mesmo com saldo zerado — do contrário todo item sem controle passaria
+// a ser um aviso permanente no sino.
 function inventoryIsLow(item) {
   return Number(item.minimum_quantity) > 0 && Number(item.quantity) <= Number(item.minimum_quantity);
 }
 
+// Os três filtros do estoque: busca, categoria e "só o que está baixo". A busca
+// varre todos os campos do item em vez de só o nome, porque quem procura por
+// "copo" pode estar procurando na descrição e não no título.
 function renderInventory() {
   const searchTerm = inventorySearch.value.trim().toLowerCase();
   const selectedCategoryId = inventoryCategoryFilter.value;
@@ -1298,6 +1627,7 @@ function renderInventory() {
       <div class="visual-card-actions">
         <button class="client-action" type="button" data-move-inventory="${item.id}" aria-label="Movimentar ${escapeHTML(item.name)}" title="Movimentar"><i data-lucide="arrow-down-up"></i></button>
         <button class="client-action" type="button" data-edit-inventory="${item.id}" aria-label="Editar ${escapeHTML(item.name)}" title="Editar"><i data-lucide="pencil"></i></button>
+        <button class="client-action" type="button" data-duplicate="inventory" data-duplicate-id="${item.id}" aria-label="Duplicar ${escapeHTML(item.name)}" title="Duplicar"><i data-lucide="copy"></i></button>
         <button class="client-action" type="button" data-delete-inventory="${item.id}" aria-label="Excluir ${escapeHTML(item.name)}" title="Excluir"><i data-lucide="trash-2"></i></button>
       </div></div>
     </article>
@@ -1305,6 +1635,10 @@ function renderInventory() {
   lucide.createIcons();
 }
 
+// O item vem de uma tabela e as imagens e categorias de outras três. Tudo é
+// costurado aqui em categoryIds, categoryNames e imageUrls para que os
+// renderizadores não tenham que varrer as tabelas de imagem e de vínculo a cada
+// card — e para a ficha de detalhes ler o mesmo formato.
 async function loadInventory() {
   setInventoryFeedback('Carregando estoque...');
   const { data, error } = await supabaseClient.from('inventory_items').select('id, name, description, unit, quantity, minimum_quantity, active, created_at').order('name');
@@ -1360,6 +1694,10 @@ function openInventoryForm(item = null) {
   inventoryForm.reset();
   pendingInventoryImages = [];
   removedInventoryImageIds = [];
+  // A unidade é um <select> com opções fixas no HTML, mas nada impede o banco de
+  // ter guardado uma unidade que não está na lista — um item antigo, ou alguém
+  // que trocou o texto da opção. Sem acrescentar a opção aqui, o select cairia
+  // em "unidade" e salvar a edição apagaria o valor real do item.
   const unitSelect = document.querySelector('#inventory-unit');
   const knownUnit = [...unitSelect.options].some((option) => option.value === item?.unit);
   if (item?.unit && !knownUnit) {
@@ -1372,13 +1710,16 @@ function openInventoryForm(item = null) {
   document.querySelector('#inventory-minimum').value = item?.minimum_quantity ?? 0;
   document.querySelector('#inventory-description').value = item?.description || '';
   document.querySelector('#inventory-active').checked = item?.active ?? true;
-  inventoryFormTitle.textContent = item ? 'Editar item' : 'Novo item';
+  inventoryFormTitle.textContent = item?.id ? 'Editar item' : 'Novo item';
   inventoryFormFeedback.textContent = '';
   inventoryFormPanel.hidden = false;
-  renderInventoryCategoryOptions(item?.categoryIds || []);
+  renderInventoryCategoryOptions(item?.id ? item.categoryIds : []);
   renderInventoryImagePreviews(item?.id || null);
 }
 
+// A movimentação mostra o saldo atual no cabeçalho do formulário. O campo de
+// quantidade muda de sentido conforme o tipo escolhido (entrada, saída ou
+// ajuste), e quem vai mexer precisa saber de onde está partindo.
 function openMovementForm(item) {
   if (!item) return;
   movementForm.reset();
@@ -1401,12 +1742,18 @@ inventorySearch.addEventListener('input', renderInventory);
 inventoryLowOnly.addEventListener('change', renderInventory);
 inventoryCategoryFilter.addEventListener('change', renderInventory);
 
+// Filtro de categoria do estoque, com o mesmo cuidado de preservar a seleção do
+// filtro de cardápios: excluir uma categoria em outra aba não pode deixar a
+// grade vazia sem explicação.
 function renderInventoryCategoryFilter() {
   const selectedValue = inventoryCategoryFilter.value;
   inventoryCategoryFilter.innerHTML = '<option value="">Todas as categorias</option>' + inventoryCategories.map((category) => `<option value="${category.id}">${escapeHTML(category.name)}</option>`).join('');
   inventoryCategoryFilter.value = inventoryCategories.some((category) => category.id === selectedValue) ? selectedValue : '';
 }
 
+// O mesmo contrato das categorias de cardápio, com a mesma mensagem de
+// fallback: a tabela vem da migração 005 e um projeto sem ela não pode deixar a
+// tela de item sem explicação nenhuma.
 function renderInventoryCategoryOptions(selectedCategoryIds = []) {
   if (!inventoryCategories.length) {
     inventoryCategoryOptions.innerHTML = '<span class="field-hint">Execute a migração 005 para carregar categorias.</span>';
@@ -1415,6 +1762,9 @@ function renderInventoryCategoryOptions(selectedCategoryIds = []) {
   inventoryCategoryOptions.innerHTML = inventoryCategories.map((category) => `<label class="category-option" for="inventory-category-${category.id}"><input id="inventory-category-${category.id}" type="checkbox" value="${category.id}" ${selectedCategoryIds.includes(category.id) ? 'checked' : ''} /><span>${escapeHTML(category.name)}</span></label>`).join('');
 }
 
+// Espelha renderMenuImagePreviews, com as duas filas de imagem do estoque. As
+// prévias das que ainda não subiram vêm de URL.createObjectURL, que é um blob
+// temporário: some quando a aba fecha e por isso nunca pode ser gravada no banco.
 function renderInventoryImagePreviews(itemId = null) {
   const existingImages = inventoryImages.filter((image) => image.inventory_item_id === itemId && !removedInventoryImageIds.includes(image.id));
   const existingMarkup = existingImages.map((image) => `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ampliar imagem"><img src="${escapeHTML(image.public_url)}" alt="Imagem do item" /></button><button class="image-preview-remove" type="button" data-remove-existing-inventory-image="${image.id}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
@@ -1423,20 +1773,37 @@ function renderInventoryImagePreviews(itemId = null) {
   lucide.createIcons();
 }
 
+/* ========================================================================== */
+/* VISUALIZADOR DE IMAGEM E FICHA DE DETALHES                                  */
+/* ========================================================================== */
+// Abre por cima de qualquer tela, inclusive por cima da ficha de detalhes: o
+// botão de ampliar aparece em todo card que tem imagem, e a ficha também tem
+// imagem. O `src` é setado direto porque o clique já traz a URL pública pronta —
+// não há download nem transformação de imagem aqui.
 function openImageViewer(url) {
   imageViewerImage.src = url;
   imageViewer.hidden = false;
 }
 
+// Limpar o src ao fechar solta a imagem. Deixá-la ali manteria a foto baixada
+// na memória do celular mesmo com a tela escondida, e quem percorre uma lista
+// longa de itens acumularia todas elas.
 function closeImageViewer() {
   imageViewer.hidden = true;
   imageViewerImage.src = '';
 }
 
+// A linha rótulo/valor das fichas. O valor é escapado aqui dentro, e não em
+// cada chamada: quase toda a ficha é template string com dado do banco, e
+// escapar em cada uso seria um lugar fácil de esquecer — um único campo cru no
+// innerHTML já abre brecha de XSS.
 function detailRow(label, value) {
   return `<div class="detail-row"><span>${label}</span><strong>${escapeHTML(value || 'Não informado')}</strong></div>`;
 }
 
+// A grade de imagens da ficha. Devolve string vazia quando não há nenhuma, e
+// quem chama já coloca isso na frente do resumo: sem aspas, apareceria o texto
+// "undefined" na tela.
 function renderDetailImages(images, title) {
   if (!images.length) return '';
   return `<div class="detail-images">${images.map((url) => `<button type="button" data-view-image="${escapeHTML(url)}" aria-label="Ampliar imagem de ${escapeHTML(title)}"><img src="${escapeHTML(url)}" alt="${escapeHTML(title)}" /></button>`).join('')}</div>`;
@@ -1465,6 +1832,10 @@ window.plenitudeNav?.setLayerCloser(detailView, closeDetailLayer, hideDetail);
 /* lista: quem lê o card e discorda do prazo vai para a tela de lembretes,      */
 /* onde dá para conferir o texto e enviar.                                     */
 /* ========================================================================== */
+// `permissions` diz quem enxerga o aviso; quem não tem a permissão de
+  // orçamentos não vê nem a contagem dele. O botão leva para a tela de
+  // lembretes e não para o orçamento específico, porque a cobrança é sempre um
+  // lote: o operador precisa ver todas as vencidas antes de decidir.
 window.plenitudeAlerts?.register({
   id: 'sinais',
   label: 'Sinais',
@@ -1498,6 +1869,12 @@ window.plenitudeAlerts?.register({
   }
 });
 
+// A ficha é uma tela só para os cinco tipos que têm detalhe, montada por tipo
+// em vez de cinco elementos no HTML: o conteúdo vem inteiro do banco e muda a
+// cada abertura, então um <section> por tipo só custaria markup morto.
+//
+// Quem chega aqui é o clique delegado no fim do arquivo, por causa do
+// `data-detail-type` que todas as linhas e cards recebem no render.
 async function openDetail(type, id) {
   let title = 'Detalhes';
   let eyebrow = 'DETALHES';
@@ -1551,6 +1928,11 @@ async function openDetail(type, id) {
     actionQuoteId = quote.id;
     title = quote.name;
     eyebrow = 'ORÇAMENTO';
+    // As linhas do orçamento não vêm na lista (loadQuotes não traz quote_items) e os
+    // cardápios podem não estar carregados ainda, então isto busca na hora. O
+    // try/catch largo é deliberado: um erro aqui não pode derrubar a ficha
+    // inteira, e o resto do orçamento — cliente, data, local, total, sinal —
+    // continua legível mesmo sem a lista de serviços.
     let servicesHtml = '';
     try {
       if (!menus.length) await loadMenus();
@@ -1656,6 +2038,11 @@ function hideDetail() {
   detailViewContent.innerHTML = '';
 }
 
+// Um listener no documento inteiro resolve três coisas que vivem em telas
+// diferentes: o clique no card (em qualquer lista), o clique na miniatura de
+// imagem (em qualquer card) e a etiqueta de cardápio que aparece dentro da
+// ficha e do seletor de orçamento. Delegar evita ligar isso a cada lista que é
+// re-renderizada.
 document.addEventListener('click', (event) => {
   // Chips de cardapio: abrem o detail do cardapio. Precisa de um handler
   // proprio porque o guard abaixo ignora cliques em botoes.
@@ -1669,14 +2056,27 @@ document.addEventListener('click', (event) => {
     openImageViewer(imageButton.dataset.viewImage);
     return;
   }
+  // O guarda vem depois dos dois botões acima e antes do card: sem ele, clicar
+  // em qualquer botão dentro de um card abriria a ficha junto com a ação. É por
+  // isso que a etiqueta de cardápio — que também é um botão — precisou ser
+  // tratada antes dele.
   if (event.target.closest('button, a, input, select, textarea')) return;
   const detailTrigger = event.target.closest('[data-detail-type]');
   if (detailTrigger) openDetail(detailTrigger.dataset.detailType, detailTrigger.dataset.detailId);
 });
 document.querySelector('[data-close-image-viewer]').addEventListener('click', closeImageViewer);
 imageViewer.addEventListener('click', (event) => { if (event.target === imageViewer) closeImageViewer(); });
+// O visualizador e a ficha fecham no Esc, e na ordem em que foram registrados:
+// o visualizador primeiro, porque ele é aberto por cima da ficha e é ele que
+// precisa ceder o lugar. Uma tela com botão de fechar não entra aqui — quem
+// fecha essas telas é o navigation.js, pelo X ou pelo botão de voltar.
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeImageViewer(); });
 document.querySelector('[data-close-detail]').addEventListener('click', closeDetail);
+// Clicar no fundo da ficha a fecha, como o X. Este listener e o de baixo
+// escutam o mesmo elemento de propósito: o de cima age no fundo (quando o
+// alvo É a section) e o de baixo age nos botões do orçamento. Separá-los deixa
+// cada um legível e o retorno do primeiro não engole o clique do segundo, que
+// acontece nos botões e nunca no fundo.
 detailView.addEventListener('click', (event) => { if (event.target === detailView) closeDetail(); });
 detailView.addEventListener('click', async (event) => {
   const depositButton = event.target.closest('[data-quote-deposit-row]');
@@ -1703,14 +2103,27 @@ function setQuoteFeedback(message, isError = false) {
   quoteFeedback.style.color = isError ? '#a0483d' : '';
 }
 
+/* ========================================================================== */
+/* ORÇAMENTOS — REGRAS DE NEGÓCIO                                             */
+/* O status vive em inglês no banco porque é o que as funções e a trigger       */
+/* esperam; a tela fala português. O total nunca é calculado aqui para gravar:   */
+/* quem recalcula é a trigger recalculate_quote_totals, a cada linha de          */
+/* quote_items alterada.                                                      */
+/* ========================================================================== */
+// Rótulo do status. O banco guarda em inglês porque é o que as funções e a
+// trigger esperam; a tela fala português.
 function quoteStatusLabel(status) {
   return { draft: 'Rascunho', sent: 'Enviado', confirmed: 'Confirmado', cancelled: 'Cancelado', expired: 'Expirado' }[status] || status;
 }
 
 // Prazo padrão de uma proposta: 20 dias contados da emissão.
 const QUOTE_VALIDITY_DAYS = 20;
+// Sinal padrão de proposta nova: 30% é a condição que a empresa usa por padrão,
+// vir preenchido evita que o orçamento nasce sem nenhuma cobrança definida.
 const QUOTE_DEFAULT_DEPOSIT_PERCENT = 30;
 
+// Hoje no fuso de quem está usando, e não no do servidor. `toISOString()` cortaria
+// o dia: quem abre o app no Brasil de manhã veria a data de ontem.
 function localToday() {
   const now = new Date();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -1718,6 +2131,11 @@ function localToday() {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
+// Toda data que vem do Postgres é uma string 'YYYY-MM-DD', e o JavaScript lê
+// esse formato como UTC: `new Date('2026-05-01')` é meia-noite UTC e, no
+// Brasil, o dia anterior. O T12:00:00 joga a data para o meio-dia local, longe
+// de qualquer lado da linha do dia, e é por isso que ele aparece em todo o
+// cálculo de prazo deste arquivo.
 function addDaysToLocalDate(value, days) {
   const date = new Date(`${value}T12:00:00`);
   date.setDate(date.getDate() + days);
@@ -1726,6 +2144,11 @@ function addDaysToLocalDate(value, days) {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+// Quantos dias faltam até a data, com o mesmo T12:00:00 acima. O `slice(0, 10)`
+// descarta o resto porque a coluna também pode vir como timestamptz completo e
+// o Math.round protege a divisão dos milissegundos exatos do meio-dia contra
+// diferença de meio segundo. Devolve null — e não -1 — quando não há data, que
+// é o estado em que o orçamento simplesmente não expira.
 function daysUntilLocalDate(value) {
   if (!value) return null;
   const target = new Date(`${String(value).slice(0, 10)}T12:00:00`);
@@ -1736,10 +2159,18 @@ function daysUntilLocalDate(value) {
 
 // Um orçamento só expira quando foi enviado e ainda não recebeu o sinal inteiro.
 // Rascunho é material de trabalho interno; confirmado e cancelado não vencem.
+// O nome diz "exige sinal" e a resposta é se existe valor a cobrar. Os outros
+// dois lados da regra moram em quoteAwaitingClient e nos status que o banco
+// considera; aqui a pergunta é só se há dinheiro em jogo.
 function quoteRequiresSignal(quote) {
   return Number(quote?.deposit_amount || 0) > 0;
 }
 
+// A tolerância de um centavo é para o ponto flutuante: o dinheiro vem do
+// Postgres como numeric em string e o JS soma em float, então 300,00 pode
+// chegar como 299,9999999. Sem a margem, um sinal pago por inteiro ficaria
+// "faltando R$ 0,01", a etiqueta nunca ficaria verde e o orçamento não se
+// confirmaria sozinho.
 function quoteSignalComplete(quote) {
   return quoteRequiresSignal(quote) && Number(quote?.deposited_amount || 0) + 0.01 >= Number(quote.deposit_amount);
 }
@@ -1775,6 +2206,8 @@ function quoteValidityNote(quote) {
   return `Sinal de ${formatCurrency(quote.deposit_amount)}${deadline} · falta ${formatCurrency(remaining)}`;
 }
 
+// A cor da etiqueta de validade. Confirmado é sempre "feito", mesmo com sinal
+// parcial: o que fechou o contrato foi a reserva da data, não o valor integral.
 function quoteValidityTone(quote) {
   if (!quote || quote.status === 'confirmed') return 'done';
   // Nem urgente nem atrasado: ninguém foi cobrado de nada ainda.
@@ -1786,6 +2219,10 @@ function quoteValidityTone(quote) {
   return 'pending';
 }
 
+// A lista é agrupada por cliente em vez de vir solta do banco: orçamento é
+// sempre de alguém, e quem abre a tela para cobrar quer ver as propostas da
+// mesma pessoa juntas. A ordem dentro do grupo é a ordem do banco (mais
+// recentes primeiro), porque o `grouped` vai guardando na ordem em que chegam.
 function renderQuotes() {
   const term = quoteSearch.value.trim().toLowerCase();
   const status = quoteStatusFilter.value;
@@ -1819,7 +2256,12 @@ function renderQuotes() {
       const reminderButton = quoteReminderEligible(quote) && daysUntilLocalDate(quote.valid_until) !== null
         ? `<button class="client-action quote-reminder-action" type="button" data-quote-reminder-row="${quote.id}" aria-label="Enviar lembrete de sinal de ${escapeHTML(quote.name)}" title="Lembrete de sinal"><i data-lucide="bell-ring"></i></button>`
         : '';
-      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button>${reminderButton}<button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+      // O total ao lado do nome vem do banco, já recalculado pela trigger
+      // recalculate_quote_totals a cada linha de quote_items. Somar as linhas
+      // aqui mostraria um número diferente do do PDF e do Financeiro, e é a
+      // diferença entre duas telas do mesmo dinheiro que gera dúvida na hora
+      // de fechar a proposta.
+      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button>${reminderButton}<button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="quote" data-duplicate-id="${quote.id}" aria-label="Duplicar ${escapeHTML(quote.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
     }
   }
   quoteList.innerHTML = html;
@@ -1833,6 +2275,9 @@ function renderQuotes() {
 // divergir entre a lista, o detalhe, o PDF e a mensagem.
 const QUOTE_COLUMNS = 'id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, valid_until, deposit_percent, deposit_amount, deposited_amount, confirmed_by_deposit, expiry_reminder_sent_at, reminder_message';
 
+// Recarrega a lista de orçamentos. Roda em três lugares diferentes — o login,
+// a abertura da tela e o evento do realtime — porque o sino do topo e o card do
+// módulo precisam do número mesmo com a tela fechada.
 async function loadQuotes() {
   setQuoteFeedback('Carregando orçamentos...');
   // A expiração é derivada da data de corte, então é resolvida aqui em vez de
@@ -1882,6 +2327,8 @@ function setQuoteOutputFeedback(message, isError = false) {
   setQuoteFeedback(message, isError);
 }
 
+// Data no formato brasileiro, com o mesmo T12:00:00 dos cálculos de prazo:
+// 'YYYY-MM-DD' sozinho é interpretado como UTC e viraria o dia anterior.
 function formatDateBR(value) {
   if (!value) return '';
   const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
@@ -1922,6 +2369,9 @@ function renderQuotePrint({ quote, items, menusByService }) {
   // O sinal aparece uma vez só, na condição de validade no fim do documento. No
   // cabeçalho ele competia com local e data, e na conta ele se confundia com
   // mais uma parcela do total.
+  //
+  // O total em destaque vem do que o banco recalculou, e não da soma da coluna:
+  // é o mesmo número que a tela de Financeiro mostra do mesmo orçamento.
   quotePrint.innerHTML = `
     <header class="pd-head">
       <div class="pd-brand"><span class="pd-brand-mark">PR</span><span><span class="pd-brand-name">Plenitude</span><span class="pd-brand-sub">Realizações</span></span></div>
@@ -1945,6 +2395,9 @@ function renderQuotePrint({ quote, items, menusByService }) {
     <footer class="pd-foot"><span>Plenitude Realizações</span><span>Emitido em ${formatDateBR(new Date().toISOString())}</span></footer>`;
 }
 
+// Quantidades, percentuais e valores de money fora do formato de moeda: separado
+// de formatCurrency porque "R$ 1" no meio de uma quantidade vira ruído tanto na
+// linha do PDF quanto na mensagem do WhatsApp.
 function formatNumber(value) {
   return Number(value || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 }
@@ -1961,6 +2414,10 @@ async function printQuotePdf(quoteId) {
   }
 }
 
+// O texto do WhatsApp é montado aqui e vai na query do link wa.me, e não por
+// API: mandar mensagem pela API exigiria credencial da Meta no app e um custo
+// por conversa. O teto é o de URL do navegador, e é a razão de os cardápios
+// entrarem aqui só como nome, separados por vírgula.
 function quoteWhatsappText({ quote, items, menusByService }) {
   const lines = [`*ORÇAMENTO #${String(quote.quote_number ?? 0).padStart(4, '0')}*`, `*${quote.name}*`, ''];
   lines.push(`Olá, ${quote.clients?.name || 'tudo bem'}!`.trim());
@@ -2033,6 +2490,10 @@ async function sendQuoteOnWhatsapp(quoteId) {
   }
 }
 
+// Compartilhar usa a API nativa do celular e, onde ela não existe (computador
+// antigo, navegador sem Web Share), cai para a área de transferência. Nos dois
+// casos o orçamento é marcado como enviado: a proposta saiu daqui, e é isso que
+// faz o prazo começar a valer.
 async function shareQuote(quoteId) {
   try {
     const payload = await loadQuoteForOutput(quoteId);
@@ -2050,6 +2511,9 @@ async function shareQuote(quoteId) {
   }
 }
 
+// O painel pós-salvo mostra o que dá para fazer com a proposta que acabou de
+// sair. Ele guarda o id em `quoteSavedId` em vez de receber por argumento em
+// cada botão, porque os botões vivem no HTML e são lidos por atributo.
 function openQuoteSavedPanel(quoteId, message) {
   quoteSavedId = quoteId;
   quoteSavedFeedback.textContent = '';
@@ -2059,6 +2523,8 @@ function openQuoteSavedPanel(quoteId, message) {
 }
 
 document.querySelectorAll('[data-close-quote-saved]').forEach((button) => button.addEventListener('click', () => { quoteSavedPanel.hidden = true; quoteSavedId = ''; }));
+// Um listener para os quatro botões do painel. Todos leem o mesmo quoteSavedId,
+// porque o painel só existe para um orçamento por vez.
 quoteSavedPanel.addEventListener('click', (event) => {
   if (event.target === quoteSavedPanel) { quoteSavedPanel.hidden = true; quoteSavedId = ''; }
   if (event.target.closest('[data-quote-pdf]')) printQuotePdf(quoteSavedId);
@@ -2069,6 +2535,10 @@ quoteSavedPanel.addEventListener('click', (event) => {
 
 // O botão de sinal só aparece onde faz sentido: quando existe valor a cobrar e
 // o orçamento ainda não foi confirmado pelo pagamento.
+// O botão de sinal está no markup das telas e o que decide se ele serve muda
+// fora delas: registrar um sinal, estornar, cancelar o orçamento ou excluir a
+// linha mudam `quotes` sem redesenhar o botão. Por isso a visibilidade é
+// recalculada aqui e o botão nunca decide sozinho.
 function refreshQuoteDepositButtons() {
   document.querySelectorAll('[data-quote-deposit]').forEach((button) => {
     const quote = quotes.find((item) => item.id === (button.dataset.quoteDepositId || quoteSavedId));
@@ -2084,6 +2554,18 @@ const quoteDepositForm = document.querySelector('#quote-deposit-form');
 const quoteDepositHistory = document.querySelector('#quote-deposit-history');
 const quoteDepositFeedback = document.querySelector('#quote-deposit-feedback');
 
+/* ========================================================================== */
+/* SINAL DO ORÇAMENTO                                                          */
+/* Registrar sinal não é um insert: é a função register_quote_deposit, que      */
+/* grava a linha, recalcula quanto falta e confirma o orçamento quando o sinal   */
+/* fecha. É a mesma função que cria o recebimento espelhado na tela de          */
+/* Financeiro — por isso um recebimento vindo do sinal é bloqueado lá, para o   */
+/* mesmo dinheiro não entrar duas vezes.                                        */
+/* ========================================================================== */
+// O painel do sinal lê do banco, e não da lista em memória: o total pago é a
+// soma das linhas não estornadas, e é essa soma que o Financeiro também faz.
+// `voided_at` é o que separa um sinal válido de um estornado — a linha continua
+// no histórico em vez de sumir.
 async function loadQuoteDeposit(quoteId) {
   const { data: quote, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name)`).eq('id', quoteId).single();
   if (error) throw new Error(error.message);
@@ -2091,6 +2573,9 @@ async function loadQuoteDeposit(quoteId) {
   return { quote, deposits: deposits || [] };
 }
 
+// O histórico do sinal. Um sinal estornado continua na lista, marcado, porque
+// o registro do que foi recebido e devolvido faz parte da conferência: apagar a
+// linha esconderia que houve um estorno.
 function renderQuoteDepositHistory(deposits) {
   if (!deposits.length) {
     quoteDepositHistory.innerHTML = '<p class="quote-deposit-history-empty">Nenhum sinal registrado ainda.</p>';
@@ -2103,6 +2588,9 @@ function renderQuoteDepositHistory(deposits) {
   window.lucide?.createIcons();
 }
 
+// Abre o painel já com o valor restante preenchido. Quem entra aqui para pagar
+// não quer fazer conta, e o campo de valor é o único que precisa de atenção —
+// data e forma de pagamento já vêm com o padrão do dia.
 async function openQuoteDepositPanel(quoteId) {
   if (!quoteId || !quoteDepositPanel) return;
   try {
@@ -2143,6 +2631,9 @@ quoteDepositForm?.addEventListener('submit', async (event) => {
   if (!Number.isFinite(amount) || amount <= 0) { quoteDepositFeedback.textContent = 'Informe um valor maior que zero.'; return; }
   submitButton.disabled = true;
   label.textContent = 'Registrando...';
+  // Registrar o sinal é uma função do banco e não um insert, pelas razões do
+  // cabeçalho desta seção: é ela que mantém quotes, quote_deposits e o
+  // recebimento do Financeiro coerentes dentro da mesma transação.
   const { error } = await supabaseClient.rpc('register_quote_deposit', {
     target_quote_id: quoteId,
     target_amount: amount,
@@ -2168,6 +2659,10 @@ quoteDepositForm?.addEventListener('submit', async (event) => {
   showToast(quote.status === 'confirmed' ? 'Sinal recebido. Orçamento confirmado.' : 'Sinal registrado');
 });
 
+// Estornar também é função do banco, pelas mesmas razões: o recebimento
+  // espelhado no Financeiro é estornado junto, e é por isso que a confirmação
+  // avisa sobre ele — quem clica precisa saber que a tela de Financeiro também
+  // vai mudar.
 quoteDepositHistory?.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-void-quote-deposit]');
   if (!button) return;
@@ -2536,6 +3031,9 @@ function checkQuoteDeadlineRollover() {
   window.plenitudeAlerts?.refresh({ force: true });
 }
 
+// Os dois botões que abrem a lista de lembretes — o da faixa e o card do módulo
+// — levam para a mesma tela completa, em vez de cada um montar a sua lista. Uma
+// lista por lugar daria duas chances de o número estar errado.
 function openQuoteReminders() {
   if (!permitir('orcamentos') || !quoteReminderPanel) return;
   quoteReminderFeedback.textContent = '';
@@ -2568,6 +3066,10 @@ async function sendQuoteExpiryReminder(quoteId) {
   }
 }
 
+// Copiar é o caminho para quem não tem WhatsApp cadastrado: o cartão avisa que o
+// cliente não tem número e o texto sai pronto para outro canal. Não registra o
+// envio, porque ninguém sabe se a mensagem chegou — é a diferença entre enviar e
+// cobrar de novo depois.
 async function copyQuoteExpiryReminder(quoteId) {
   const quote = quotes.find((item) => item.id === quoteId);
   if (!quote) return;
@@ -2735,6 +3237,13 @@ quoteReminderList?.addEventListener('click', async (event) => {
   }
 });
 
+/* ========================================================================== */
+/* FORMULÁRIO DE ORÇAMENTO                                                    */
+/* ========================================================================== */
+// Os três conjuntos que o formulário consulta: o seletor de cliente, a lista de
+// serviços com os cardápios que cada um traz e o filtro. Os loaders são
+// compartilhados com as outras telas, então abrir o formulário também atualiza
+// as listas delas.
 async function loadQuoteReferences() {
   await Promise.all([loadClients(), loadServices(), loadMenus()]);
   quoteClientSelect.innerHTML = '<option value="">Selecione um cliente</option>' + clients.map((client) => `<option value="${client.id}">${escapeHTML(client.name)}</option>`).join('');
@@ -2773,10 +3282,18 @@ function updateQuoteServiceStates() {
   });
 }
 
+// O que vai para quote_items. A descrição é o nome do serviço no momento da
+// gravação, e é ela que o PDF e a mensagem imprimem: é a cópia que sobrevive se
+// o serviço for renomeado ou apagado depois, e é por isso que uma edição de
+// serviço não reescreve o histórico de orçamentos antigos.
 function getQuoteItemsFromForm() {
   return [...quoteServicePicker.querySelectorAll('[data-quote-service]:checked')].map((checkbox) => ({ service_id: checkbox.dataset.quoteService, quantity: Number(quoteServicePicker.querySelector(`[data-quote-quantity="${checkbox.dataset.quoteService}"]`).value), unit_price: Number(quoteServicePicker.querySelector(`[data-quote-price="${checkbox.dataset.quoteService}"]`).value), description: services.find((service) => service.id === checkbox.dataset.quoteService)?.name || 'Serviço' }));
 }
 
+// A prévia do total enquanto a pessoa digita. É só conferência visual: o valor
+// que vale é o que a trigger recalculate_quote_totals grava em quotes depois do
+// save, e é dele que saem o PDF, a mensagem e o Financeiro. O Math.max evita
+// que desconto maior que a soma mostre um total negativo na tela.
 function updateQuotePreview() {
   const subtotal = getQuoteItemsFromForm().reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
   const discount = Number(document.querySelector('#quote-discount').value || 0);
@@ -2830,19 +3347,21 @@ async function openQuoteForm(quote = null) {
   document.querySelector('#quote-venue').value = quote?.venue || '';
   document.querySelector('#quote-discount').value = quote?.discount || 0;
   document.querySelector('#quote-fee').value = quote?.additional_fee || 0;
-  document.querySelector('#quote-status').value = quote?.status || 'draft';
+  // Uma cópia nasce como rascunho: um orçamento 'confirmed' dispararia a trigger
+  // que cria evento no banco, e a duplicação viraria um evento sem querer.
+  document.querySelector('#quote-status').value = quote?.id ? (quote.status || 'draft') : 'draft';
   document.querySelector('#quote-notes').value = quote?.notes || '';
   // Orçamento novo já nasce com o prazo padrão de 20 dias, para a validade nunca
   // depender de o usuário lembrar de preencher. Os dois campos são opcionais no
   // markup: sem eles a proposta só não expira, o formulário continua abrindo.
   if (quoteValidUntilInput) quoteValidUntilInput.value = quote?.valid_until || addDaysToLocalDate(localToday(), QUOTE_VALIDITY_DAYS);
   if (quoteDepositPercentInput) quoteDepositPercentInput.value = quote?.deposit_percent ?? QUOTE_DEFAULT_DEPOSIT_PERCENT;
-  quoteFormTitle.textContent = quote ? 'Editar orçamento' : 'Novo orçamento';
+  quoteFormTitle.textContent = quote?.id ? 'Editar orçamento' : 'Novo orçamento';
   quoteFormFeedback.textContent = '';
   quoteFormPanel.hidden = false;
   await loadQuoteReferences();
   quoteClientSelect.value = selectedClientId;
-  const { data: items } = quote ? await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order') : { data: [] };
+  const { data: items } = quote?.id ? await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order') : { data: [] };
   renderQuoteServices(items || []);
 }
 
@@ -2865,6 +3384,10 @@ quoteForm.addEventListener('submit', async (event) => {
   const saveButton = quoteForm.querySelector('button[type="submit"]');
   const quoteId = document.querySelector('#quote-id').value;
   const depositPercent = Math.min(100, Math.max(0, Number(quoteDepositPercentInput?.value || 0)));
+  // `valid_until` só é gravado quando há sinal. Orçamento sem sinal não expira
+  // no banco — é a função expire_overdue_quotes que só olha o que tem sinal — e
+  // gravar a data de qualquer jeito faria a tela mostrar um prazo que ninguém
+  // está cumprindo.
   const payload = { name: document.querySelector('#quote-name').value.trim(), client_id: quoteClientSelect.value, venue: document.querySelector('#quote-venue').value.trim() || null, event_date: document.querySelector('#quote-date').value || null, event_time: document.querySelector('#quote-time').value || null, status: document.querySelector('#quote-status').value, notes: document.querySelector('#quote-notes').value.trim() || null, discount: Number(document.querySelector('#quote-discount').value || 0), additional_fee: Number(document.querySelector('#quote-fee').value || 0), valid_until: depositPercent > 0 ? (quoteValidUntilInput?.value || null) : null, deposit_percent: depositPercent };
   const items = getQuoteItemsFromForm();
   if (!items.length) { quoteFormFeedback.textContent = 'Selecione pelo menos um serviço.'; return; }
@@ -2874,6 +3397,10 @@ quoteForm.addEventListener('submit', async (event) => {
   const result = quoteId ? await supabaseClient.from('quotes').update(payload).eq('id', quoteId).select('id').single() : await supabaseClient.from('quotes').insert(payload).select('id').single();
   if (result.error) { quoteFormFeedback.textContent = result.error.message.includes('confirmed_quote') ? 'Orçamentos confirmados precisam ter uma data.' : 'Não foi possível salvar o orçamento.'; saveButton.disabled = false; saveButton.querySelector('span').textContent = 'Salvar orçamento'; return; }
   const savedId = result.data.id;
+  // Os itens são apagados e regravados, e não atualizados um a um: a lista do
+  // formulário é a fonte da verdade e a trigger recalcula o total de qualquer
+  // jeito. Cada gravação dispara um UPDATE em quotes, e é por isso que o
+  // realtime.js debounceia em vez de recarregar a cada evento.
   const { error: deleteItemsError } = await supabaseClient.from('quote_items').delete().eq('quote_id', savedId);
   if (deleteItemsError) {
     quoteFormFeedback.textContent = 'Orçamento salvo, mas não foi possível substituir os serviços anteriores.';
@@ -2893,6 +3420,10 @@ quoteForm.addEventListener('submit', async (event) => {
   openQuoteSavedPanel(savedId, quoteId ? 'Orçamento atualizado' : 'Orçamento cadastrado');
 });
 
+// Um listener para a lista inteira, que é re-renderizada a cada
+// loadQuotes(). Os botões de PDF, WhatsApp e lembrete vêm antes dos de editar e
+// excluir porque têm prefixo próprio e não poderiam ser confundidos com o
+// `detail-trigger` da linha.
 quoteList.addEventListener('click', async (event) => {
   const pdfButton = event.target.closest('[data-quote-pdf-row]');
   const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
@@ -2913,6 +3444,11 @@ quoteList.addEventListener('click', async (event) => {
   }
 });
 
+/* ========================================================================== */
+/* FORMULÁRIO DE ITEM E MOVIMENTAÇÃO DE ESTOQUE                                */
+/* ========================================================================== */
+// Mesma mecânica das imagens de cardápio: o input acumula na fila e é zerado
+// para o change disparar de novo com o mesmo arquivo.
 inventoryImageInput.addEventListener('change', () => {
   pendingInventoryImages = [...pendingInventoryImages, ...inventoryImageInput.files].filter((file) => file.type.startsWith('image/'));
   inventoryImageInput.value = '';
@@ -2932,6 +3468,9 @@ inventoryImagePreviews.addEventListener('click', (event) => {
   }
 });
 
+// A mesma ordem do cardápio: item, depois categorias, depois imagens apagadas,
+// depois imagens novas. Cada etapa avisa o que conseguiu fazer, porque
+// interromper no meio faria a pessoa salvar de novo e duplicar o item.
 inventoryForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = inventoryForm.querySelector('button[type="submit"]');
@@ -2957,6 +3496,9 @@ inventoryForm.addEventListener('submit', async (event) => {
     return;
   }
   const selectedCategoryIds = [...inventoryCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value);
+  // O update não pede o id de volta — só o insert usa `.select('id').single()` —,
+  // então quem sabe o id gravado é o do formulário quando é edição e o retorno
+  // do banco quando o item é novo.
   const savedItemId = itemId || result.data?.id;
   const { error: clearCategoriesError } = await supabaseClient.from('inventory_category_links').delete().eq('inventory_item_id', savedItemId);
   if (clearCategoriesError || !savedItemId) {
@@ -2990,10 +3532,16 @@ inventoryForm.addEventListener('submit', async (event) => {
   showToast(itemId ? 'Item atualizado' : 'Item cadastrado');
 });
 
+// "Ajuste" não é entrada nem saída: é a nova quantidade total. O rótulo do
+// campo muda para não deixar ninguém digitar "30" achando que vai somar trinta.
 movementType.addEventListener('change', () => {
   movementQuantityLabel.textContent = movementType.value === 'adjustment' ? 'Nova quantidade total' : 'Quantidade';
 });
 
+// A movimentação é uma função do banco porque precisa validar a saída contra o
+// saldo e repor a quantidade dentro da mesma transação. Escrever direto em
+// inventory_items deixaria a quantidade e a linha de histórico divergirem se a
+// segunda etapa falhasse, e o estoque baixo do sino passaria a mentir.
 movementForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const saveButton = movementForm.querySelector('button[type="submit"]');
@@ -3019,6 +3567,8 @@ movementForm.addEventListener('submit', async (event) => {
   showToast('Movimentação registrada');
 });
 
+// Um listener para os três botões do card. O id sai do mesmo jeito para os
+// três, por isso ele é resolvido em uma linha só antes de procurar o item.
 inventoryList.addEventListener('click', async (event) => {
   const moveButton = event.target.closest('[data-move-inventory]');
   const editButton = event.target.closest('[data-edit-inventory]');
@@ -3064,3 +3614,64 @@ window.plenitudeApp = {
   // cerimonial cai no fallback e mostra todos os eventos.
   getCeremonialServiceIds: () => services.filter((service) => service.is_ceremonial).map((service) => service.id)
 };
+
+/* ========================================================================== */
+/* DUPLICAÇÃO                                                                 */
+/* ========================================================================== */
+/* Cada handler acha o item no estado do módulo e chama o abridor de formulário */
+/* com uma CÓPIA SEM `id` (window.plenitudeDuplicate.copy). Como os abridores    */
+/* decidem entre criar e editar pelo id, a cópia cai no modo de criação já       */
+/* preenchido. Imagens, vínculos de cardápio/serviço e categorias não são        */
+/* copiados de propósito: são relações, e o novo registro começa sem elas.       */
+window.plenitudeDuplicate?.register('client', (id) => {
+  const item = clients.find((client) => client.id === id);
+  if (item) openClientForm(window.plenitudeDuplicate.copy(item));
+});
+window.plenitudeDuplicate?.register('service', (id) => {
+  const item = services.find((service) => service.id === id);
+  if (item) openServiceForm(window.plenitudeDuplicate.copy(item));
+});
+window.plenitudeDuplicate?.register('menu', (id) => {
+  const item = menus.find((menu) => menu.id === id);
+  if (item) openMenuForm(window.plenitudeDuplicate.copy(item));
+});
+window.plenitudeDuplicate?.register('inventory', (id) => {
+  const item = inventoryItems.find((entry) => entry.id === id);
+  if (item) openInventoryForm(window.plenitudeDuplicate.copy(item));
+});
+window.plenitudeDuplicate?.register('quote', (id) => {
+  const item = quotes.find((quote) => quote.id === id);
+  if (item) openQuoteForm(window.plenitudeDuplicate.copy(item));
+});
+
+// As categorias não têm formulário: criar e editar são um prompt de nome. A
+// duplicação reaproveita o prompt, já com o sufixo "(cópia)" para não colidir
+// com a chave única do nome. Como não há modal, é o mais próximo de duplicar.
+window.plenitudeDuplicate?.register('menu-category', (id) => {
+  const category = menuCategories.find((entry) => entry.id === id);
+  if (!category) return;
+  const name = window.prompt('Nome da nova categoria:', `${category.name} (cópia)`);
+  if (!name?.trim()) return;
+  supabaseClient.from('menu_categories').insert({ name: name.trim() }).then(({ error }) => {
+    if (error) {
+      setCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível duplicar a categoria.', true);
+      return;
+    }
+    loadMenus();
+    showToast('Categoria duplicada');
+  });
+});
+window.plenitudeDuplicate?.register('inventory-category', (id) => {
+  const category = inventoryCategories.find((entry) => entry.id === id);
+  if (!category) return;
+  const name = window.prompt('Nome da nova categoria:', `${category.name} (cópia)`);
+  if (!name?.trim()) return;
+  supabaseClient.from('inventory_categories').insert({ name: name.trim() }).then(({ error }) => {
+    if (error) {
+      setInventoryCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível duplicar a categoria.', true);
+      return;
+    }
+    loadInventory();
+    showToast('Categoria duplicada');
+  });
+});

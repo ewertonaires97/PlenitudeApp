@@ -1,9 +1,38 @@
 // ==========================================================================
 // Plenitude Realizações - Módulo de Cerimonial & Operação do Evento
 // ==========================================================================
+/*
+ * O roteiro do dia do evento: o que acontece, em que ordem, quem faz cada
+ * coisa, quando os convidados chegam e em qual mesa sentam.
+ *
+ * A tela tem cinco abas (roteiro, recepção, equipe, mesas e modo ao vivo) sobre
+ * um evento escolhido no seletor do topo. Quase todo o HTML é montado por
+ * template string a partir de dados que o usuário digitou em cadastros
+ * próprios — nome de convidado, nota de mesa, observação de equipe —, então
+ * todo texto interpolado passa por sanitizeHtml(). Isso não é defesa contra
+ * alguém hostil: é para um nome com "&" ou uma observação com aspa não
+ * desmontar o HTML da lista inteira.
+ *
+ * Nenhuma query deste arquivo cria tabela. O módulo consome as migrations de
+ * cerimonial (009 em diante, com modelos padrão e reordenação em 013/014) e,
+ * quando o banco está sem elas, showSchemaError() traduz a mensagem do
+ * Postgres em vez de mostrar erro cru ao usuário.
+ *
+ * A trava de evento já realizado (isEventLocked) é uma regra de interface:
+ * os botões somem e as escritas abortam no primeiro blockIfLocked(). Quem
+ * garante a regra no banco é o RLS, não este arquivo.
+ */
 
 (() => {
   'use strict';
+
+  // ==========================================================================
+  // ESTADO DO MÓDULO E CLIENTE SUPABASE
+  // ==========================================================================
+  // Um único objeto guarda tudo o que a tela mostra: o evento escolhido e as
+  // listas que pertencem a ele. Não existe cache por aba — cada render lê
+  // daqui, e é por isso que recarregar o evento atualiza a tela inteira de uma
+  // vez, sem depender de quem chamou.
 
   // Referência do cliente Supabase
   function getSupabase() {
@@ -24,6 +53,9 @@
     arrivalFilter: 'all', // 'all', 'arrived', 'pending', 'confirmed'
     arrivalSearch: '',
     liveTimerInterval: null,
+    // Qual dos dois papéis o modal está cumprindo: criar (null) ou editar (id).
+    // Os formulários carregam o id num campo hidden próprio; estes campos são
+    // o espelho para a interface, e por isso são limpos no close de cada modal.
     editingActivityId: null,
     editingStaffId: null,
     editingGuestId: null,
@@ -46,6 +78,14 @@
     dragEnabled: false
   };
 
+  // ==========================================================================
+  // AVISOS FLUTUANTES E ÍCONES
+  // ==========================================================================
+  // Existe um único toast na tela e o timer fica pendurado na própria função:
+  // um segundo aviso antes do primeiro sumir substitui o anterior em vez de
+  // empilhar dois avisos, que é o comportamento esperado numa sala de evento
+  // com gente clicando sem parar.
+
   // Toast utilitário
   function notify(message, duration = 3500) {
     const toast = document.querySelector('.toast');
@@ -58,11 +98,23 @@
     }, duration);
   }
 
+  // Todo HTML gerado aqui é escrito com <i data-lucide="...">, que o Lucide
+  // troca por <svg> quando roda. Como cada render faz innerHTML de novo, os
+  // ícones precisam ser recriados depois de desenhar qualquer lista — por isso
+  // quase todo render termina em refreshIcons().
   function refreshIcons() {
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
       window.lucide.createIcons();
     }
   }
+
+  // ==========================================================================
+  // DATAS, HORAS E A TRAVA DE EVENTO JÁ REALIZADO
+  // ==========================================================================
+  // Datas do Postgres chegam como 'YYYY-MM-DD'. new Date('2026-05-04') é lida
+  // como UTC e, no Brasil (UTC-3), vira o dia 3 à noite — o que jogaria a
+  // contagem de dias e a comparação com "hoje" um dia para trás. Por isso
+  // parseDateOnly monta a data com os números soltos, no fuso do navegador.
 
   // Formatadores de data e hora
   const MONTHS_SHORT = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
@@ -91,11 +143,17 @@
     return `${weekday}, ${day} de ${month} de ${year}`;
   }
 
+  // O banco guarda horário como 'HH:MM:SS'; o input de hora do formulário
+  // trabalha com 'HH:MM'. O slice resolve os dois sem passar por Date, que
+  // interpretaria '18:00' como data inválida.
   function formatTimeOnly(timeStr) {
     if (!timeStr) return '';
     return timeStr.slice(0, 5);
   }
 
+  // Ao contrário do horário do roteiro, arrived_at é um carimbo de tempo real
+  // (timestamptz). Aqui é legível usar o fuso do aparelho: o que importa é a
+  // hora em que a pessoa chegou, vista do relógio que está na recepção.
   function formatDateTime(isoString) {
     if (!isoString) return '';
     const d = new Date(isoString);
@@ -114,6 +172,9 @@
     if (!target) return { text: '', type: 'neutral' };
     target.setHours(0, 0, 0, 0);
 
+    // Zerar as duas horas antes de subtrair faz a divisão cair sempre em dias
+    // inteiros. Sem isso, um evento às 21h de amanhã daria 0,4 dia e o "hoje"
+    // apareceria para quem está na véspera.
     const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) return { text: 'É HOJE!', type: 'today' };
@@ -128,6 +189,9 @@
   // ser alterado. A comparação é feita só pela data (sem hora) e a trava vale
   // quando hoje for estritamente maior que a data do evento — no próprio dia
   // do evento a equipe ainda pode registrar o que está acontecendo.
+  // O status do evento não entra na conta de propósito: um evento atrasado e
+  // ainda não realizado continua sendo o roteiro de trabalho de quem chega
+  // para tocar a data no lugar.
   function isEventLocked() {
     const ev = state.selectedEvent;
     if (!ev || !ev.event_date) return false;
@@ -142,6 +206,8 @@
     return today.getTime() > target.getTime();
   }
 
+  // O mesmo aviso, em HTML, repetido no topo de cada aba. Existe como função
+  // única para que o texto e o ícone não divirjam entre as cinco telas.
   function lockNoticeHtml() {
     return `
       <div class="ceremonial-lock-notice" style="font-size: 12px; color: var(--gold)">
@@ -153,6 +219,8 @@
 
   // Bloqueia qualquer tentativa de alteração em evento já realizado. Retorna
   // true quando a ação deve ser abortada.
+  // Todo handler de escrita começa com `if (blockIfLocked()) return;`. É a
+  // segunda linha de defesa: a primeira é o botão sumir no HTML.
   function blockIfLocked() {
     if (isEventLocked()) {
       notify('Este evento já aconteceu. O cerimonial está em modo somente leitura.');
@@ -160,6 +228,14 @@
     }
     return false;
   }
+
+  // ==========================================================================
+  // RESPONSÁVEIS QUE VIRAM EQUIPE
+  // ==========================================================================
+  // O campo "responsável" do roteiro é texto livre e aceita mais de um nome
+  // separado por vírgula. A aba Equipe é outra tabela. Estas duas funções
+  // mantêm as duas em sincronia, porque na prática quem nomeia alguém no
+  // roteiro está contando com a pessoa aparecendo na equipe.
 
   // Cadastra automaticamente o(s) responsável(is) informado(s) no cronograma
   // como membros da Equipe de Cerimonial, caso ainda não existam.
@@ -179,6 +255,9 @@
         .eq('event_id', state.selectedEventId);
       const existingNames = new Set((existing || []).map(s => (s.name || '').toLowerCase()));
 
+      // O insert acontece um a um, sem transação: quem é responsável por nome no
+      // roteiro é texto solto e a consequência de uma linha faltando é pequena,
+      // enquanto um INSERT em lote falharia inteiro por causa de um nome.
       for (const name of names) {
         if (existingNames.has(name.toLowerCase())) continue;
         const { error } = await sb
@@ -197,6 +276,9 @@
 
   // Varre todas as atividades do evento e cadastra os responsáveis
   // encontrados na Equipe de Cerimonial, sem duplicatas.
+  // Roda a cada carga do evento, antes das mesas e dos convidados: é a rede de
+  // segurança para responsáveis que ficaram no roteiro antes de existir a aba
+  // Equipe, ou que vieram prontos de um modelo padrão clonado.
   async function scanActivitiesAndRegisterResponsibles() {
     if (!state.selectedEventId) return;
     const allNames = state.activities
@@ -217,6 +299,8 @@
         .eq('event_id', state.selectedEventId);
       const existingNames = new Set((existing || []).map(s => (s.name || '').toLowerCase()));
 
+      // O Set é atualizado depois de cada insert para que dois momentos com o
+      // mesmo responsável não criem duas linhas iguais na equipe.
       for (const name of allNames) {
         const lower = name.toLowerCase();
         if (existingNames.has(lower)) continue;
@@ -234,6 +318,13 @@
     }
   }
 
+  // ==========================================================================
+  // ESCAPE DE TEXTO, WHATSAPP E RÓTULOS DE STATUS
+  // ==========================================================================
+
+  // Nome de convidado, observação de mesa e nota de equipe são texto livre e
+  // entram em template strings. Sem escapar, um "&" viraria "&amp;" na tela e
+  // uma aspa no meio de um atributo fecharia a tag antes da hora.
   function sanitizeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -244,6 +335,9 @@
       .replace(/'/g, '&#039;');
   }
 
+  // O wa.me só aceita dígitos com DDI. Quem salva o telefone com parênteses,
+  // espaço ou sem o 55 quebraria o link, então o prefixo é garantido aqui: um
+  // número que já vem com 55 não o recebe de novo.
   function cleanPhoneForWhatsApp(phone) {
     if (!phone) return '';
     const digits = phone.replace(/\D/g, '');
@@ -254,6 +348,10 @@
     return digits;
   }
 
+  // Os dois mapas de status abaixo caem em 'Pendente' como resposta padrão.
+  // Atividade e convidado têm domínios de status diferentes, e o default cobre
+  // tanto o valor ausente quanto um status vindo do banco que esta tela não
+  // conhece — sem ele, o cartão apareceria sem etiqueta nenhuma.
   function activityStatusLabel(status) {
     switch (status) {
       case 'pending': return 'Pendente';
@@ -280,11 +378,26 @@
   // atende todas as tabelas do app e recarrega o cerimonial apenas quando a
   // tela está aberta. Este módulo só precisa reagir quando o evento
   // selecionado mudar por causa de outro usuário.
+  //
+  // As tabelas deste módulo chegam por três tópicos diferentes lá:
+  //   - `ceremonial`  -> ceremonial_activities, ceremonialistas, guests
+  //   - `eventos`     -> events, event_tables (as mesas mudam aqui)
+  //   - `orcamentos`  -> quotes e quote_items, que é o que muda o filtro do
+  //                      seletor quando alguém marca um serviço como cerimonial
+  // Por isso a lista de callbacks no fim do arquivo: cada tópico do outro lado
+  // tem um método de recarga correspondente aqui.
 
   // ==========================================================================
   // Utilitários de Erro de Schema (orienta usuário sobre migrações pendentes)
   // ==========================================================================
 
+  // O app roda com SQL puro, sem ORM, e o Postgres descreve a falha em texto:
+  // "Could not find the column X. of table Y" ou "Could not find the table".
+  // Traduzir aqui evita que o usuário veja erro de banco e conclua que o
+  // módulo quebrou, quando na verdade só falta aplicar migration.
+  // A orientação é sempre a mesma (009, a primeira do módulo): tabelas que só
+  // nasceram depois — modelos padrão e roteiros reordenáveis, vindas da 013 e
+  // da 014 — recebem a indicação da migration errada.
   function showSchemaError(err, operationName) {
     const msg = err.message || String(err);
     const isMissingColumn = msg.includes("Could not find the") && msg.includes("column");
@@ -316,6 +429,9 @@
   // tem pelo menos um item apontando para um serviço marcado com
   // services.is_ceremonial. A ligação é sempre through quote_items:
   //   events.quote_id -> quotes.id -> quote_items.quote_id -> quote_items.service_id
+  // A query de longe já traz quotes.quote_items porque o filtro precisa saber,
+  // para cada evento, quais serviços foram contratados — trazer isso em uma
+  // segunda volta custaria uma requisição por evento.
   async function loadEventsList() {
     const sb = getSupabase();
     const feedbackEl = document.getElementById('ceremonial-feedback');
@@ -342,6 +458,9 @@
 
       if (error) throw error;
       state.events = data || [];
+      // hasCeremonial é calculado uma vez e guardado no próprio objeto. O
+      // seletor, o filtro e a dica do rodapé leem a mesma marcação, em vez de
+      // cada um refazer a travessia dos itens do orçamento.
       state.events.forEach(event => {
         const items = event.quotes?.quote_items || [];
         event.hasCeremonial = items.some(item => state.ceremonialServiceIds.has(item.service_id));
@@ -358,6 +477,11 @@
       }
 
       // Se nenhum evento foi selecionado ainda, seleciona o mais próximo de hoje
+      // A comparação com todayStr é entre duas strings 'YYYY-MM-DD', o que só
+      // funciona porque os dois lados estão no mesmo formato. Atenção: o
+      // todayStr vem de toISOString(), que é UTC — depois das 21h no Brasil a
+      // string já aponta para amanhã, e o "próximo evento" escolhido aqui é o
+      // do dia seguinte.
       if (!state.selectedEventId && visible.length > 0) {
         const todayStr = new Date().toISOString().split('T')[0];
         const upcoming = visible.find(e => e.event_date >= todayStr && e.status !== 'cancelled');
@@ -384,11 +508,17 @@
     return state.onlyCeremonialEvents && state.ceremonialServiceIds.size > 0;
   }
 
+  // O filtro é aplicado aqui, no navegador, e não no where do select: a lista
+  // completa já foi baixada porque o selector também mostra os eventos sem
+  // serviço, apenas desabilitados.
   function visibleEvents() {
     if (!ceremonialFilterIsActive()) return state.events;
     return state.events.filter(event => event.hasCeremonial);
   }
 
+  // O select é reconstruído inteiro a cada chamada, inclusive a lista de
+  // opções que o navegador mantinha aberta. O que o usuário digitou nele não
+  // existe: a única interação é escolher, e escolher chama selectEvent().
   function populateEventSelector() {
     const select = document.getElementById('ceremonial-event-select');
     if (!select) return;
@@ -467,6 +597,9 @@
     hint.hidden = true;
   }
 
+  // Lê do banco quais serviços estão marcados como `is_ceremonial`. É o que
+  // permite decidir se um evento entra no filtro "só com cerimonial" a partir
+  // dos itens do orçamento dele.
   async function loadCeremonialServiceIds() {
     const sb = getSupabase();
     if (!sb) return;
@@ -480,6 +613,8 @@
       state.ceremonialServiceIds = new Set((data || []).map(row => row.id));
     } catch (err) {
       console.warn('Não foi possível ler os serviços de cerimonial:', err);
+      // Falha aqui não pode esconder eventos: com o Set vazio o filtro se
+      // desliga sozinho e a lista volta a ser completa.
       state.ceremonialServiceIds = new Set();
     }
   }
@@ -487,8 +622,10 @@
   async function toggleCeremonialFilter(onlyWithCeremonial) {
     state.onlyCeremonialEvents = onlyWithCeremonial;
 
-    // A lista foi carregada antes de o filtro mudar, então a marcação
+    // A lista foi carregada antes do filtro mudar, então a marcação
     // hasCeremonial precisa ser recalculada antes de redesenhar.
+    // Só ao ligar: desligado o filtro, todos os eventos são visíveis e a
+    // marcação deixa de importar.
     if (onlyWithCeremonial && state.ceremonialServiceIds.size > 0) {
       state.events.forEach(event => {
         const items = event.quotes?.quote_items || [];
@@ -518,6 +655,9 @@
     }
   }
 
+  // Só um lugar decide qual evento está na tela: a partir daqui todos os
+  // renders leem state.selectedEvent, e o reload do realtime passa pelo mesmo
+  // caminho para não manter duas fontes de verdade.
   async function selectEvent(eventId) {
     if (!eventId) return;
 
@@ -532,6 +672,10 @@
     await loadSelectedEventDetails(eventId);
   }
 
+  // Carrega tudo o que pertence ao evento em cinco consultas em sequência.
+  // São sequenciais, e não em paralelo, porque a varredura de responsáveis (3)
+  // precisa do roteiro já populado e escreve em state, que o passo 4 e 5 ainda
+  // não lêem.
   async function loadSelectedEventDetails(eventId) {
     const sb = getSupabase();
     if (!sb || !eventId) return;
@@ -568,6 +712,10 @@
       // 3. Equipe de cerimonialistas
       let staffList = [];
       try {
+        // O `or` traz duas coisas: a equipe deste evento e os cadastros
+        // globais (event_id nulo), que são os profissionais que a empresa
+        // reutiliza em todos os eventos. Excluir os globais da equipe do
+        // evento deixaria a aba quase vazia logo no primeiro evento.
         const { data: staffData, error: staffErr } = await sb
           .from('ceremonialistas')
           .select('*')
@@ -596,6 +744,9 @@
       state.tables = tables || [];
 
       // 5. Convidados do evento com dados da mesa
+      // A junção com event_tables vem na própria query: a lista de recepção
+      // mostra a mesa de cada convidado e a de mesas conta os presentes, e
+      // nenhuma das duas pode esperar uma consulta por linha.
       const { data: guests, error: gstErr } = await sb
         .from('guests')
         .select('*, event_tables ( id, table_number, capacity )')
@@ -608,10 +759,16 @@
       if (feedbackEl) feedbackEl.textContent = '';
 
       // Atualiza as visualizações
+      // Duas renderizações de uma carga só: o Hero tem os contadores (roteiro,
+      // presentes, equipe, mesas) e a aba ativa tem a lista detalhada. A aba
+      // anterior não é redesenhada — só volta a aparecer quando for escolhida.
       renderCeremonialHero();
       renderActiveTab();
       refreshIcons();
     } catch (err) {
+      // Só o passo 1 (o evento) chega aqui: os demais capturam o erro no
+      // console e seguem com a lista vazia, porque uma tabela faltando não
+      // pode deixar o evento inteiro em branco.
       console.error('Erro ao buscar detalhes do evento:', err);
       if (feedbackEl) feedbackEl.textContent = 'Não foi possível carregar os dados: ' + err.message;
     }
@@ -620,7 +777,15 @@
   // ==========================================================================
   // Renderização da Interface
   // ==========================================================================
+  // Contrato de todo render*: ler o state, escrever o innerHTML do container
+  // recebido e terminar em refreshIcons(). Nenhum deles consulta o banco — quem
+  // busca dados é loadSelectedEventDetails(). Por isso qualquer ação que muda
+  // algo no banco termina chamando loadSelectedEventDetails() de novo em vez
+  // de repintar um pedaço só.
 
+  // Estado sem evento selecionado: o Hero dá a instrução e todas as abas
+  // recebem o mesmo aviso. Continua sendo a mesma tela, só esvaziada — nada de
+  // esconder o painel inteiro.
   function renderEmptyState() {
     const heroEl = document.getElementById('ceremonial-event-hero');
     if (heroEl) {
@@ -655,6 +820,9 @@
     const waNumber = cleanPhoneForWhatsApp(clientPhone);
 
     // Contadores para os mini-cards do Hero
+    // Todos calculados aqui, sobre o state já carregado, e não somados durante
+    // a renderização das listas: mudar um status reescreve o Hero inteiro e
+    // os números precisam sair do mesmo lugar.
     const totalActivities = state.activities.length;
     const completedActivities = state.activities.filter(a => a.status === 'completed').length;
     const timelinePercent = totalActivities > 0 ? Math.round((completedActivities / totalActivities) * 100) : 0;
@@ -666,6 +834,9 @@
     const totalStaff = state.staff.length;
     const totalTables = state.tables.length;
 
+    // Os dois primeiros mini-cards carregam data-ceremonial-tab-jump: clicar
+    // no contador pula para a aba correspondente. É por isso que são <div> com
+    // atributo de dado e não links.
     heroEl.innerHTML = `
       <div class="ceremonial-hero-card">
         <div class="ceremonial-hero-top">
@@ -734,6 +905,9 @@
     refreshIcons();
   }
 
+  // Só uma aba é desenhada por vez. Esconder todas e depois mostrar a ativa é
+  // mais barato que reconstruir a navegação: o HTML das abas pode ficar no
+  // documento o tempo todo sem custo.
   function renderActiveTab() {
     // Esconde todas as tabs
     document.querySelectorAll('.ceremonial-tab-pane').forEach(p => { p.hidden = true; });
@@ -772,6 +946,9 @@
   // ==========================================================================
   // TAB 1: ROTEIRO & CRONOGRAMA
   // ==========================================================================
+  // O roteiro é a lista de momentos do dia, ordenada por `position`. Essa
+  // ordem é a canônica e mora no banco: ela vem no .order() do select e não é
+  // refeita aqui. O filtro de status abaixo é só uma visão da lista.
 
   function renderTimelineTab(container) {
     if (!state.selectedEvent) {
@@ -779,6 +956,9 @@
       return;
     }
 
+    // Filtrar não reordena: o card arrastado continua sendo o mesmo objeto, e
+    // qualquer operação de reordenação monta a lista a partir de
+    // state.activities, nunca daqui.
     let filtered = state.activities;
     if (state.timelineFilter !== 'all') {
       filtered = state.activities.filter(a => a.status === state.timelineFilter);
@@ -844,6 +1024,8 @@
                     <i data-lucide="grip-vertical"></i>
                   </button>
                 `}
+                <!-- O número vem do banco (position), com o índice da lista
+                     como reserva para atividades antigas sem position gravado. -->
                 <span class="activity-pos-badge">${act.position || index + 1}</span>
               </div>
 
@@ -878,6 +1060,9 @@
                   <div class="activity-mini-actions">
                     <button class="client-action" type="button" data-edit-activity="${act.id}" title="Editar momento">
                       <i data-lucide="pencil"></i>
+                    </button>
+                    <button class="client-action" type="button" data-duplicate="activity" data-duplicate-id="${act.id}" title="Duplicar momento">
+                      <i data-lucide="copy"></i>
                     </button>
                     <button class="client-action" type="button" data-delete-activity="${act.id}" title="Excluir momento">
                       <i data-lucide="trash-2"></i>
@@ -917,6 +1102,8 @@
   // ==========================================================================
   // TAB 2: RECEPÇÃO & CONTROLE DE CHEGADA (CHECK-IN)
   // ==========================================================================
+  // Quem está na recepção precisa achar a pessoa em segundos. Por isso a lista
+  // é uma só, com busca e três filtros, e não uma tela de cadastro.
 
   function renderArrivalTab(container) {
     if (!state.selectedEvent) {
@@ -932,13 +1119,17 @@
     const locked = isEventLocked();
 
     // Filtros de convidados
+    // `pending` aqui é "ainda não chegou", e não o status de confirmação do
+    // convidado: são coisas diferentes e a tela as trata separadamente.
     let visibleGuests = state.guests.filter(g => {
       // Filtro de status de chegada
       if (state.arrivalFilter === 'arrived' && !g.arrived_at) return false;
       if (state.arrivalFilter === 'pending' && Boolean(g.arrived_at)) return false;
       if (state.arrivalFilter === 'confirmed' && g.status !== 'confirmed') return false;
 
-      // Busca por nome ou mesa
+      // Busca por nome, telefone, mesa ou observação
+      // A mesa entra na busca porque é assim que a recepção funciona: a pessoa
+      // chega perguntando por onde sentou, não pelo nome do convidado.
       if (state.arrivalSearch) {
         const q = state.arrivalSearch.toLowerCase().trim();
         const nameMatch = (g.name || '').toLowerCase().includes(q);
@@ -1059,6 +1250,9 @@
                   <button class="client-action" type="button" data-edit-guest="${g.id}" title="Editar convidado">
                     <i data-lucide="pencil"></i>
                   </button>
+                  <button class="client-action" type="button" data-duplicate="guest" data-duplicate-id="${g.id}" title="Duplicar convidado">
+                    <i data-lucide="copy"></i>
+                  </button>
                   <button class="client-action" type="button" data-delete-guest="${g.id}" title="Remover da lista">
                     <i data-lucide="trash-2"></i>
                   </button>
@@ -1071,6 +1265,9 @@
     `;
 
     // Conecta evento de busca em tempo real
+    // A lista é redesenhada a cada tecla, o que destrói o input e tira o foco
+    // de quem está digitando. Por isso o foco e o cursor voltam a ser
+    // repostos logo depois do render.
     const searchInput = container.querySelector('#arrival-guest-search');
     if (searchInput) {
       searchInput.addEventListener('input', e => {
@@ -1090,6 +1287,8 @@
   // ==========================================================================
   // TAB 3: EQUIPE DE CERIMONIAL (STAFF / CERIMONIALISTAS)
   // ==========================================================================
+  // A equipe é a soma da escala deste evento com os cadastros globais da
+  // empresa (event_id nulo), como o .or() de loadSelectedEventDetails faz.
 
   function renderStaffTab(container) {
     if (!state.selectedEvent) {
@@ -1133,6 +1332,8 @@
           return `
             <article class="staff-card" data-staff-id="${member.id}">
               <div class="staff-card-header">
+                <!-- Avatar de letra: sem foto, a inicial já separa visualmente
+                     dois nomes parecidos na grade. -->
                 <span class="staff-avatar">${sanitizeHtml(member.name.charAt(0).toUpperCase())}</span>
                 <div class="staff-info-col">
                   <h5 class="staff-name">${sanitizeHtml(member.name)}</h5>
@@ -1161,6 +1362,9 @@
                   <button class="client-action" type="button" data-edit-staff="${member.id}" title="Editar dados">
                     <i data-lucide="pencil"></i>
                   </button>
+                  <button class="client-action" type="button" data-duplicate="staff" data-duplicate-id="${member.id}" title="Duplicar cerimonialista">
+                    <i data-lucide="copy"></i>
+                  </button>
                   <button class="client-action" type="button" data-delete-staff="${member.id}" title="Remover da equipe">
                     <i data-lucide="trash-2"></i>
                   </button>
@@ -1178,6 +1382,8 @@
   // ==========================================================================
   // TAB 4: MESAS & SETORES
   // ==========================================================================
+  // Mesas (event_tables) e convidados (guests.table_id) são tabelas separadas:
+  // a aba não cria nenhuma das duas por conta própria, só as conta e as mostra.
 
   function renderTablesTab(container) {
     if (!state.selectedEvent) {
@@ -1217,6 +1423,9 @@
           </div>
         ` : state.tables.map(tbl => {
           // Convidados alocados nesta mesa
+          // A ocupação vem de quem está de fato alocado, e não do campo
+          // `capacity`: para a recepção importa quantas pessoas estão sentadas
+          // ali, e o limite cadastrado é só uma referência visual.
           const tableGuests = state.guests.filter(g => g.table_id === tbl.id);
           const occupied = tableGuests.length;
           const arrivedInTable = tableGuests.filter(g => Boolean(g.arrived_at)).length;
@@ -1240,6 +1449,9 @@
                   ${locked ? '' : `
                     <button class="client-action" type="button" data-edit-table="${tbl.id}" title="Editar mesa">
                       <i data-lucide="pencil"></i>
+                    </button>
+                    <button class="client-action" type="button" data-duplicate="table" data-duplicate-id="${tbl.id}" title="Duplicar mesa">
+                      <i data-lucide="copy"></i>
                     </button>
                     <button class="client-action" type="button" data-delete-table="${tbl.id}" title="Excluir mesa">
                       <i data-lucide="trash-2"></i>
@@ -1272,6 +1484,9 @@
   // ==========================================================================
   // TAB 5: MODO AO VIVO (EXECUÇÃO EM TEMPO REAL)
   // ==========================================================================
+  // Tela de quem está conduzindo o evento no dia: um momento grande na tela,
+  // o próximo embaixo e dois botões. Pensada para ser lida de longe, com o
+  // celular apoiado.
 
   function renderLiveTab(container) {
     if (!state.selectedEvent) {
@@ -1280,6 +1495,10 @@
     }
 
     const activities = state.activities;
+    // "Atual" é o primeiro momento pendente na ordem do roteiro, não o mais
+    // próximo do horário: quem está conduzindo decide a ordem de Wagner, e o
+    // campo de horário é só informação para consultar. Sem pendentes, a última
+    // atividade é o que fica em destaque, para a tela não esvaziar no fim.
     const currentActivity = activities.find(a => a.status === 'pending') || activities[activities.length - 1];
     const currentIndex = currentActivity ? activities.indexOf(currentActivity) : -1;
     const nextActivity = currentIndex >= 0 && currentIndex + 1 < activities.length ? activities[currentIndex + 1] : null;
@@ -1371,6 +1590,9 @@
     refreshIcons();
   }
 
+  // Relógio de parede do modo ao vivo. Roda em intervalo de 1s e se autossusta:
+  // quando a aba troca, o elemento some e o próprio tick dá clearInterval, em
+  // vez de deixar um timer rodando atrás de uma tela fechada.
   function startLiveClock() {
     clearInterval(state.liveTimerInterval);
     function update() {
@@ -1392,6 +1614,11 @@
   // ==========================================================================
   // Operações de Dados: Atividades, Convidados, Equipe e Mesas
   // ==========================================================================
+  // O padrão se repete em todas: grava no banco, mexe no objeto do state e
+  // redesenha. Nada de atualização otimista de verdade — o estado local é
+  // corrigido a partir do que o servidor aceitou, e a lista inteira volta por
+  // loadSelectedEventDetails() para não divergir do que os outros usuários
+  // enxergam.
 
   // --- Atividades ---
   async function toggleActivityCheck(actId) {
@@ -1402,6 +1629,9 @@
     const act = state.activities.find(a => a.id === actId);
     if (!act) return;
 
+    // Só alterna entre pendente e concluído: um momento marcado como ignorado
+    // volta para pendente, nunca para concluído — quem pula algo por engano e
+    // desmarca não deve ver o item aparecer como feito.
     const newStatus = act.status === 'completed' ? 'pending' : 'completed';
 
     try {
@@ -1421,6 +1651,9 @@
     }
   }
 
+  // Usada pelo botão do modo ao vivo (concluir/pular) e pelo select de status
+  // que aparece no roteiro. Aceita qualquer um dos quatro status, ao contrário
+  // do toggle acima, que é binário.
   async function updateActivityStatus(actId, newStatus) {
     if (blockIfLocked()) return;
     const sb = getSupabase();
@@ -1447,6 +1680,8 @@
   // A ordem canônica do roteiro é sempre state.activities (ordenada por
   // position no banco), nunca a lista já filtrada da tela. Reordenar a partir
   // do filtro trocaria o item pela posição que o usuário não está vendo.
+  // Atalho para a ordem atual; a reordenação de fato monta a lista em
+  // moveActivityTo(), que já sabe onde o item foi solto.
   function orderedActivityIds() {
     return state.activities.map(a => a.id);
   }
@@ -1464,11 +1699,18 @@
     const sb = getSupabase();
     if (!sb || !state.selectedEventId) return;
 
+    // Vai para o banco como um array de ids na ordem desejada, e não como
+    // vários UPDATEs: `unique (event_id, position)` impede gravar a ordem nova
+    // linha a linha, porque a primeira esbarraria na posição que o vizinho ainda
+    // ocupa. A RPC faz as duas fases dentro de uma transação.
     const { error } = await sb.rpc('reorder_ceremonial_activities', {
       target_event_id: state.selectedEventId,
       ordered_ids: orderedIds
     });
 
+    // Nos dois desfechos a lista é recarregada: no erro, para desfazer o
+    // arrasto que o usuário acabou de ver; no acerto, porque quem manda na
+    // ordem é o banco.
     if (error) {
       console.error('Erro ao reordenar o roteiro:', error);
       notify('Não foi possível reordenar o roteiro.');
@@ -1487,10 +1729,15 @@
     if (from === -1) return;
 
     const [moved] = list.splice(from, 1);
+    // O `to` é calculado depois do splice, porque o próprio item arrastado já
+    // saiu da lista e encontrá-lo agora daria a posição errada. Se o vizinho
+    // alvo não existir mais, cai no fim em vez de abortar.
     let to = beforeId ? list.findIndex(a => a.id === beforeId) : list.length;
     if (to === -1) to = list.length;
     list.splice(to, 0, moved);
 
+    // Sem nenhuma mudança, não chama a RPC: arrasto que volta à posição de
+    // origem não deve gastar ida e volta ao banco.
     if (list.every((a, i) => a.id === state.activities[i].id)) return; // nada mudou
     await persistActivityOrder(list.map(a => a.id));
   }
@@ -1508,6 +1755,9 @@
     return document.getElementById('timeline-activities-list');
   }
 
+  // Os cards são lidos do DOM, e não de state.activities: o que está na tela é a
+  // lista filtrada e pode já estar desatualizada em relação ao banco. Serve
+  // para medir onde o ponteiro está e para pintar o marcador de destino.
   function activityCards() {
     const list = timelineList();
     return list ? Array.from(list.querySelectorAll('.timeline-activity-card')) : [];
@@ -1516,6 +1766,8 @@
   // Decide em que posição o card arrastado deve cair, comparando o ponteiro com
   // o centro de cada card. Retorna o id do card anterior, que é o que
   // moveActivityTo espera, ou null para "colocar no fim".
+  // O card arrastado é ignorado na conta: com ele dentro da lista, o ponteiro
+  // nunca passaria do próprio centro dele.
   function dropTargetBeforeId(pointerY) {
     const cards = activityCards().filter(card => card.dataset.activityId !== state.drag.activityId);
     for (const card of cards) {
@@ -1529,6 +1781,9 @@
     activityCards().forEach(card => card.classList.remove('drag-over-top', 'drag-over-bottom'));
   }
 
+  // O destino é marcado por classe CSS, sem criar nenhum elemento novo. Pisar
+  // na borda superior do card alvo significa "entra antes dele"; sem card alvo,
+  // a marca vai para a borda inferior do último.
   function paintDropTarget(beforeId) {
     clearDropMarkers();
     const others = activityCards().filter(c => c.dataset.activityId !== state.drag.activityId);
@@ -1539,6 +1794,8 @@
     }
   }
 
+  // Encerramento do arraste. Grava só se houve arraste de verdade (`started`):
+  // um toque seco no punho limpa o estado e não chama o banco.
   function endDrag(commit) {
     const { activityId, beforeId, started, card } = state.drag;
     if (!activityId) return;
@@ -1578,10 +1835,14 @@
 
     const startY = event.clientY;
 
+    // Os três ouvintes ficam em window, não no card: durante o arraste o ponteiro
+    // sai do elemento e, se o card fosse redesenhado, perderia o acompanhamento.
     const onMove = (moveEvent) => {
       // Um toque no punho sem deslocar é um clique, não um arraste.
       if (!state.drag.started && Math.abs(moveEvent.clientY - startY) < DRAG_THRESHOLD_PX) return;
 
+      // A partir daqui o arraste é real: a classe no <body> é o que segura a
+      // seleção de texto e o cursor durante o movimento.
       if (!state.drag.started) {
         state.drag.started = true;
         state.drag.card?.classList.add('dragging');
@@ -1601,8 +1862,12 @@
     };
 
     const onUp = () => finish(true);
+    // pointercancel é o dedo interrompido pelo sistema (chamada, gesto do SO):
+    // o arraste é desfeito sem gravar, porque o usuário não escolheu soltar.
     const onCancel = () => finish(false);
 
+    // O move é passivo de propósito: o scroll continua vindo do toque em
+    // Pointer Events e o preventDefault do pointerdown é o que segura a rolagem.
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
@@ -1615,7 +1880,12 @@
   // As atividades vivem em ceremonial_template_activities e são copiadas para
   // o evento pela função copy_ceremonial_template, que faz tudo em uma
   // transação no banco.
+  // Não têm nada a ver com o RLS por evento: modelos são compartilhados por
+  // toda a equipe, e é por isso que o realtime.js tem um tópico só para eles.
 
+  // Mensagem de erro do modal de modelos. Fica dentro do modal, e não no toast,
+  // porque a pessoa precisa ler o erro antes de ele sumir — e porque o modal
+  // pode ficar aberto por muito tempo durante o trabalho.
   function setTemplatesFeedback(message, isError = false) {
     const el = document.getElementById('ceremonial-templates-feedback');
     if (!el) return;
@@ -1623,6 +1893,10 @@
     el.style.color = isError ? '#a0483d' : '';
   }
 
+  // As duas leituras vão juntas: os momentos de todos os modelos vêm em uma
+  // consulta só e a separação por modelo é feita no navegador. São poucas linhas
+  // e assim um arraste ou uma edição no modal não custa uma ida e volta nova ao
+  // banco a cada clique.
   async function loadTemplates() {
     const sb = getSupabase();
     if (!sb) return;
@@ -1643,16 +1917,23 @@
     }
   }
 
+  // Modelo aberto no painel de modelos padrão (o id fica no state, não no DOM).
   function selectedTemplate() {
     return state.templates.find(t => t.id === state.editingTemplateId) || null;
   }
 
+  // Ordem do roteiro do modelo. O .sort() aqui é defensivo: a consulta já vem
+  // ordenada por position, mas todas as linhas de todos os modelos vêm juntas e
+  // nada impede que isso mude.
   function templateActivities(templateId) {
     return state.templateActivities
       .filter(item => item.template_id === templateId)
       .sort((a, b) => a.position - b.position);
   }
 
+  // Recarrega ao abrir, mesmo já tendo carregado antes: o realtime pode ter
+  // trazido alteração de outro usuário enquanto o modal estava fechado. Sem
+  // seleção, abre no primeiro modelo, que é o mais frequente em uso.
   function openTemplatesModal() {
     const panel = document.getElementById('ceremonial-templates-modal');
     if (!panel) return;
@@ -1672,6 +1953,8 @@
     if (panel) panel.hidden = true;
   }
 
+  // Lista da esquerda + detalhe da direita. Só o item ativo (editingTemplateId)
+  // é destacado; o painel inteiro é redesenhado a cada mudança.
   function renderTemplatesModal() {
     const list = document.getElementById('templates-list');
     const detail = document.getElementById('templates-detail');
@@ -1698,6 +1981,8 @@
     refreshIcons();
   }
 
+  // Detalhe do modelo: cabeçalho com renomear/excluir, o formulário de adição
+  // rápida e a lista de momentos (arrastáveis pelo punho).
   function renderTemplateDetail() {
     const detail = document.getElementById('templates-detail');
     if (!detail) return;
@@ -1761,9 +2046,15 @@
     `;
 
     const form = document.getElementById('template-activity-form');
+    // O form é reconstruído junto com o resto do detalhe a cada render, então
+    // o listener precisa ser religado aqui. Delegar para o document custaria
+    // uma re-render por tecla digitada, já que o detalhe inteiro é redesenhado.
     if (form) form.addEventListener('submit', handleTemplateActivitySubmit);
   }
 
+  // INSERT com select devolvendo a linha pronta: o modelo novo entra no state
+  // sem nova consulta, e já fica selecionado para o usuário começar a montar
+  // os momentos.
   async function createTemplate(event) {
     event.preventDefault();
     const sb = getSupabase();
@@ -1792,6 +2083,9 @@
     notify(`Modelo "${data.name}" criado.`);
   }
 
+  // Renomear e confirmar exclusão usam prompt e confirm do navegador: são duas
+  // ações raras e não valem um modal só para elas, como acontece com o resto do
+  // app, em que formulário e exclusão pedem confirmação própria.
   async function renameTemplate(templateId) {
     const sb = getSupabase();
     const template = state.templates.find(t => t.id === templateId);
@@ -1810,6 +2104,8 @@
     renderTemplatesModal();
   }
 
+  // Exclui o modelo e, por cascade, seus momentos. Não há como desfazer, por
+  // isso o confirm mostra quantos momentos vão junto.
   async function deleteTemplate(templateId) {
     const sb = getSupabase();
     const template = state.templates.find(t => t.id === templateId);
@@ -1834,6 +2130,9 @@
     notify('Modelo excluído.');
   }
 
+  // Adiciona um momento ao modelo em edição. Difere do roteiro do evento: aqui
+  // não há RPC de renumeração, então remover um item do meio deixa um buraco na
+  // sequência de `position` (o próximo insert usa max+1 e não colide).
   async function handleTemplateActivitySubmit(event) {
     event.preventDefault();
     const sb = getSupabase();
@@ -1848,6 +2147,8 @@
 
     // max(position) + 1 e não length + 1: excluir um momento do meio deixa
     // buraco na sequência e o length colidiria com a posição ocupada.
+    // Aqui o modelo não tem RPC de renumeração, então remover um momento deixa
+    // o buraco e a posição exibida pula um número.
     const current = templateActivities(template.id);
     const nextPosition = current.reduce((max, item) => Math.max(max, item.position || 0), 0) + 1;
 
@@ -1868,6 +2169,8 @@
     document.getElementById('template-act-resp').value = '';
   }
 
+  // Remove um momento do modelo. Só mexe no state local depois do sucesso,
+  // evitando redesenhar com o item ainda no banco.
   async function removeTemplateActivity(activityId) {
     const sb = getSupabase();
     if (!sb) return;
@@ -2031,11 +2334,17 @@
     window.addEventListener('pointercancel', onCancel);
   }
 
+  // Copia o modelo para o roteiro do evento aberto. Com a caixa "substituir"
+  // marcada troca o roteiro inteiro; sem ela, acrescenta os momentos ao fim.
+  // Toda a cópia roda numa RPC transacional no banco.
   async function applyTemplateToEvent(templateId) {
     const sb = getSupabase();
     const template = state.templates.find(t => t.id === templateId);
     if (!sb || !template || !state.selectedEventId) return;
 
+    // A caixa "substituir" é a diferença entre colar o modelo no fim do roteiro
+    // e trocar o roteiro inteiro. Apagar o que a equipe já montou é uma decisão
+    // irreversível, então ela vem com o número de momentos na pergunta.
     const replace = document.getElementById('template-replace')?.checked === true;
     const count = templateActivities(templateId).length;
     if (!count) {
@@ -2048,6 +2357,9 @@
     }
 
     setTemplatesFeedback('');
+    // A cópia inteira acontece dentro da RPC: ler o modelo, apagar o roteiro
+    // antigo (se for substituir) e renumerar as posições são passos que não
+    // podem ficar pela metade no navegador.
     const { data, error } = await sb.rpc('copy_ceremonial_template', {
       source_template_id: templateId,
       target_event_id: state.selectedEventId,
@@ -2059,11 +2371,22 @@
       return;
     }
 
+    // A RPC devolve um inteiro, mas o supabase-js entrega a resposta como
+    // array de linhas. Os dois formatos são aceitos para o aviso não depender
+    // do detalhe do cliente.
     const copied = Array.isArray(data) ? data[0] : data;
     closeTemplatesModal();
     await loadSelectedEventDetails(state.selectedEventId);
     notify(`${copied || count} momentos do modelo "${template.name}" copiados para o roteiro.`, 4000);
   }
+
+  // ==========================================================================
+  // EXCLUSÕES E AÇÕES DE UM TOQUE
+  // ==========================================================================
+  // Tudo que cabe num clique: concluir, pular, registrar presença, remover.
+  // Cada exclusão pergunta com o nome do registro antes, porque quem apaga
+  // roteiro ou lista de convidado erra com frequência e o item some da tela
+  // junto com o botão de desfazer que o app não tem.
 
   async function deleteActivity(actId) {
     if (blockIfLocked()) return;
@@ -2081,6 +2404,8 @@
 
       // Renumera para 1..N. Sem isso sobraria um buraco na sequência e o
       // próximo momento criado colidiria com a posição ocupada.
+      // É a mesma razão de existir do próximoActivityPosition() lá em cima,
+      // aplicada depois de um buraco já formado em vez de antes do insert.
       await sb.rpc('pack_ceremonial_activities', { target_event_id: state.selectedEventId });
 
       notify('Momento excluído do cronograma.');
@@ -2206,21 +2531,17 @@
     form.reset();
     if (feedbackEl) feedbackEl.textContent = '';
 
-    if (actData) {
-      state.editingActivityId = actData.id;
-      if (titleEl) titleEl.textContent = 'Editar Momento do Cerimonial';
-      document.getElementById('modal-act-id').value = actData.id || '';
-      document.getElementById('modal-act-title').value = actData.title || '';
-      document.getElementById('modal-act-time').value = actData.scheduled_time ? actData.scheduled_time.slice(0, 5) : '';
-      document.getElementById('modal-act-resp').value = actData.responsible || '';
-      document.getElementById('modal-act-status').value = actData.status || 'pending';
-      document.getElementById('modal-act-desc').value = actData.description || '';
-    } else {
-      state.editingActivityId = null;
-      if (titleEl) titleEl.textContent = 'Novo Momento no Cronograma';
-      document.getElementById('modal-act-id').value = '';
-      document.getElementById('modal-act-status').value = 'pending';
-    }
+    // Edição vs. criação é decidido pelo id, não pela presença do objeto: a
+    // cópia da duplicação (sem id) cai no modo criação já preenchida.
+    const isEdit = Boolean(actData?.id);
+    state.editingActivityId = isEdit ? actData.id : null;
+    if (titleEl) titleEl.textContent = isEdit ? 'Editar Momento do Cerimonial' : 'Novo Momento no Cronograma';
+    document.getElementById('modal-act-id').value = isEdit ? actData.id : '';
+    document.getElementById('modal-act-title').value = actData?.title || '';
+    document.getElementById('modal-act-time').value = actData?.scheduled_time ? actData.scheduled_time.slice(0, 5) : '';
+    document.getElementById('modal-act-resp').value = actData?.responsible || '';
+    document.getElementById('modal-act-status').value = actData?.status || 'pending';
+    document.getElementById('modal-act-desc').value = actData?.description || '';
 
     panel.hidden = false;
     refreshIcons();
@@ -2251,23 +2572,18 @@
         state.tables.map(t => `<option value="${t.id}">Mesa ${sanitizeHtml(t.table_number)}</option>`).join('');
     }
 
-    if (guestData) {
-      state.editingGuestId = guestData.id;
-      if (titleEl) titleEl.textContent = 'Editar Convidado';
-      document.getElementById('modal-guest-id').value = guestData.id || '';
-      document.getElementById('modal-guest-name').value = guestData.name || '';
-      document.getElementById('modal-guest-phone').value = guestData.whatsapp || '';
-      document.getElementById('modal-guest-status').value = guestData.status || 'confirmed';
-      if (tableSelect && guestData.table_id) tableSelect.value = guestData.table_id;
-      document.getElementById('modal-guest-arrived').checked = Boolean(guestData.arrived_at);
-      document.getElementById('modal-guest-notes').value = guestData.notes || '';
-    } else {
-      state.editingGuestId = null;
-      if (titleEl) titleEl.textContent = 'Novo Convidado na Lista';
-      document.getElementById('modal-guest-id').value = '';
-      document.getElementById('modal-guest-status').value = 'confirmed';
-      document.getElementById('modal-guest-arrived').checked = false;
-    }
+    // Pelo id, e não pela presença do objeto: a cópia da duplicação abre como
+    // criação já preenchida.
+    const isEdit = Boolean(guestData?.id);
+    state.editingGuestId = isEdit ? guestData.id : null;
+    if (titleEl) titleEl.textContent = isEdit ? 'Editar Convidado' : 'Novo Convidado na Lista';
+    document.getElementById('modal-guest-id').value = isEdit ? guestData.id : '';
+    document.getElementById('modal-guest-name').value = guestData?.name || '';
+    document.getElementById('modal-guest-phone').value = guestData?.whatsapp || '';
+    document.getElementById('modal-guest-status').value = guestData?.status || 'confirmed';
+    if (tableSelect && guestData?.table_id) tableSelect.value = guestData.table_id;
+    document.getElementById('modal-guest-arrived').checked = Boolean(guestData?.arrived_at);
+    document.getElementById('modal-guest-notes').value = guestData?.notes || '';
 
     panel.hidden = false;
     refreshIcons();
@@ -2291,19 +2607,14 @@
     form.reset();
     if (feedbackEl) feedbackEl.textContent = '';
 
-    if (staffData) {
-      state.editingStaffId = staffData.id;
-      if (titleEl) titleEl.textContent = 'Editar Cerimonialista';
-      document.getElementById('modal-staff-id').value = staffData.id || '';
-      document.getElementById('modal-staff-name').value = staffData.name || '';
-      document.getElementById('modal-staff-phone').value = staffData.whatsapp || '';
-      document.getElementById('modal-staff-email').value = staffData.email || '';
-      document.getElementById('modal-staff-notes').value = staffData.notes || '';
-    } else {
-      state.editingStaffId = null;
-      if (titleEl) titleEl.textContent = 'Adicionar à Equipe de Cerimonial';
-      document.getElementById('modal-staff-id').value = '';
-    }
+    const isEdit = Boolean(staffData?.id);
+    state.editingStaffId = isEdit ? staffData.id : null;
+    if (titleEl) titleEl.textContent = isEdit ? 'Editar Cerimonialista' : 'Adicionar à Equipe de Cerimonial';
+    document.getElementById('modal-staff-id').value = isEdit ? staffData.id : '';
+    document.getElementById('modal-staff-name').value = staffData?.name || '';
+    document.getElementById('modal-staff-phone').value = staffData?.whatsapp || '';
+    document.getElementById('modal-staff-email').value = staffData?.email || '';
+    document.getElementById('modal-staff-notes').value = staffData?.notes || '';
 
     panel.hidden = false;
     refreshIcons();
@@ -2327,19 +2638,20 @@
     form.reset();
     if (feedbackEl) feedbackEl.textContent = '';
 
-    if (tableData) {
-      state.editingTableId = tableData.id;
-      if (titleEl) titleEl.textContent = 'Editar Mesa';
-      document.getElementById('modal-table-id').value = tableData.id || '';
+    const isEdit = Boolean(tableData?.id);
+    state.editingTableId = isEdit ? tableData.id : null;
+    if (titleEl) titleEl.textContent = isEdit ? 'Editar Mesa' : 'Nova Mesa / Setor';
+    document.getElementById('modal-table-id').value = isEdit ? tableData.id : '';
+    if (isEdit) {
       document.getElementById('modal-table-number').value = tableData.table_number || '';
-      document.getElementById('modal-table-notes').value = tableData.notes || '';
     } else {
-      state.editingTableId = null;
-      if (titleEl) titleEl.textContent = 'Nova Mesa / Setor';
-      document.getElementById('modal-table-id').value = '';
+      // Numa cópia o número do original não serve: a tabela tem
+      // unique (event_id, table_number) e o salvamento bateria na chave. Só o
+      // restante (descrição/observações) é aproveitado da cópia.
       const nextNum = state.tables.length + 1;
       document.getElementById('modal-table-number').value = String(nextNum).padStart(2, '0');
     }
+    document.getElementById('modal-table-notes').value = tableData?.notes || '';
 
     panel.hidden = false;
     refreshIcons();
@@ -2355,6 +2667,10 @@
   // Submissão dos Formulários
   // ==========================================================================
 
+  // Salva o momento do roteiro vindo do modal. O id oculto decide entre editar
+  // (id preenchido) e criar; ao criar, a posição é o fim da lista. Se foi
+  // informado um responsável que ainda não está na equipe, ele entra nela
+  // automaticamente (ensureResponsibleInTeam).
   async function handleActivitySubmit(e) {
     e.preventDefault();
     if (blockIfLocked()) return;
@@ -2407,6 +2723,9 @@
     }
   }
 
+  // Adição rápida pela própria linha do roteiro (sem abrir modal): sempre cria
+  // um momento novo no fim, com status inicial 'pending'. É o caminho para
+  // lançar vários itens seguidos durante a montagem do cronograma.
   async function handleInlineActivitySubmit(e) {
     e.preventDefault();
     if (blockIfLocked()) return;
@@ -2447,6 +2766,10 @@
     }
   }
 
+  // Salva o convidado do modal (criar/editar). `arrived_at` é ligado ao
+  // marcar/desmarcar a caixa de chegada: guarda o instante da entrada na
+  // recepção, e não uma simples presença, porque a contagem da recepção usa
+  // essa data.
   async function handleGuestSubmit(e) {
     e.preventDefault();
     const sb = getSupabase();
@@ -2495,6 +2818,8 @@
     }
   }
 
+  // Salva um membro da equipe de cerimonial (criar/editar). Os campos opcionais
+  // vão como null em vez de string vazia para o banco guardar NULL.
   async function handleStaffSubmit(e) {
     e.preventDefault();
     if (blockIfLocked()) return;
@@ -2540,6 +2865,8 @@
     }
   }
 
+  // Salva a mesa/setor (criar/editar). O número é livre (string), não um id:
+  // cada evento pode numerar as mesas do seu jeito.
   async function handleTableSubmit(e) {
     e.preventDefault();
     if (blockIfLocked()) return;
@@ -2958,6 +3285,26 @@
       populateEventSelector();
     }
   };
+
+  // Duplicação: a cópia (sem id) abre o modal em modo criação já preenchido.
+  // Cada tipo vive no estado do evento selecionado; sem evento, não há o que
+  // duplicar.
+  window.plenitudeDuplicate?.register('activity', (id) => {
+    const item = state.activities.find((activity) => activity.id === id);
+    if (item) openActivityModal(window.plenitudeDuplicate.copy(item));
+  });
+  window.plenitudeDuplicate?.register('guest', (id) => {
+    const item = state.guests.find((guest) => guest.id === id);
+    if (item) openGuestModal(window.plenitudeDuplicate.copy(item));
+  });
+  window.plenitudeDuplicate?.register('staff', (id) => {
+    const item = state.staff.find((member) => member.id === id);
+    if (item) openStaffModal(window.plenitudeDuplicate.copy(item));
+  });
+  window.plenitudeDuplicate?.register('table', (id) => {
+    const item = state.tables.find((table) => table.id === id);
+    if (item) openTableModal(window.plenitudeDuplicate.copy(item));
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {

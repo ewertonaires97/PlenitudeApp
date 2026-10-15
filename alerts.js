@@ -64,16 +64,24 @@
   const bellCount = document.querySelector('#notice-count');
   const bellDot = document.querySelector('#notice-dot');
 
+  // O cliente compartilhado; o global é o fallback das telas antigas.
   function getSupabase() {
     return window.plenitudeSupabase || (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
   }
 
+  // Todo título/detalhe de aviso nasce de dado do banco e é montado por
+  // template string — sem o escape, um nome de item com "<" viraria markup.
   function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[character]));
   }
 
+  // As datas do app são comparadas em YYYY-MM-DD. As três funções abaixo montam
+  // a data com 'T12:00:00' em vez de passar 'YYYY-MM-DD' puro ao Date: o Date
+  // puro é lido como UTC e, no Brasil, cairia no dia anterior — o que faria um
+  // evento "hoje" contar como ontem. O meio-dia é folga suficiente para
+  // qualquer fuso do país.
   function localToday() {
     const now = new Date();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -89,6 +97,7 @@
     return `${date.getFullYear()}-${month}-${day}`;
   }
 
+  // Dias inteiros entre hoje e a data; null se a data não for válida.
   function daysUntil(value) {
     if (!value) return null;
     const target = new Date(`${String(value).slice(0, 10)}T12:00:00`);
@@ -97,6 +106,7 @@
     return Math.round((target - today) / 86400000);
   }
 
+  // Data em pt-BR para exibir; devolve o valor cru se não for parseável.
   function formatDateBR(value) {
     if (!value) return '';
     const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
@@ -114,6 +124,9 @@
     return source.permissions.some((permission) => access.can(permission));
   }
 
+  // Uma fonte é um objeto com id, rótulo, permissões e uma função collect().
+  // O spread depois do default garante que cada fonte registrada tenha a lista
+  // de permissions, mesmo que o módulo esqueça de passá-la.
   function register(source) {
     if (!source || !source.id || typeof source.collect !== 'function') return;
     SOURCES.push({ permissions: [], ...source });
@@ -252,6 +265,8 @@
     return collectedFromSources.flat();
   }
 
+  // Ordena por urgência (critical antes de warn) e, dentro da mesma faixa,
+  // por título em pt-BR. O `?? 9` joga urgência desconhecida para o fim.
   function sortAlerts(alerts) {
     return alerts.slice().sort((a, b) => {
       const bySeverity = (RANK[a.severity] ?? 9) - (RANK[b.severity] ?? 9);
