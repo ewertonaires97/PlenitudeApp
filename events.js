@@ -178,6 +178,36 @@
     }
   }
 
+  async function updatePastEventsStatus() {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const pastEvents = state.events.filter(e =>
+      e.event_date < todayStr &&
+      (e.status === 'planned' || e.status === 'in_progress')
+    );
+
+    if (pastEvents.length === 0) return;
+
+    try {
+      for (const event of pastEvents) {
+        const { error } = await sb
+          .from('events')
+          .update({ status: 'completed' })
+          .eq('id', event.id);
+
+        if (error) {
+          console.warn(`Erro ao atualizar status do evento ${event.id}:`, error);
+        } else {
+          event.status = 'completed';
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar status de eventos passados:', err);
+    }
+  }
+
   async function loadEvents() {
     const sb = getSupabase();
     const feedbackEl = document.getElementById('event-feedback');
@@ -213,6 +243,7 @@
       if (error) throw error;
 
       state.events = data || [];
+      await updatePastEventsStatus();
       if (feedbackEl) feedbackEl.textContent = '';
       renderEventsList();
       updateTodaySummary();

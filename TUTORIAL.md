@@ -24,6 +24,12 @@ programar.
 > busca, mas elas mudam assim que você edita alguma coisa. Use sempre o
 > **nome da função ou da classe** como âncora de busca. O código é a fonte
 > da verdade, não este documento.
+>
+> ⚠️ **REGRA OBRIGATÓRIA:** Toda alteração feita no código **DEVE** ser
+> refletida neste `TUTORIAL.md`. Se você mudou uma função, uma tela, um
+> fluxo, um bloco CSS ou adicionou um módulo novo, atualize este documento
+> antes de considerar a tarefa concluída. O tutorial desatualizado engana
+> quem vem depois de você.
 
 ---
 
@@ -645,8 +651,15 @@ sinal vencido). Cada fonte se cadastra com
 | **JS abrir detalhe** | `openEventDetail(id)` — `events.js:616` |
 | **JS desenhar detalhe** | `renderEventDetailHero()` `events.js:698`, `renderEventTabContent()` `events.js:752` |
 | **JS sumário do dia** | `updateTodaySummary()` — `events.js:228` |
+| **JS atualizar status automático** | `updatePastEventsStatus()` — `events.js:146` (marca eventos passados como "Realizado") |
 | **JS todos os cliques** | `setupEventListeners()` — `events.js:1234` (um listener gigante no `document`) |
 | **Abrir a partir de** | `data-open-events` / `data-action="Agenda de hoje"` |
+
+**Comportamento automático de status:** ao carregar a lista de eventos, a função
+`updatePastEventsStatus()` verifica todos os eventos com data anterior a hoje e
+status `planned` (Planejado) ou `in_progress` (Em andamento) e os atualiza
+automaticamente para `completed` (Realizado) no banco de dados. Isso evita que
+eventos passados fiquem com status incorreto.
 
 ### 7.11 Financeiro (`financial.js`)
 
