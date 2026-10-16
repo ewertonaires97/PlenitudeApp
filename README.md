@@ -111,6 +111,12 @@ Para habilitar as movimentações de estoque, execute [supabase/migrations/004_i
 
 Para categorias e imagens dos itens, execute [supabase/migrations/005_inventory_categories_images.sql](supabase/migrations/005_inventory_categories_images.sql). As imagens ficam no bucket `inventory-images`, podem ser múltiplas e abrem em tela cheia ao toque. O mesmo visualizador é usado nas imagens dos cardápios.
 
+Execute [supabase/migrations/023_service_materials_rentals.sql](supabase/migrations/023_service_materials_rentals.sql) **depois da `015`** para ligar **serviço → item de estoque** (ela usa `public.has_permission`). Ela não cria tabela: `service_materials` já existia desde a `001` e nunca foi usada por nenhuma tela. O que a migration faz é (a) criar os índices das duas direções dessa consulta e (b) abrir **leitura** de `quote_items`, `quotes` e `events` para quem tem a permissão `estoque` — o caminho inverso do que a `015` já fez ao abrir o estoque para quem cadastra serviço. São políticas de `SELECT` only: as de escrita continuam sendo as da `015`, porque as políticas do Postgres se somam por operação.
+
+O serviço ganha uma caixa **Itens de estoque deste serviço**: os itens aparecem por categoria, com a quantidade que o serviço usa de cada um e o aviso de "também em ..." para os outros serviços que usam o mesmo item. A ficha do serviço mostra a mesma lista, com a etiqueta abrindo a ficha do item.
+
+O item de estoque, por sua vez, passa a avisar quando está **confirmado para um evento**. O item está reservado quando algum serviço que o utiliza está em um orçamento confirmado **e** o evento criado por esse orçamento ainda vai acontecer (`planned` ou `in_progress` — um evento realizado ou cancelado não segura item). Nada disso é gravado: trocar o serviço, cancelar o orçamento ou o evento libera o aviso sozinho. É a mesma regra que cria o evento na `001`, lida do outro lado.
+
 ### Cerimonial
 
 Execute [supabase/migrations/013_ceremonial_templates_reorder.sql](supabase/migrations/013_ceremonial_templates_reorder.sql) no SQL Editor. Ela é idempotente e faz quatro coisas:

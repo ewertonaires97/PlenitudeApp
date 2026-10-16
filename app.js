@@ -100,6 +100,7 @@ const serviceFormFeedback = document.querySelector('#service-form-feedback');
 const serviceFeedback = document.querySelector('#service-feedback');
 const serviceMenuFilter = document.querySelector('#service-menu-filter');
 const serviceMenuOptions = document.querySelector('#service-menu-options');
+const serviceMaterialOptions = document.querySelector('#service-material-options');
 const serviceMenuCreate = document.querySelector('[data-new-menu-from-service]');
 const menuPanel = document.querySelector('#menu-panel');
 const menuList = document.querySelector('#menu-list');
@@ -194,6 +195,18 @@ let inventoryItems = [];
 let inventoryImages = [];
 let inventoryCategories = [];
 let inventoryCategoryLinks = [];
+
+// Quais itens de estoque cada serviço utiliza. `service_materials` é o N:N
+// (serviço, item) e este é o lado dele que o app guarda em memória: o formulário
+// de serviço mostra os marcados, a ficha do serviço lista os consumidos e o
+// estoque usa a mesma lista ao contrário, para avisar o que está reservado.
+let serviceMaterials = [];
+
+// O caminho inverso do mesmo dado, já derivado: item -> eventos em que ele está
+// confirmado. Vem do orçamento confirmado que criou o evento e dos serviços que
+// esse orçamento contratou (ver `loadInventoryRentals`). É um Map porque a tela
+// de estoque pergunta isso uma vez por card, em lista.
+let inventoryRentals = new Map();
 
 // Mesmas duas filas, para as imagens do estoque. Não são compartilhadas com as
 // do cardápio de propósito: um item de estoque aberto enquanto um cardápio está
@@ -645,6 +658,20 @@ async function loadServices() {
   if (!menuPanel.hidden) renderMenus();
 }
 
+// A lista de materiais é curta (uma linha por vínculo serviço x item) e é lida
+// por três telas: o formulário de serviço, a ficha do serviço e o alerta de
+// aluguel do estoque. Separar do loader de serviços evita que salvar um item de
+// estoque reescreva a lista de serviços, e vice-versa.
+//
+// Um erro aqui não pode derrubar a tela que chamou: a lista fica vazia e cada
+// tela segue mostrando o que já tinha — no caso do formulário, nenhum item
+// marcado, que é o estado de um serviço novo.
+async function loadServiceMaterials() {
+  const { data, error } = await supabaseClient.from('service_materials').select('service_id, inventory_item_id, quantity');
+  serviceMaterials = error ? [] : data || [];
+  return serviceMaterials;
+}
+
 // O vinculo cardapio <-> serviço é N:N: um mesmo cardapio pode participar de
 // varios servicos e, por isso, aparece em mais de um deles no orcamento.
 function groupMenusByService(menus, serviceIds) {
@@ -685,6 +712,13 @@ function groupMenusByCategory(list) {
 // A etiqueta de cardapio e a mesma em todas as telas: abre a ficha do cardapio.
 function menuChip(menu) {
   return `<button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}"><i data-lucide="book-open"></i><span>${escapeHTML(menu.name)}</span></button>`;
+}
+
+// A etiqueta de item de estoque é a mesma ideia: o nome abre a ficha do item.
+// Reaproveita o desenho da etiqueta de cardápio e só troca o ícone, para as duas
+// listas não divergirem visualmente.
+function itemChip(item) {
+  return `<button class="linked-menu-chip linked-item-chip" type="button" data-open-inventory-detail="${item.id}" aria-label="Abrir ficha do item ${escapeHTML(item.name)}"><i data-lucide="box"></i><span>${escapeHTML(item.name)}</span></button>`;
 }
 
 // O vinculo cardapio <-> serviço é N:N e mora em menu_services. Derivar os dois
@@ -789,6 +823,113 @@ serviceMenuOptions.addEventListener('click', (event) => {
   toggle.setAttribute('aria-expanded', String(willOpen));
 });
 
+// ========================================================================== */
+/* ITENS DE ESTOQUE USADOS POR UM SERVIÇO                                     */
+/* ========================================================================== */
+// service_materials é o N:N entre serviço e item de estoque. O formulário de
+// serviço marca os itens que o serviço utiliza e a ficha do serviço lista os
+// mesmos; o estoque lê a relação ao contrário, para avisar que o item está
+// confirmado em algum evento (ver `loadInventoryRentals`).
+//
+// O desenho é o dos cardápios de propósito: mesma sanfona por categoria, mesmo
+// "também em ..." para os outros serviços que usam o mesmo item e mesmo cuidado
+// com item em duas categorias (é um vínculo só, marcado nas duas).
+//
+// O estado anterior dos vínculos é fotografado na abertura do formulário, pelo
+// mesmo motivo dos cardápios: é o que distingue, no save, o vínculo que já
+// existia do que a pessoa acabou de marcar — sem isso, todo save tentaria
+// reinserir as linhas que já estavam em service_materials e bateria na chave
+// primária (service_id, inventory_item_id).
+let serviceMaterialsBefore = [];
+// loadInventory re-renderiza esta lista a cada evento de realtime, então o
+// estado da sanfona fica guardado por id de categoria em vez de no DOM.
+let serviceMaterialCollapsedGroups = new Set();
+
+// Os dois lados da relação a partir da mesma lista em memória. Filtrar por
+// serviço é o formulário e a ficha; filtrar por item é o alerta do estoque.
+function materialsForService(serviceId) {
+  return serviceMaterials.filter((material) => material.service_id === serviceId);
+}
+
+function serviceIdsForItem(itemId) {
+  return serviceMaterials.filter((material) => material.inventory_item_id === itemId).map((material) => material.service_id);
+}
+
+// `failed` é o que separa "o estoque está vazio" de "a consulta de estoque não
+// passou". Sem ele, quem abre o formulário num banco que recusou a leitura vê
+// "nenhum item cadastrado" e conclui que o cadastro está errado.
+function renderServiceMaterialOptions(serviceId, failed = false) {
+  if (failed) {
+    serviceMaterialOptions.innerHTML = '<span class="field-hint">Não foi possível carregar o estoque. Confira o acesso e recarregue a página.</span>';
+    return;
+  }
+  if (!inventoryItems.length) {
+    serviceMaterialOptions.innerHTML = '<span class="field-hint">Nenhum item cadastrado no estoque ainda.</span>';
+    return;
+  }
+  serviceMaterialOptions.innerHTML = groupInventoryByCategory(inventoryItems).map((group) => {
+    const isCollapsed = serviceMaterialCollapsedGroups.has(group.id);
+    const options = group.items.map((item) => {
+      const material = materialsForService(serviceId).find((entry) => entry.inventory_item_id === item.id);
+      const checked = Boolean(material);
+      const others = serviceIdsForItem(item.id)
+        .filter((id) => id !== serviceId)
+        .map((id) => services.find((service) => service.id === id)?.name)
+        .filter(Boolean);
+      const othersLine = others.length
+        ? `<span class="service-material-owner">também em ${escapeHTML(others.join(', '))}</span>`
+        : '';
+      // Um item em duas categorias aparece nas duas, então o id leva a categoria
+      // junto: dois elementos com o mesmo id fariam o <label> marcar sempre o
+      // primeiro.
+      const inputId = `service-material-${group.id || 'sem-categoria'}-${item.id}`;
+      return `<div class="service-material-option${checked ? ' selected' : ''}">
+        <label class="service-material-check" for="${inputId}"><input id="${inputId}" type="checkbox" data-service-material="${item.id}" ${checked ? 'checked' : ''} /></label>
+        ${itemChip(item)}
+        <label class="service-material-quantity" for="material-qty-${inputId}">Qtd.</label>
+        <input class="service-material-quantity-input" type="number" min="0.01" step="0.01" id="material-qty-${inputId}" value="${material?.quantity ?? 1}" data-material-quantity="${item.id}" aria-label="Quantidade de ${escapeHTML(item.name)} usada pelo serviço" />
+        ${othersLine}
+      </div>`;
+    }).join('');
+    const count = group.items.length;
+    return `<details class="menu-category-group" data-material-group="${group.id}"${isCollapsed ? '' : ' open'}>
+      <summary class="menu-category-summary" data-toggle-material-group="${group.id}" aria-expanded="${isCollapsed ? 'false' : 'true'}">
+        <i data-lucide="chevron-down" class="menu-category-chevron"></i>
+        <span class="menu-category-name">${escapeHTML(group.name)}</span>
+        <span class="menu-category-count">${count}</span>
+      </summary>
+      <div class="menu-category-body">${options}</div>
+    </details>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+// O mesmo item pode estar em duas categorias do estoque, e por isso tem mais de
+// uma caixa de marcação. Marcar em uma precisa marcar nas outras: é o mesmo
+// vínculo, não dois.
+serviceMaterialOptions.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-service-material]');
+  if (!checkbox) return;
+  serviceMaterialOptions.querySelectorAll(`[data-service-material="${CSS.escape(checkbox.dataset.serviceMaterial)}"]`).forEach((input) => {
+    input.checked = checkbox.checked;
+    input.closest('.service-material-option').classList.toggle('selected', input.checked);
+  });
+});
+
+// Delegado pelo mesmo motivo do cardápio: a lista inteira é re-renderizada a
+// cada load do estoque. O details.open ainda é o valor de antes aqui — o abrir
+// e fechar do <details> é a ação padrão do clique no summary e roda depois do
+// dispatch, então o próximo estado é o inverso do que está no DOM.
+serviceMaterialOptions.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-material-group]');
+  if (!toggle) return;
+  const groupId = toggle.dataset.toggleMaterialGroup;
+  const willOpen = !toggle.closest('[data-material-group]').open;
+  if (willOpen) serviceMaterialCollapsedGroups.delete(groupId);
+  else serviceMaterialCollapsedGroups.add(groupId);
+  toggle.setAttribute('aria-expanded', String(willOpen));
+});
+
 async function openServiceForm(service = null) {
   serviceForm.reset();
   document.querySelector('#service-id').value = service?.id || '';
@@ -801,13 +942,27 @@ async function openServiceForm(service = null) {
   serviceFormTitle.textContent = service?.id ? 'Editar serviço' : 'Novo serviço';
   serviceFormFeedback.textContent = '';
   serviceFormPanel.hidden = false;
-  await Promise.all([loadMenus(), loadServices()]);
+  // O estoque entra pelo loader de dado: o formulário só precisa da lista de
+// itens por categoria, e não deve herdar nem o desenho da tela de estoque nem a
+// contagem de alugados. O `ok` volta para a caixa avisar quando a leitura falha.
+  const [itemsLoaded] = await Promise.all([
+    loadInventoryItems(),
+    loadMenus(),
+    loadServices(),
+    loadServiceMaterials()
+  ]);
   // O estado anterior dos vínculos é fotografado aqui, antes de renderizar, e é
   // ele que permite distinguir na hora de salvar entre "o vínculo já existia" e
   // "a pessoa acabou de marcar": sem isso, todo save tentaria reinserir as
   // linhas que já estavam em menu_services e bateria na chave única.
   serviceMenusBefore = service?.id ? menus.filter((menu) => menu.serviceIds.includes(service.id)).map((menu) => menu.id) : [];
   renderServiceMenuOptions(service?.id || '');
+  // Mesma fotografia para os itens de estoque, com a mesma razão: as linhas que
+  // já estavam em service_materials não podem ser inseridas de novo. Aqui vão as
+  // linhas inteiras, e não só os ids, porque o save precisa da quantidade antiga
+  // para saber se a digitada é uma mudança ou a mesma de antes.
+  serviceMaterialsBefore = service?.id ? materialsForService(service.id) : [];
+  renderServiceMaterialOptions(service?.id || '', !itemsLoaded);
   // Criar um cardápio de dentro do serviço já o marca no cardápio novo: o
   // `presetServiceId` acima evita que a pessoa tenha de marcar de novo. Num
   // serviço novo o botão some, porque o serviço ainda nem tem id no banco para
@@ -890,11 +1045,64 @@ serviceForm.addEventListener('submit', async (event) => {
     return;
   }
 
+  // Mesmo desenho para os itens de estoque, em service_materials: desmarcar tira
+  // o vínculo deste serviço e o item continua livre para os outros; marcar
+  // cria o vínculo com a quantidade digitada. O que já estava marcado só é
+  // reescrito quando a quantidade mudou — inserir de novo bateria na chave
+  // primária (service_id, inventory_item_id).
+  const quantityByItem = new Map();
+  serviceMaterialOptions.querySelectorAll('[data-service-material]:checked').forEach((checkbox) => {
+    // Um item em duas categorias aparece duas vezes com o mesmo vínculo, então
+    // a primeira cópia do campo é a que vale.
+    const input = serviceMaterialOptions.querySelector(`[data-material-quantity="${CSS.escape(checkbox.dataset.serviceMaterial)}"]`);
+    const typed = Number(input?.value);
+    // Valor zerado, negativo ou em branco não pode ser gravado: o banco exige
+    // quantidade maior que zero, e o padrão da linha é 1.
+    quantityByItem.set(checkbox.dataset.serviceMaterial, typed > 0 ? typed : 1);
+  });
+  const beforeIds = serviceMaterialsBefore.map((material) => material.inventory_item_id);
+  const releasedItems = beforeIds.filter((itemId) => !quantityByItem.has(itemId));
+  let materialsError = null;
+  if (releasedItems.length) {
+    const release = await supabaseClient.from('service_materials').delete().eq('service_id', savedId).in('inventory_item_id', releasedItems);
+    if (release.error) materialsError = release.error;
+  }
+  if (!materialsError) {
+    // Quantidade nova em vínculo já existente é UPDATE: o item continua o mesmo,
+    // muda só quanto o serviço usa dele.
+    const changed = serviceMaterialsBefore.filter((material) => quantityByItem.has(material.inventory_item_id) && Number(material.quantity) !== quantityByItem.get(material.inventory_item_id));
+    for (const material of changed) {
+      const update = await supabaseClient.from('service_materials').update({ quantity: quantityByItem.get(material.inventory_item_id) }).eq('service_id', savedId).eq('inventory_item_id', material.inventory_item_id);
+      if (update.error) {
+        materialsError = update.error;
+        break;
+      }
+    }
+  }
+  if (!materialsError) {
+    // Um item em duas categorias aparece marcado nas duas, então o Set evita
+    // tentar inserir o mesmo vínculo duas vezes.
+    const newItems = [...quantityByItem.keys()].filter((itemId) => !beforeIds.includes(itemId));
+    if (newItems.length) {
+      const attach = await supabaseClient.from('service_materials').insert(
+        newItems.map((itemId) => ({ service_id: savedId, inventory_item_id: itemId, quantity: quantityByItem.get(itemId) }))
+      );
+      if (attach.error) materialsError = attach.error;
+    }
+  }
+  if (materialsError) {
+    serviceFormFeedback.textContent = 'Serviço salvo, mas não foi possível atualizar os itens de estoque vinculados.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar serviço';
+    return;
+  }
+
   serviceFormPanel.hidden = true;
-  // O vinculo dos cardapios mora em menu_services, entao os dois lados sao
-  // recarregados juntos (excluir um servico leva junto os vinculos dele, por
-  // causa do ON DELETE CASCADE).
-  await Promise.all([loadServices(), loadMenus()]);
+  // Os dois vínculos N:N do serviço morrem em tabelas próprias (menu_services e
+  // service_materials), então os dois lados são recarregados juntos. Quem estiver
+  // com a tela de estoque aberta vê o aviso de aluguel se atualizar pelo
+  // realtime, que escuta service_materials.
+  await Promise.all([loadServices(), loadMenus(), loadServiceMaterials()]);
   saveButton.disabled = false;
   saveButton.querySelector('span').textContent = 'Salvar serviço';
   showToast(serviceId ? 'Serviço atualizado' : 'Serviço cadastrado');
@@ -931,7 +1139,10 @@ serviceList.addEventListener('click', async (event) => {
       setServiceFeedback('Não foi possível excluir este serviço.', true);
       return;
     }
-    await loadServices();
+    // Os materiais do serviço caem junto por causa do ON DELETE CASCADE, então a
+    // lista em memória é refeita: sem isso, a ficha de um item de estoque
+    // continuaria dizendo que este serviço usa ele.
+    await Promise.all([loadServices(), loadServiceMaterials()]);
     showToast('Serviço excluído');
   }
 });
@@ -1599,6 +1810,121 @@ function inventoryIsLow(item) {
   return Number(item.minimum_quantity) > 0 && Number(item.quantity) <= Number(item.minimum_quantity);
 }
 
+// ========================================================================== */
+/* ALERTA DE ITEM ALUGADO                                                     */
+/* ========================================================================== */
+// Os dois status de evento em que o item ainda está preso. Os outros dois do
+// enum — completed (realizado) e cancelled — significam que o evento passou ou
+// foi desfeito, e nenhum dos dois segura item.
+const ACTIVE_EVENT_STATUSES = ['planned', 'in_progress'];
+
+// Um item está confirmado para um evento quando algum serviço que o utiliza
+// está em um orçamento confirmado. É a única pergunta que o alerta faz, e ela é
+// respondida em três passos, todos eles já existentes no app:
+//
+//   item -> serviços que o usam (service_materials)
+//        -> serviços contratados em cada orçamento (quote_items)
+//        -> orçamentos confirmados e o evento que eles criaram (quotes/events)
+//
+// Nada disso é gravado: um item que deixa de estar alugado (o serviço saiu do
+// orçamento, o orçamento foi cancelado) volta a aparecer como disponível sozinho,
+// sem nenhuma rotina de devolução.
+//
+// Só contam os eventos que ainda vão acontecer — planejado ou em andamento. O
+// app usa a palavra "realizado" (completed) para evento que já passou, e marca
+// sozinho os que ficaram para trás; um evento cancelado também não segura item
+// nenhum. Nos dois casos o orçamento pode continuar confirmado: o que define o
+// aluguel é o evento, e é ele que a pessoa opera na tela.
+//
+// Sem nenhum serviço usando o item não há o que consultar: a função sai antes de
+// qualquer query, e é por isso que ela depende de `serviceMaterials` estar
+// carregada.
+async function loadInventoryRentals() {
+  if (!serviceMaterials.length) await loadServiceMaterials();
+  inventoryRentals = new Map();
+  if (!serviceMaterials.length) return inventoryRentals;
+
+  const [eventsResult, quotesResult] = await Promise.all([
+    supabaseClient.from('events').select('id, name, event_date, quote_id').in('status', ACTIVE_EVENT_STATUSES),
+    supabaseClient.from('quotes').select('id, name, status').eq('status', 'confirmed')
+  ]);
+  // Um evento existe porque o orçamento foi confirmado, então o filtro de
+  // confirmed vem do orçamento: o status do evento é planned/in_progress/
+  // completed e não tem "confirmado" nele.
+  const confirmedQuoteIds = new Set((quotesResult.data || []).map((quote) => quote.id));
+  const eventsByQuote = new Map();
+  (eventsResult.data || []).forEach((event) => {
+    if (!confirmedQuoteIds.has(event.quote_id)) return;
+    eventsByQuote.set(event.quote_id, event);
+  });
+  if (!eventsByQuote.size) return inventoryRentals;
+
+  const { data: quoteItems } = await supabaseClient
+    .from('quote_items')
+    .select('quote_id, service_id')
+    .in('quote_id', [...eventsByQuote.keys()]);
+  if (!quoteItems || !quoteItems.length) return inventoryRentals;
+
+  // serviceId -> eventos e de aí o item: os materiais viram o caminho inverso, e
+  // é a lista completa de eventos em que o item está reservado.
+  const eventsByService = new Map();
+  quoteItems.forEach((item) => {
+    const event = eventsByQuote.get(item.quote_id);
+    if (!event || !item.service_id) return;
+    if (!eventsByService.has(item.service_id)) eventsByService.set(item.service_id, []);
+    eventsByService.get(item.service_id).push(event);
+  });
+
+  serviceMaterials.forEach((material) => {
+    const events = eventsByService.get(material.service_id) || [];
+    if (!events.length) return;
+    if (!inventoryRentals.has(material.inventory_item_id)) inventoryRentals.set(material.inventory_item_id, []);
+    const target = inventoryRentals.get(material.inventory_item_id);
+    events.forEach((event) => {
+      // O mesmo item pode chegar por dois serviços do mesmo orçamento (uma
+      // mesa posta e um buffet, por exemplo): o alerta cita o evento uma vez.
+      if (target.some((rental) => rental.eventId === event.id)) return;
+      target.push({
+        eventId: event.id,
+        eventName: event.name,
+        eventDate: event.event_date,
+        serviceId: material.service_id,
+        serviceName: services.find((service) => service.id === material.service_id)?.name || 'Serviço'
+      });
+    });
+  });
+  return inventoryRentals;
+}
+
+// Os eventos em que o item está reservado, do mais antigo para o mais novo: é a
+// ordem em que a ficha do item lista.
+function rentalsForItem(itemId) {
+  return (inventoryRentals.get(itemId) || []).slice().sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)));
+}
+
+// O evento que o aviso do card cita: o primeiro que ainda vai acontecer. Se
+// todos os que ficaram na lista já passaram — um evento marcado como em
+// andamento e nunca encerrado, por exemplo — cita o mais recente, que ainda é o
+// último lugar onde o item foi usado.
+function nextRentalForItem(itemId) {
+  const rentals = rentalsForItem(itemId);
+  if (!rentals.length) return null;
+  const today = localToday();
+  return rentals.find((rental) => String(rental.eventDate) >= today) || rentals[rentals.length - 1];
+}
+
+// A linha de alerta do card. Fica logo abaixo do saldo, no mesmo lugar em que
+// o card de orçamento escreve local e data — e é uma <span> dentro do corpo do
+// card, não um cartão próprio, para o aviso não roubar o espaço da imagem.
+function inventoryRentalNotice(item) {
+  const rentals = rentalsForItem(item.id);
+  const next = nextRentalForItem(item.id);
+  if (!rentals.length || !next) return '';
+  const others = rentals.length - 1;
+  const extra = others ? ` · mais ${others}` : '';
+  return `<span class="inventory-rental-alert"><i data-lucide="calendar-check"></i><span>Confirmado para <strong>${escapeHTML(next.eventName)}</strong> · ${formatDateBR(next.eventDate)}${extra}</span></span>`;
+}
+
 // Os três filtros do estoque: busca, categoria e "só o que está baixo". A busca
 // varre todos os campos do item em vez de só o nome, porque quem procura por
 // "copo" pode estar procurando na descrição e não no título.
@@ -1623,6 +1949,7 @@ function renderInventory() {
       <div class="visual-card-body"><div class="visual-card-heading"><div><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.description || item.unit)}</span></div><span class="service-status${item.active ? '' : ' inactive'}">${item.active ? 'Disponível' : 'Inativo'}</span></div>
         ${item.categoryNames.length ? `<span class="service-menus">${escapeHTML(item.categoryNames.join(' · '))}</span>` : ''}
         <span class="inventory-balance ${inventoryIsLow(item) ? 'low' : ''}">${item.quantity} ${escapeHTML(item.unit)}${inventoryIsLow(item) ? ' · estoque baixo' : ''}</span>
+        ${inventoryRentalNotice(item)}
         ${item.imageUrls.length > 1 ? `<div class="visual-card-thumbs">${item.imageUrls.slice(1, 4).map((url) => `<button type="button" data-view-image="${escapeHTML(url)}" aria-label="Ver imagem do item"><img src="${escapeHTML(url)}" alt="" /></button>`).join('')}</div>` : ''}
       <div class="visual-card-actions">
         <button class="client-action" type="button" data-move-inventory="${item.id}" aria-label="Movimentar ${escapeHTML(item.name)}" title="Movimentar"><i data-lucide="arrow-down-up"></i></button>
@@ -1639,24 +1966,27 @@ function renderInventory() {
 // costurado aqui em categoryIds, categoryNames e imageUrls para que os
 // renderizadores não tenham que varrer as tabelas de imagem e de vínculo a cada
 // card — e para a ficha de detalhes ler o mesmo formato.
-async function loadInventory() {
-  setInventoryFeedback('Carregando estoque...');
-  const { data, error } = await supabaseClient.from('inventory_items').select('id, name, description, unit, quantity, minimum_quantity, active, created_at').order('name');
-  if (error) {
-    setInventoryFeedback('Não foi possível carregar o estoque. Verifique a autenticação.', true);
-    inventoryList.innerHTML = '';
-    return;
-  }
-  const [imagesResult, categoriesResult, linksResult] = await Promise.all([
+//
+// Este é só o dado: não desenha a lista nem escreve na tela de estoque, para que
+// o formulário de serviço possa ler os mesmos itens sem depender de a tela de
+// estoque estar aberta. Devolve `true` quando a consulta passou; `false` quando
+// ela falhou, e a diferença importa — "não há itens" e "não deu para ler" são
+// mensagens muito diferentes para quem está preenchendo o formulário.
+async function loadInventoryItems() {
+  const [itemsResult, imagesResult, categoriesResult, linksResult] = await Promise.all([
+    supabaseClient.from('inventory_items').select('id, name, description, unit, quantity, minimum_quantity, active, created_at').order('name'),
     supabaseClient.from('inventory_images').select('id, inventory_item_id, storage_path, public_url, sort_order').order('sort_order'),
     supabaseClient.from('inventory_categories').select('id, name').order('name'),
     supabaseClient.from('inventory_category_links').select('inventory_item_id, category_id')
   ]);
+  if (itemsResult.error) {
+    inventoryItems = [];
+    return false;
+  }
   inventoryImages = imagesResult.data || [];
   inventoryCategories = categoriesResult.data || [];
   inventoryCategoryLinks = linksResult.data || [];
-  renderInventoryCategoryFilter();
-  inventoryItems = (data || []).map((item) => {
+  inventoryItems = (itemsResult.data || []).map((item) => {
     const links = inventoryCategoryLinks.filter((link) => link.inventory_item_id === item.id);
     return {
       ...item,
@@ -1665,8 +1995,26 @@ async function loadInventory() {
       imageUrls: inventoryImages.filter((image) => image.inventory_item_id === item.id).map((image) => image.public_url)
     };
   });
+  return true;
+}
+
+// A tela de estoque é o `loadInventoryItems` mais o que só ela precisa: o filtro
+// de categoria, os itens confirmados em evento e a lista desenhada. Os alugados
+// entram antes do render, para o aviso do card nascer junto com o resto do item e
+// não em um segundo render que piscaria a cada abertura da tela.
+async function loadInventory() {
+  setInventoryFeedback('Carregando estoque...');
+  if (!await loadInventoryItems()) {
+    setInventoryFeedback('Não foi possível carregar o estoque. Verifique a autenticação.', true);
+    inventoryList.innerHTML = '';
+    inventoryRentals = new Map();
+    return;
+  }
+  renderInventoryCategoryFilter();
+  await loadInventoryRentals();
   const lowCount = inventoryItems.filter(inventoryIsLow).length;
-  setInventoryFeedback(`${inventoryItems.length} ${inventoryItems.length === 1 ? 'item cadastrado' : 'itens cadastrados'}${lowCount ? ` · ${lowCount} com estoque baixo` : ''}`);
+  const rentedCount = inventoryRentals.size;
+  setInventoryFeedback(`${inventoryItems.length} ${inventoryItems.length === 1 ? 'item cadastrado' : 'itens cadastrados'}${lowCount ? ` · ${lowCount} com estoque baixo` : ''}${rentedCount ? ` · ${rentedCount} ${rentedCount === 1 ? 'confirmado em evento' : 'confirmados em evento'}` : ''}`);
   renderInventory();
 }
 
@@ -1679,6 +2027,27 @@ function openInventory(options = {}) {
   inventorySearch.value = '';
   inventoryLowOnly.checked = Boolean(options.lowOnly);
   loadInventory();
+}
+
+// Os itens saem por categoria assim como os cardápios saem por categoria, e
+// pelas mesmas duas regras: as categorias vêm do banco em ordem alfabética e o
+// grupo "Sem categoria" fecha a lista para nenhum item ficar de fora. Um item em
+// duas categorias aparece nas duas — que é o mesmo critério do filtro da tela
+// de estoque.
+const ITEM_UNGROUPED_LABEL = 'Sem categoria';
+
+function groupInventoryByCategory(list) {
+  const groups = inventoryCategories.map((category) => ({ id: category.id, name: category.name, items: [] }));
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const ungrouped = { id: '', name: ITEM_UNGROUPED_LABEL, items: [] };
+  list.forEach((item) => {
+    const targets = item.categoryIds
+      .map((categoryId) => byId.get(categoryId))
+      .filter(Boolean);
+    if (targets.length) targets.forEach((group) => group.items.push(item));
+    else ungrouped.items.push(item);
+  });
+  return groups.concat(ungrouped).filter((group) => group.items.length);
 }
 
 // Atalho do cabeçalho de Estoque para as categorias de itens. Mesmo caminho do
@@ -1889,6 +2258,11 @@ async function openDetail(type, id) {
   } else if (type === 'service') {
     const service = services.find((item) => item.id === id);
     if (!service) return;
+    // Os itens usados pelo serviço moram em duas listas que a tela de serviços
+    // não carrega: os itens do estoque e os vínculos em service_materials. O
+    // mesmo tratamento que os cardápios recebem na ficha do orçamento.
+    if (!inventoryItems.length) await loadInventory();
+    if (!serviceMaterials.length) await loadServiceMaterials();
     title = service.name;
     eyebrow = 'SERVIÇO';
     // Mesmo padrao do detalhe do orcamento: cartapios em etiquetas que abrem a
@@ -1901,7 +2275,19 @@ async function openDetail(type, id) {
             <div class="detail-item-menus">${group.menus.map(menuChip).join('')}</div>
           </div>`).join('')}</div>`
       : '';
-    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="sparkles"></i></span><div><strong>${escapeHTML(service.name)}</strong><span>${service.active ? 'Serviço ativo' : 'Serviço inativo'}</span></div></div>${detailRow('Categoria', service.category)}${detailRow('Preço padrão', formatCurrency(service.default_price))}${menusBox}${detailRow('Descrição', service.description)}`;
+    // Os itens de estoque entram como etiquetas que abrem a ficha do item, ao
+    // lado da quantidade que o serviço usa de cada um. É a resposta de "o que
+    // este serviço consome", e é o mesmo material que faz o estoque avisar que
+    // um item está confirmado em algum evento.
+    const usedMaterialChips = materialsForService(id).map((material) => {
+      const item = inventoryItems.find((entry) => entry.id === material.inventory_item_id);
+      if (!item) return '';
+      return `<span class="detail-material">${itemChip(item)}<span class="detail-material-quantity">${material.quantity} ${escapeHTML(item.unit)}</span></span>`;
+    }).filter(Boolean);
+    const materialsBox = usedMaterialChips.length
+      ? `<div class="detail-box"><strong class="detail-box-title">ITENS DE ESTOQUE DESTE SERVIÇO</strong><div class="detail-item-menus">${usedMaterialChips.join('')}</div></div>`
+      : '';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="sparkles"></i></span><div><strong>${escapeHTML(service.name)}</strong><span>${service.active ? 'Serviço ativo' : 'Serviço inativo'}</span></div></div>${detailRow('Categoria', service.category)}${detailRow('Preço padrão', formatCurrency(service.default_price))}${menusBox}${materialsBox}${detailRow('Descrição', service.description)}`;
   } else if (type === 'menu') {
     const menu = menus.find((item) => item.id === id);
     if (!menu) return;
@@ -1915,7 +2301,19 @@ async function openDetail(type, id) {
     if (!item) return;
     title = item.name;
     eyebrow = 'ITEM DE ESTOQUE';
-    content = renderDetailImages(item.imageUrls, item.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="box"></i></span><div><strong>${escapeHTML(item.name)}</strong><span>${item.active ? 'Disponível para uso' : 'Item inativo'}</span></div></div>${detailRow('Quantidade atual', `${item.quantity} ${item.unit}`)}${detailRow('Estoque mínimo', `${item.minimum_quantity} ${item.unit}`)}${detailRow('Categorias', item.categoryNames.join(' · '))}${detailRow('Descrição', item.description)}`;
+    // Os eventos em que o item está confirmado e os serviços que o levam até
+    // eles. Sem esta caixa a ficha mostraria o saldo de um item que já está
+    // reservado, que é exatamente o que o aviso do card impede.
+    const rentals = rentalsForItem(item.id);
+    const rentalsBox = rentals.length
+      ? `<div class="detail-box"><strong class="detail-box-title">CONFIRMADO EM EVENTOS</strong>${rentals.map((rental) => `
+          <div class="detail-service-row"><div class="detail-service-head"><span>${escapeHTML(rental.eventName)} <span class="detail-service-qty">${escapeHTML(rental.serviceName)}</span></span><span>${formatDateBR(rental.eventDate)}</span></div></div>`).join('')}</div>`
+      : '';
+    // Os serviços que usam o item, mesmo sem evento nenhum: é o cadastro que
+    // explica por que o item está na lista de materiais de algum serviço.
+    const usedBy = serviceIdsForItem(item.id).map((serviceId) => services.find((service) => service.id === serviceId)).filter(Boolean);
+    const usedByLine = detailRow('Usado em serviços', usedBy.map((service) => service.name).join(' · ') || 'Nenhum');
+    content = renderDetailImages(item.imageUrls, item.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="box"></i></span><div><strong>${escapeHTML(item.name)}</strong><span>${item.active ? 'Disponível para uso' : 'Item inativo'}</span></div></div>${detailRow('Quantidade atual', `${item.quantity} ${item.unit}`)}${detailRow('Estoque mínimo', `${item.minimum_quantity} ${item.unit}`)}${detailRow('Categorias', item.categoryNames.join(' · '))}${usedByLine}${rentalsBox}${detailRow('Descrição', item.description)}`;
   } else if (type === 'category') {
     const category = menuCategories.find((item) => item.id === id);
     if (!category) return;
@@ -2038,17 +2436,25 @@ function hideDetail() {
   detailViewContent.innerHTML = '';
 }
 
-// Um listener no documento inteiro resolve três coisas que vivem em telas
+// Um listener no documento inteiro resolve quatro coisas que vivem em telas
 // diferentes: o clique no card (em qualquer lista), o clique na miniatura de
-// imagem (em qualquer card) e a etiqueta de cardápio que aparece dentro da
-// ficha e do seletor de orçamento. Delegar evita ligar isso a cada lista que é
-// re-renderizada.
+// imagem (em qualquer card), a etiqueta de cardápio que aparece dentro da
+// ficha e do seletor de orçamento, e a etiqueta de item de estoque que aparece
+// na ficha do serviço e no formulário dele. Delegar evita ligar isso a cada
+// lista que é re-renderizada.
 document.addEventListener('click', (event) => {
   // Chips de cardapio: abrem o detail do cardapio. Precisa de um handler
   // proprio porque o guard abaixo ignora cliques em botoes.
   const menuChip = event.target.closest('[data-open-menu-detail]');
   if (menuChip) {
     openDetail('menu', menuChip.dataset.openMenuDetail);
+    return;
+  }
+  // Mesma coisa para o item de estoque, que é a etiqueta que o formulário de
+  // serviço e a ficha dele usam para mostrar o que o serviço consome.
+  const itemChipButton = event.target.closest('[data-open-inventory-detail]');
+  if (itemChipButton) {
+    openDetail('inventory', itemChipButton.dataset.openInventoryDetail);
     return;
   }
   const imageButton = event.target.closest('[data-view-image]');
@@ -3604,6 +4010,13 @@ window.plenitudeApp = {
     loadClients,
     loadServices,
     loadMenus,
+    loadServiceMaterials,
+    // O realtime precisa redesenhar a lista de itens marcados quando outro
+    // usuário mexe nos vínculos, e essa lista é desenhada por aqui.
+    renderServiceMaterialOptions,
+    // O mesmo para o formulário de serviço, que lê os itens sem abrir a tela de
+    // estoque.
+    loadInventoryItems,
     loadInventory,
     loadInventoryCategories,
     loadQuotes,

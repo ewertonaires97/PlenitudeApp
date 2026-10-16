@@ -221,6 +221,15 @@ h1 span { color: var(--gold); }
 /* Filtro de estoque baixo, linha de item com miniatura, saldo */
 /* (inventory-balance) e o formulário de entrada/saída. */
 .inventory-filter-row { display: flex; justify-content: flex-end; margin: -5px 0 12px; }.inventory-low-filter { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }.inventory-low-filter input { accent-color: var(--gold); }.inventory-row .client-initial { color: var(--gold); background: #f0e2c8; }.inventory-row .client-initial svg { width: 17px; height: 17px; }.inventory-balance { margin-top: 5px; color: var(--moss) !important; font-size: 11px !important; font-weight: 700; }.inventory-balance.low { color: #a0483d !important; }.inventory-actions { align-self: center; }.movement-item-name { margin: -8px 0 17px; color: var(--moss); font-size: 12px; font-weight: 700; }.movement-select { width: 100%; min-height: 43px; padding: 0 12px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.movement-select:focus { outline: 2px solid rgba(179, 138, 77, .2); }
+/* Aviso de item confirmado em algum evento: entra logo abaixo do saldo, no
+   mesmo lugar em que o card de orçamento escreve local e data. O fundo é o
+   creme da paleta e o texto é o tom do status inativo, o mesmo do
+   .service-status.inactive: o item não está sumindo, ele está reservado — por
+   isso a cor não é a do estoque baixo. */
+.inventory-rental-alert { display: flex; align-items: flex-start; gap: 5px; margin-top: 7px; padding: 5px 7px; border-radius: 4px; color: #8b7450; background: var(--cream); font-size: 11px; line-height: 1.4; }
+.inventory-rental-alert svg { width: 13px; height: 13px; flex: 0 0 auto; margin-top: 1px; }
+.inventory-rental-alert span { min-width: 0; }
+.inventory-rental-alert strong { color: var(--ink); font-weight: 700; }
 /* ==========================================================================
    BLOCO 18 — ESTOQUE (continuação) e VISUALIZADOR DE IMAGEM
    ========================================================================== */
@@ -265,10 +274,12 @@ h1 span { color: var(--gold); }
 .quote-service-menus-label { color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .menu-owner { color: var(--moss); font-size: 12px; font-weight: 600; }
 /* ==========================================================================
-   BLOCO 23 — CARDÁPIOS VINCULADOS AO SERVIÇO
+   BLOCO 23 — VÍNCULOS DO SERVIÇO (cardápios e itens de estoque)
    ========================================================================== */
-/* Seleção de quais cardápios acompanham um serviço dentro do */
-/* formulário de serviço. */
+/* Seleção de quais cardápios e de quais itens de estoque acompanham um */
+/* serviço dentro do formulário de serviço. Os dois seletores têm a mesma */
+/* forma — uma linha marcada, o nome abrindo a ficha e o resto em campo — e */
+/* por isso dividem as mesmas regras de forma e de sanfona por categoria. */
 .service-menu-option { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 7px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .service-menu-option.selected { border-color: var(--sage); background: var(--sage-light); }
 .service-menu-check { display: grid; place-items: center; flex: 0 0 auto; }
@@ -279,10 +290,24 @@ h1 span { color: var(--gold); }
    padding (nao margin) para o bloco caber em 100% e nao vazar a direita. */
 .service-menu-owner { flex: 1 0 100%; margin: 2px 0 0; padding-left: 24px; color: var(--muted); font-size: 9px; line-height: 1.4; }
 .menu-service-name { flex: 1; min-width: 0; color: var(--ink); font-size: 11px; cursor: pointer; }
-/* Cardapios sempre por categoria. No formulario de servico cada categoria e uma
-   sanfona (details/summary): com tudo aberto a lista fica longa e o resto do
-   formulario perde o foco. O marcador nativo do summary e escondido porque o
-   icone do lucide ja mostra o estado. */
+/* Itens de estoque: a linha é a dos cardápios com a quantidade ao lado do
+   nome. A etiqueta do item é a de cardápio com outro ícone, e a quantidade é um
+   campo curto — ela entra junto do vínculo em service_materials e é o que a
+   ficha do serviço mostra como "quanto deste item o serviço usa". */
+.service-material-option { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 7px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+.service-material-option.selected { border-color: var(--sage); background: var(--sage-light); }
+.service-material-check { display: grid; place-items: center; flex: 0 0 auto; }
+.service-material-option input[type="checkbox"] { accent-color: var(--moss); }
+.service-material-option .linked-item-chip { flex: 1 1 120px; min-width: 0; border: 0; padding: 2px 0; background: transparent; }
+.service-material-option.selected .linked-item-chip:hover { background: transparent; }
+.service-material-quantity { flex: 0 0 auto; margin-left: auto; color: var(--muted); font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.service-material-quantity-input { flex: 0 0 auto; width: 62px; min-width: 0; padding: 5px 6px; border: 1px solid var(--line); border-radius: 3px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; text-align: center; }
+.service-material-quantity-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(179, 138, 77, .12); }
+.service-material-owner { flex: 1 0 100%; margin: 2px 0 0; padding-left: 24px; color: var(--muted); font-size: 9px; line-height: 1.4; }
+/* Cardapios e itens de estoque sempre por categoria. No formulario de servico
+   cada categoria e uma sanfona (details/summary): com tudo aberto a lista fica
+   longa e o resto do formulario perde o foco. O marcador nativo do summary e
+   escondido porque o icone do lucide ja mostra o estado. */
 /* ==========================================================================
    BLOCO 24 — CARDÁPIOS POR CATEGORIA (sanfona)
    ========================================================================== */
@@ -307,8 +332,8 @@ h1 span { color: var(--gold); }
 /* ==========================================================================
    BLOCO 25 — RESUMO DE SERVIÇOS E CARDÁPIOS NO DETALHE
    ========================================================================== */
-/* Blocos .detail-box: itens do orçamento, cardápios vinculados e */
-/* linha de total dentro do modal de detalhes. */
+/* Blocos .detail-box: itens do orçamento, cardápios vinculados, itens de
+   estoque usados pelo serviço e linha de total dentro do modal de detalhes. */
 .detail-box { margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .detail-box-title { display: block; margin-bottom: 8px; color: var(--moss); font-size: 12px; font-weight: 700; }
 .detail-service-row { padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 12px; }
@@ -318,6 +343,11 @@ h1 span { color: var(--gold); }
 .detail-service-total { font-weight: 600; color: var(--moss); white-space: nowrap; }
 .detail-item-menus { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
 .detail-item-menus .linked-menu-chip { padding: 3px 7px; font-size: 9px; font-weight: 600; }
+/* Item de estoque na ficha do serviço: a etiqueta com o nome e, ao lado, a
+   quantidade que o serviço usa — que é o que service_materials guarda. */
+.detail-material { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px 2px 2px; border: 1px solid var(--line); border-radius: 3px; background: #fff; }
+.detail-material .linked-item-chip { border: 0; padding: 0 2px; background: transparent; }
+.detail-material-quantity { color: var(--muted); font-size: 9px; font-weight: 700; white-space: nowrap; }
 .detail-menu-group + .detail-menu-group { margin-top: 9px; }
 .detail-menu-group-label { display: block; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .detail-total-line { display: flex; justify-content: space-between; padding: 8px 0 0; font-size: 11px; font-weight: 700; color: var(--moss); }

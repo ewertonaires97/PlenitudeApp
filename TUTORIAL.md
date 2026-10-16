@@ -568,12 +568,22 @@ if (wa) { enviarWhatsappCliente(clients.find(c => c.id === wa.dataset.whatsappCl
 | **CSS** | BLOCO 17 (linha 209) — `.inventory-row`, `.inventory-balance`, `.inventory-thumb`, `.movement-select`, `.inventory-low-filter` |
 | **CSS** | BLOCO 18 (linha 215) — `.inventory-filter-row` + `.image-viewer` |
 | **JS abrir** | `openInventory(options)` — `app.js:1342` |
-| **JS carregar** | `loadInventory()` — `app.js:1308` |
+| **JS carregar** | `loadInventory()` — `app.js:1308` (tela) · `loadInventoryItems()` — só o dado, sem desenhar |
+| **JS cardápio do form** | `renderServiceMaterialOptions()` — `app.js:858` |
 | **JS desenhar** | **`renderInventory()` — `app.js:1276`** |
 | **JS form item** | `openInventoryForm(item)` — `app.js:1359` |
 | **JS movimentação** | `openMovementForm(item)` — `app.js:1382` |
 | **JS categorias** | `renderInventoryCategories()` — `app.js:979` |
+| **CSS do alerta** | BLOCO 17 (linha 219) — `.inventory-rental-alert` (item confirmado em evento) |
+| **JS alerta de aluguel** | **`loadInventoryRentals()` — `app.js:1827`** · `inventoryRentalNotice()` — `app.js:1882` |
+| **JS agrupar por categoria** | `groupInventoryByCategory()` — `app.js:2009` |
 | **Abrir a partir de** | `data-open-inventory` → `app.js:1394` |
+
+O item fica **avisado** quando algum serviço que o utiliza está em um orçamento
+confirmado e o evento desse orçamento ainda vai acontecer. A regra inteira está em
+`loadInventoryRentals()` e é derivada — nada é gravado, então liberar o item é
+desfazer o que o deixou reservado (tirar o serviço do orçamento, cancelar o
+orçamento ou o evento, marcar o evento como realizado).
 
 ### 7.6 Serviços
 
@@ -587,7 +597,19 @@ if (wa) { enviarWhatsappCliente(clients.find(c => c.id === wa.dataset.whatsappCl
 | **JS carregar** | `loadServices()` — `app.js:468` |
 | **JS desenhar** | **`renderServices()` — `app.js:432`** |
 | **JS form** | `openServiceForm(servico)` — `app.js:623` |
+| **CSS dos itens** | BLOCO 23 (linha 276) — `.service-material-option`, `.service-material-quantity-input` (item de estoque usado pelo serviço) |
+| **JS carregar materiais** | **`loadServiceMaterials()` — `app.js:669`** |
+| **JS desenhar materiais** | **`renderServiceMaterialOptions()` — `app.js:858`** (espelha `renderServiceMenuOptions()`) |
+| **JS etiqueta de item** | `itemChip()` — `app.js:720` |
+| **JS o save** | em `serviceForm.addEventListener('submit')`: apaga os vínculos desmarcados, atualiza a quantidade dos que mudaram e insere os novos |
 | **Abrir a partir de** | `data-open-services` → `app.js:641` |
+
+A relação serviço ↔ item mora em `service_materials` (N:N) e tem duas telas
+dentro do módulo: a caixa **Itens de estoque deste serviço** no formulário e o
+quadro `ITENS DE ESTOQUE DESTE SERVIÇO` na ficha, com a mesma etiqueta de
+cardápio (`itemChip()`) abrindo a ficha do item. O mesmo desenho dos cardápios
+— sanfona por categoria, "também em ...", item em duas categorias marcado nas
+duas — foi mantido de propósito: os dois formulários são lidos lado a lado.
 
 ### 7.7 Cardápios
 
@@ -598,7 +620,7 @@ if (wa) { enviarWhatsappCliente(clients.find(c => c.id === wa.dataset.whatsappCl
 | **CSS** | BLOCO 16 (linha 204) — `.menu-filter-row` |
 | **CSS** | BLOCO 24 (linha 274) — `.menu-category-*` (a sanfona por categoria) |
 | **CSS** | BLOCO 20 (linha 227) — `.visual-card*` |
-| **CSS** | BLOCO 23 (linha 255) — `.service-menu-option` (vincular cardápio a um serviço) |
+| **CSS** | BLOCO 23 (linha 276) — `.service-menu-option` (vincular cardápio a um serviço) e `.service-material-option` (vincular item de estoque) |
 | **JS abrir** | `openMenus()` — `app.js:861` |
 | **JS carregar** | `loadMenus()` — `app.js:823` |
 | **JS desenhar** | **`renderMenus()` — `app.js:788`** e `renderCategories()` — `app.js:764` |

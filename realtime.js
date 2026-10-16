@@ -111,6 +111,9 @@
     {
       // Renomear um serviço muda o rótulo dele nos cardápios e nos orçamentos.
       // Marcar ou desmarcar is_ceremonial muda o filtro do seletor de evento.
+      // service_materials é o vínculo com os itens de estoque: ele muda a lista
+      // de itens do formulário de serviço, a caixa de materiais da ficha e o
+      // alerta de aluguel no estoque.
       name: 'servicos',
       tables: ['services', 'service_materials'],
       reload() {
@@ -119,7 +122,18 @@
           whenVisible('#menu-panel', () => app()?.loadMenus()),
           whenVisible('#category-panel', () => app()?.loadMenus()),
           whenVisible('#quote-form-panel', () => app()?.loadQuoteReferences()),
-          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadCeremonialFilter())
+          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadCeremonialFilter()),
+          // O formulário de serviço mostra os itens marcados; sem este reload a
+          // lista ficaria com o estado de antes enquanto o formulário estivesse
+          // aberto. O serviceId vem do input escondido, que só existe depois
+          // que o formulário abre.
+          whenVisible('#service-form-panel', async () => {
+            await app()?.loadServiceMaterials();
+            app()?.renderServiceMaterialOptions(document.querySelector('#service-id')?.value || '');
+          }),
+          // Alguém marcar o item como usado (ou soltar) muda o aviso do cartão
+          // de estoque.
+          whenVisible('#inventory-panel', () => app()?.loadInventory())
         ]);
       }
     },
@@ -156,7 +170,11 @@
           alerts()?.refresh({ force: true }),
           app()?.loadQuotes(),
           whenVisible('#event-panel', () => events()?.reloadLookups()),
-          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadEventsList())
+          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadEventsList()),
+          // Confirmar um orçamento cria o evento e é o que transforma os itens
+          // usados pelos serviços contratados em itens reservados: o aviso do
+          // cartão de estoque nasce exatamente nesse momento.
+          whenVisible('#inventory-panel', () => app()?.loadInventory())
         ]);
       }
     },
@@ -170,7 +188,15 @@
           // quem está com a tela de Estoque fechada.
           alerts()?.refresh({ force: true }),
           whenVisible('#inventory-panel', () => app()?.loadInventory()),
-          whenVisible('#inventory-category-panel', () => app()?.loadInventoryCategories())
+          whenVisible('#inventory-category-panel', () => app()?.loadInventoryCategories()),
+          // O formulário de serviço lista os itens do estoque por categoria:
+          // um item novo, renomeado ou recategorizado aparece aqui na hora.
+          // Chama o loader de dado, não o da tela de estoque: redesenhar a lista
+          // de quem só está editando um serviço seria trabalho invisível.
+          whenVisible('#service-form-panel', async () => {
+            const loaded = await app()?.loadInventoryItems();
+            app()?.renderServiceMaterialOptions(document.querySelector('#service-id')?.value || '', loaded === false);
+          })
         ]);
       }
     },
@@ -186,7 +212,10 @@
             events()?.reloadEvents(),
             events()?.reloadEventDetail()
           ])),
-          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadEventsList())
+          whenVisible('#ceremonial-panel', () => ceremonial()?.reloadEventsList()),
+          // Cancelar um evento libera os itens que ele segurava, então o aviso
+          // de aluguel do estoque precisa ser refeito junto.
+          whenVisible('#inventory-panel', () => app()?.loadInventory())
         ]);
       }
     },
