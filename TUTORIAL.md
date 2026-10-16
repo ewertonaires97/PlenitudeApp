@@ -612,8 +612,8 @@ if (wa) { enviarWhatsappCliente(clients.find(c => c.id === wa.dataset.whatsappCl
 |---|---|
 | **HTML** | `index.html:585` `#quote-panel` (lista) · `595` `#quote-form-panel` (formulário) · `1128` `#quote-saved-panel` (salvo) |
 | **CSS** | BLOCO 21 (linha 233) — `.quote-panel-card`, `.quote-status`, `.quote-card` |
-| **CSS** | BLOCO 22 (linha 239) — `.quote-service-option`, `.quote-totals` |
-| **CSS** | BLOCO 26 (linha 312) — a versão empilhada em tela estreita |
+| **CSS** | BLOCO 21/22 (linhas 233–260) — `.quote-service-option` (áreas `check`/`copy`/`fields`/`menus`), `.quote-totals` |
+| **CSS** | BLOCO 26 (linha 315) — a mesma divisão com os campos em `1fr` em tela estreita |
 | **CSS** | BLOCO 48 (linha 1140) — os botões da tela "orçamento salvo" |
 | **JS abrir** | `openQuotes()` — `app.js:2815` |
 | **JS carregar** | `loadQuotes()` — `app.js:1836` |
