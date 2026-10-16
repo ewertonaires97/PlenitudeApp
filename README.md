@@ -125,13 +125,17 @@ Execute [supabase/migrations/013_ceremonial_templates_reorder.sql](supabase/migr
 
 **2. Modelos padrão** — tabelas `ceremonial_templates` e `ceremonial_template_activities`. Em Roteiro, o botão **Modelo padrão** abre o cadastro: crie tantos modelos quiser, monte o roteiro de cada um e depois **Copiar para o evento**. A cópia pode *anexar* ao roteiro existente (padrão) ou *substituir* tudo, com confirmação.
 
+No detalhe do modelo, os momentos têm lápis (edição) e lixeira (remoção, sempre com confirmação). O formulário de cima cria e edita: o lápis carrega o momento nele, o botão vira **Salvar** e aparece um **Cancelar**. O botão de cópia duplica o modelo inteiro — o modelo novo já vem com os momentos, e o nome sugerido é "Nome (cópia)".
+
+Duas coisas dividem o mesmo lugar na linha dos momentos, por isso o botão **Reordenar**: desligado, a linha mostra a caixa de seleção; ligado, a caixa some e entra o punho `⠿` de arraste. Com o modo reordenar desligado dá para marcar vários momentos e apagá-los de uma vez em **Excluir selecionados** — a barra mostra quantos estão marcados e uma única confirmação avisa a quantidade.
+
 **3. Reordenação** — a coluna `unique (event_id, position)` de `ceremonial_activities` impedia a reordenação: trocar duas atividades de lugar exige dois `UPDATE`s e o primeiro esbarra na posição que a segunda ainda ocupa. Como o `supabase-js` resolve com `{ error }` em vez de lançar exceção, o botão de seta recarregava a lista sem mudar nada. As funções `reorder_ceremonial_activities` e `pack_ceremonial_activities` resolvem dentro do banco, em duas fases e de forma atômica.
 
 **4. `copy_ceremonial_template`** — copia as atividades de um modelo para um evento numa transação só, respeitando o `append` ou o `replace`.
 
 Execute [supabase/migrations/014_reorder_ceremonial_template_activities.sql](supabase/migrations/014_reorder_ceremonial_template_activities.sql) no SQL Editor. Ela cria a função `reorder_ceremonial_template_activities`, que faz o mesmo pelos momentos de um modelo padrão. Sem ela, arrastar os momentos do modelo falha: a coluna `unique (template_id, position)` não deixa gravar a nova ordem em `UPDATE`s avulsos, e o movimento funciona com a reordenação do roteiro e não com a do modelo.
 
-O roteiro se reordena arrastando pelo punho `⠿`. O arraste usa Pointer Events, então funciona com dedo no celular e com mouse, já que a API nativa de drag-and-drop não funciona em touchscreen. Funciona tanto no roteiro do evento quanto nos momentos de cada modelo padrão.
+O roteiro se reordena arrastando pelo punho `⠿`. O arraste usa Pointer Events, então funciona com dedo no celular e com mouse, já que a API nativa de drag-and-drop não funciona em touchscreen. Funciona tanto no roteiro do evento quanto nos momentos de cada modelo padrão — no modelo, o punho só existe depois de ligar o botão **Reordenar**, para não arrastar por engano dentro de um modal.
 
 ### Sincronização em tempo real
 

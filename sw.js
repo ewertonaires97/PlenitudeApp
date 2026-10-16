@@ -3,7 +3,7 @@
 // navegador pode responder com uma cópia velha antes da rede, e o service
 // worker aceita essa resposta como válida. O nome novo força a instalação de
 // um service worker novo, que repopula o cache e apaga o antigo.
-const CACHE_NAME = 'plenitude-static-v12';
+const CACHE_NAME = 'plenitude-static-v13';
 const APP_SHELL = [
   './',
   './index.html',

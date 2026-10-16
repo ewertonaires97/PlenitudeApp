@@ -783,10 +783,15 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .templates-list-item.active { border-color: var(--moss); background: var(--sage-light); }
 .templates-list-item small { display: block; margin-top: 1px; color: var(--muted); font-size: 9.5px; font-weight: 500; }
 .templates-list-empty { padding: 14px 12px; border: 1px dashed var(--line); border-radius: 4px; color: var(--muted); font-size: 12px; text-align: center; }
-.templates-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.templates-detail-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .templates-detail-head h5 { margin: 0; font: 600 14px "Playfair Display", serif; color: var(--moss-deep); }
+.templates-detail-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.templates-detail-actions .drag-toggle-btn { min-height: 29px; padding: 0 10px; font-size: 11px; }
 .templates-activity-row { display: flex; align-items: flex-start; gap: 7px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .templates-activity-row + .templates-activity-row { margin-top: 4px; }
+/* A linha em edição é a que o formulário de cima está carregando. O dourado
+   é a mesma cor de foco dos campos do app, então o vínculo fica óbvio. */
+.templates-activity-row.editing { border-color: var(--gold); background: var(--cream); }
 /* Alça de arraste dos momentos do modelo. Tem a mesma pegada do círculo da
    posição para os dois ficarem alinhados na primeira linha da linha. */
 .templates-act-grip { display: grid; place-items: center; flex: 0 0 18px; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 3px; color: var(--muted); background: transparent; cursor: grab; touch-action: none; }
@@ -800,6 +805,28 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .templates-activity-body { flex: 1 1 auto; min-width: 0; }
 .templates-activity-body strong { display: block; font-size: 11px; color: var(--ink); }
 .templates-activity-body span { display: block; margin-top: 2px; color: var(--muted); font-size: 9.5px; }
+/* Seleção em bloco. A caixa ocupa exatamente o lugar do punho: com o modo
+   reordenar desligado a linha oferece marcar, com ele ligado oferece arrastar.
+   As duas coisas nunca aparecem juntas na mesma linha. */
+.templates-act-check { flex: 0 0 16px; width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--moss); cursor: pointer; }
+.templates-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+.templates-selection-bar label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer; }
+.templates-selection-bar label input { width: 14px; height: 14px; accent-color: var(--moss); cursor: pointer; }
+.templates-selection-count { color: var(--muted); font-size: 10.5px; }
+/* Botão de exclusão em bloco: o tom de aviso do app (mesmo par do
+   .access-warning), e desligado enquanto não há nada marcado. */
+.templates-bulk-delete { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; margin-left: auto; padding: 0 10px; border: 1px solid #d9b8b0; border-radius: 4px; color: #7d3a30; background: #fbf0ed; font-size: 11px; font-weight: 700; cursor: pointer; }
+.templates-bulk-delete:hover:not(:disabled) { border-color: #a0483d; background: #f7ece9; }
+.templates-bulk-delete:active:not(:disabled) { background: #f3e2dd; }
+.templates-bulk-delete:disabled { opacity: .45; cursor: default; }
+.templates-bulk-delete svg { width: 14px; height: 14px; }
+/* Edição pelo formulário rápido: o contorno tracejado marca o formulário em
+   modo de edição, e o Cancelar ao lado do Salvar é a saída dele. */
+.templates-create-form.editing { padding: 6px; margin: -6px; border: 1px dashed var(--gold); border-radius: 4px; background: var(--cream); }
+.templates-cancel-edit { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: #fff; font-size: 11px; font-weight: 700; cursor: pointer; }
+.templates-cancel-edit:hover { border-color: var(--sage); color: var(--moss); }
+.templates-cancel-edit svg { width: 14px; height: 14px; }
+.templates-edit-hint { margin: 6px 0 0; }
 .templates-apply-box { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: 11px; padding: 12px; border-radius: 5px; background: var(--cream); flex-wrap: wrap; }
 .templates-apply-box label { display: flex; align-items: center; gap: 6px; color: #7a5c2e; font-size: 12px; font-weight: 600; cursor: pointer; }
 .templates-apply-box label input { width: 13px; height: 13px; accent-color: #a0483d; }
@@ -1323,7 +1350,16 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .templates-activity-row { align-items: center; }
   .templates-act-grip { flex: 0 0 44px; width: 44px; height: 44px; }
   .templates-act-grip svg { width: 20px; height: 20px; }
-  .templates-activity-row .order-btn { width: 44px; height: 44px; }
+  /* Editar e remover do modelo: mesmo alvo de 44px dos outros pares de ícone. */
+  .templates-activity-row .client-action { width: 44px; height: 44px; }
+  .templates-activity-row .client-action svg { width: 19px; height: 19px; }
+  /* A caixa de seleção e a barra de seleção em bloco também são alvos de
+     dedo: 24px para a caixa, 44px para os botões. */
+  .templates-act-check { flex-basis: 24px; width: 24px; height: 24px; margin: 0; }
+  .templates-selection-bar label input { width: 20px; height: 20px; }
+  .templates-selection-bar label { font-size: 12px; }
+  .templates-bulk-delete, .templates-cancel-edit { min-height: 44px; font-size: 12px; }
+  .templates-detail-actions .drag-toggle-btn { min-height: 44px; }
   .templates-detail-head .client-action { width: 44px; height: 44px; }
   .templates-detail-head .client-action svg { width: 19px; height: 19px; }
   .templates-activity-index { width: 26px; height: 26px; flex-basis: 26px; font-size: 11px; }

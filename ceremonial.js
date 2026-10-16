@@ -69,6 +69,18 @@
     templates: [],
     templateActivities: [],
     editingTemplateId: null,
+    // Momento do modelo que o formulário rápido do detalhe está editando.
+    // Null significa "criando novo", e é o id oculto #template-act-id que
+    // decide entre INSERT e UPDATE no submit.
+    editingTemplateActivityId: null,
+    // Momentos marcados para a exclusão em bloco. Guarda ids, não elementos do
+    // DOM: marcar uma caixa não redesenha a lista, e o estado precisa
+    // sobreviver aos renders vindos de outras ações.
+    templateSelection: new Set(),
+    // Reordenar os momentos é opt-in: com o modo desligado a linha mostra a
+    // caixa de seleção e não existe punho de arraste, o que evita arrastar sem
+    // querer em uma lista dentro de um modal.
+    templateReorderEnabled: false,
     // Arraste em andamento (drag and drop do roteiro)
     drag: { activityId: null, beforeId: null, started: false, card: null, pointerY: 0 },
     // Arraste em andamento nos momentos do modelo padrão. State separado do
@@ -1951,6 +1963,11 @@
   function closeTemplatesModal() {
     const panel = document.getElementById('ceremonial-templates-modal');
     if (panel) panel.hidden = true;
+    // Seleção e edição pertencem ao modelo que estava aberto: fechar o modal
+    // devolve a lista ao estado de sempre, para a próxima abertura já vir limpa.
+    state.templateSelection.clear();
+    state.editingTemplateActivityId = null;
+    state.templateReorderEnabled = false;
   }
 
   // Lista da esquerda + detalhe da direita. Só o item ativo (editingTemplateId)
@@ -1981,8 +1998,9 @@
     refreshIcons();
   }
 
-  // Detalhe do modelo: cabeçalho com renomear/excluir, o formulário de adição
-  // rápida e a lista de momentos (arrastáveis pelo punho).
+  // Detalhe do modelo: cabeçalho com reordenar/renomear/duplicar/excluir, o
+  // formulário de adição rápida (que também vira formulário de edição) e a
+  // lista de momentos.
   function renderTemplateDetail() {
     const detail = document.getElementById('templates-detail');
     if (!detail) return;
@@ -1994,37 +2012,80 @@
     }
 
     const activities = templateActivities(template.id);
+    const reorderOn = state.templateReorderEnabled;
+    // O item em edição é sempre procurado dentro do modelo aberto: se o
+    // realtime removou o momento enquanto ele estava em edição, o formulário
+    // volta ao modo de criação em vez de salvar um id que não existe mais.
+    const editing = activities.find(item => item.id === state.editingTemplateActivityId) || null;
+    const selectedCount = activities.filter(item => state.templateSelection.has(item.id)).length;
 
     detail.innerHTML = `
       <div class="templates-detail-head">
         <h5>${sanitizeHtml(template.name)}</h5>
-        <div class="activity-mini-actions">
-          <button class="client-action" type="button" data-rename-template="${template.id}" title="Renomear modelo"><i data-lucide="pencil"></i></button>
-          <button class="client-action" type="button" data-delete-template="${template.id}" title="Excluir modelo"><i data-lucide="trash-2"></i></button>
+        <div class="templates-detail-actions">
+          <button class="add-client-button drag-toggle-btn ${reorderOn ? 'active' : ''}" type="button" data-toggle-template-reorder
+            aria-pressed="${reorderOn ? 'true' : 'false'}"
+            title="${reorderOn ? 'Desligar o modo reordenar' : 'Ligar o modo reordenar para arrastar os momentos'}">
+            <i data-lucide="${reorderOn ? 'grip-vertical' : 'lock'}"></i>
+            <span>Reordenar</span>
+          </button>
+          <div class="activity-mini-actions">
+            <button class="client-action" type="button" data-rename-template="${template.id}" title="Renomear modelo" aria-label="Renomear modelo ${sanitizeHtml(template.name)}"><i data-lucide="pencil"></i></button>
+            <button class="client-action" type="button" data-duplicate-template="${template.id}" title="Duplicar modelo com os momentos" aria-label="Duplicar modelo ${sanitizeHtml(template.name)}"><i data-lucide="copy"></i></button>
+            <button class="client-action" type="button" data-delete-template="${template.id}" title="Excluir modelo" aria-label="Excluir modelo ${sanitizeHtml(template.name)}"><i data-lucide="trash-2"></i></button>
+          </div>
         </div>
       </div>
 
-      <form id="template-activity-form" class="templates-create-form" style="flex-wrap: wrap;">
-        <input class="inline-form-box" id="template-act-time" type="time" />
-        <input class="inline-form-box" id="template-act-title" type="text" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required />
-        <input class="inline-form-box" id="template-act-resp" type="text" placeholder="Responsável" />
-        <button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Adicionar</span></button>
+      <form id="template-activity-form" class="templates-create-form ${editing ? 'editing' : ''}" style="flex-wrap: wrap;">
+        <input id="template-act-id" type="hidden" value="${editing ? editing.id : ''}" />
+        <input class="inline-form-box" id="template-act-time" type="time" value="${editing && editing.scheduled_time ? sanitizeHtml(editing.scheduled_time.slice(0, 5)) : ''}" />
+        <input class="inline-form-box" id="template-act-title" type="text" value="${editing ? sanitizeHtml(editing.title) : ''}" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required />
+        <input class="inline-form-box" id="template-act-resp" type="text" value="${editing ? sanitizeHtml(editing.responsible) : ''}" placeholder="Responsável" />
+        <button class="add-client-button" type="submit"><i data-lucide="${editing ? 'check' : 'plus'}"></i><span>${editing ? 'Salvar' : 'Adicionar'}</span></button>
+        ${editing ? `<button class="templates-cancel-edit" type="button" data-cancel-template-act-edit><i data-lucide="x"></i><span>Cancelar</span></button>` : ''}
       </form>
+      ${editing ? `<p class="field-hint templates-edit-hint">Editando <strong>${sanitizeHtml(editing.title)}</strong>. O botão Salvar troca este momento; para cadastrar outro, cancele.</p>` : ''}
+
+      ${activities.length === 0
+        ? '<p class="templates-list-empty">Este modelo ainda não tem momentos. Use o campo acima para começar.</p>'
+        : reorderOn
+          ? '<p class="field-hint templates-edit-hint">Modo reordenar ligado: arraste os momentos pelo punho. Desligue para editar ou excluir.</p>'
+          : `
+            <div class="templates-selection-bar" id="template-selection-bar">
+              <label>
+                <input id="template-act-select-all" type="checkbox" ${activities.length && selectedCount === activities.length ? 'checked' : ''} aria-label="Selecionar todos os momentos" />
+                <span>Selecionar todos</span>
+              </label>
+              <span class="templates-selection-count" id="template-selection-count"></span>
+              <button class="templates-bulk-delete" type="button" data-template-act-delete-selected disabled>
+                <i data-lucide="trash-2"></i><span>Excluir selecionados</span>
+              </button>
+            </div>
+          `}
 
       <div class="templates-activity-list" style="margin-top: 9px;">
-        ${activities.length === 0
-          ? '<p class="templates-list-empty">Este modelo ainda não tem momentos. Use o campo acima para começar.</p>'
-          : activities.map((item, index) => `
-              <div class="templates-activity-row" data-template-act-id="${item.id}">
-                <button class="templates-act-grip" type="button" data-template-drag-grip="${item.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
-                  <i data-lucide="grip-vertical"></i>
-                </button>
+        ${activities.map((item, index) => `
+              <div class="templates-activity-row${item.id === state.editingTemplateActivityId ? ' editing' : ''}" data-template-act-id="${item.id}">
+                ${reorderOn ? `
+                  <button class="templates-act-grip" type="button" data-template-drag-grip="${item.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
+                    <i data-lucide="grip-vertical"></i>
+                  </button>
+                ` : `
+                  <input class="templates-act-check" type="checkbox" data-template-act-select="${item.id}"
+                    aria-label="Selecionar ${sanitizeHtml(item.title)}"
+                    title="Selecionar para excluir em bloco"
+                    ${state.templateSelection.has(item.id) ? 'checked' : ''} />
+                `}
                 <span class="templates-activity-index">${index + 1}</span>
                 <div class="templates-activity-body">
                   <strong>${sanitizeHtml(item.title)}</strong>
                   <span>${item.scheduled_time ? sanitizeHtml(item.scheduled_time.slice(0, 5)) + ' · ' : ''}${item.responsible ? sanitizeHtml(item.responsible) : ''}</span>
                 </div>
-                <button class="order-btn templates-act-delete" type="button" data-template-act-delete="${item.id}" title="Remover do modelo"><i data-lucide="trash-2"></i></button>
+                <div class="activity-mini-actions">
+                  <button class="client-action" type="button" data-edit-template-act="${item.id}" title="Editar momento" aria-label="Editar momento ${sanitizeHtml(item.title)}"><i data-lucide="pencil"></i></button>
+                  <button class="client-action templates-act-delete" type="button" data-template-act-delete="${item.id}" title="Remover do modelo" aria-label="Remover ${sanitizeHtml(item.title)} do modelo"><i data-lucide="trash-2"></i></button>
+                </div>
               </div>
             `).join('')}
       </div>
@@ -2050,6 +2111,11 @@
     // o listener precisa ser religado aqui. Delegar para o document custaria
     // uma re-render por tecla digitada, já que o detalhe inteiro é redesenhado.
     if (form) form.addEventListener('submit', handleTemplateActivitySubmit);
+
+    // Contador, "selecionar todos" e botão de exclusão em bloco dependem das
+    // caixas marcadas: eles nascem desligados no HTML e quem os acende é este
+    // passo, para o estado vir certo já no primeiro desenho.
+    updateTemplateSelectionBar();
   }
 
   // INSERT com select devolvendo a linha pronta: o modelo novo entra no state
@@ -2104,6 +2170,68 @@
     renderTemplatesModal();
   }
 
+  // Duplica o modelo inteiro: a linha do modelo e todos os momentos dele. Aqui
+  // não vale a regra do duplicate.js (abrir o formulário de criação
+  // preenchido) porque o formulário de criação de modelo é só o campo do nome —
+  // os momentos vivem na lista ao lado, e um "duplicar" que trouxesse só o
+  // nome não duplicaria o roteiro, que é a parte que interessa.
+  // As posições recomeçam em 1 porque o `unique (template_id, position)` vale
+  // por modelo: no novo, nada está ocupado ainda.
+  async function duplicateTemplate(templateId) {
+    const sb = getSupabase();
+    const template = state.templates.find(t => t.id === templateId);
+    if (!sb || !template) return;
+
+    const name = window.prompt('Nome do novo modelo:', `${template.name} (cópia)`);
+    if (!name || !name.trim()) return;
+
+    const source = templateActivities(templateId);
+    const { data: created, error } = await sb
+      .from('ceremonial_templates')
+      .insert({ name: name.trim(), description: template.description || null })
+      .select('id, name, description, created_at')
+      .single();
+
+    if (error) {
+      setTemplatesFeedback('Não foi possível duplicar o modelo: ' + error.message, true);
+      return;
+    }
+
+    let copiedCount = 0;
+    if (source.length) {
+      const rows = source.map((item, index) => ({
+        template_id: created.id,
+        position: index + 1,
+        title: item.title,
+        description: item.description || null,
+        responsible: item.responsible || null,
+        scheduled_time: item.scheduled_time || null
+      }));
+
+      const { data: copied, error: activitiesError } = await sb
+        .from('ceremonial_template_activities')
+        .insert(rows)
+        .select('id, template_id, position, title, description, responsible, scheduled_time');
+
+      if (activitiesError) {
+        // O modelo já foi criado neste ponto. Avisar o que de fato falhou é
+        // melhor que esconder a cópia parcial: quem chegar aqui pode apagar o
+        // modelo vazio em vez de acreditar que a duplicação não aconteceu.
+        setTemplatesFeedback('O modelo foi criado, mas os momentos não foram copiados: ' + activitiesError.message, true);
+      } else {
+        state.templateActivities.push(...(copied || []));
+        copiedCount = copied ? copied.length : source.length;
+      }
+    }
+
+    state.templates.push(created);
+    state.editingTemplateId = created.id;
+    state.templateSelection.clear();
+    state.editingTemplateActivityId = null;
+    renderTemplatesModal();
+    notify(`Modelo "${created.name}" duplicado com ${copiedCount} ${copiedCount === 1 ? 'momento' : 'momentos'}.`);
+  }
+
   // Exclui o modelo e, por cascade, seus momentos. Não há como desfazer, por
   // isso o confirm mostra quantos momentos vão junto.
   async function deleteTemplate(templateId) {
@@ -2130,20 +2258,50 @@
     notify('Modelo excluído.');
   }
 
-  // Adiciona um momento ao modelo em edição. Difere do roteiro do evento: aqui
-  // não há RPC de renumeração, então remover um item do meio deixa um buraco na
-  // sequência de `position` (o próximo insert usa max+1 e não colide).
+  // Salva o momento do modelo em edição. O mesmo formulário cria e edita: quem
+  // decide é o id oculto #template-act-id, preenchido pelo lápis da linha e
+  // vazio na criação. Assim não existe um modal dentro do modal de modelos.
+  // Difere do roteiro do evento: aqui não há RPC de renumeração, então remover
+  // um item do meio deixa um buraco na sequência de `position` (o próximo
+  // insert usa max+1 e não colide).
   async function handleTemplateActivitySubmit(event) {
     event.preventDefault();
     const sb = getSupabase();
     const template = selectedTemplate();
     if (!sb || !template) return;
 
-    const title = document.getElementById('template-act-title').value.trim();
-    if (!title) return;
-
+    const titleInput = document.getElementById('template-act-title');
+    const respInput = document.getElementById('template-act-resp');
+    const editId = document.getElementById('template-act-id').value.trim();
+    const title = titleInput.value.trim();
     const time = document.getElementById('template-act-time').value || null;
-    const responsible = document.getElementById('template-act-resp').value.trim() || null;
+    const responsible = respInput.value.trim() || null;
+
+    if (!title) return;
+    setTemplatesFeedback('');
+
+    if (editId) {
+      // A posição não entra no UPDATE: editar o título de um momento não pode
+      // mexer na ordem do roteiro.
+      const { data, error } = await sb
+        .from('ceremonial_template_activities')
+        .update({ title, scheduled_time: time, responsible })
+        .eq('id', editId)
+        .select('id, template_id, position, title, description, responsible, scheduled_time')
+        .single();
+
+      if (error) {
+        setTemplatesFeedback('Não foi possível salvar as alterações: ' + error.message, true);
+        return;
+      }
+
+      const index = state.templateActivities.findIndex(item => item.id === editId);
+      if (index !== -1) state.templateActivities[index] = data;
+      state.editingTemplateActivityId = null;
+      renderTemplatesModal();
+      notify(`Momento "${data.title}" atualizado no modelo.`);
+      return;
+    }
 
     // max(position) + 1 e não length + 1: excluir um momento do meio deixa
     // buraco na sequência e o length colidiria com a posição ocupada.
@@ -2164,16 +2322,39 @@
     }
 
     state.templateActivities.push(data);
+    // O form é reconstruído pelo render, e volta vazio: nada a limpar à mão.
     renderTemplatesModal();
-    document.getElementById('template-act-title').value = '';
-    document.getElementById('template-act-resp').value = '';
+    notify(`Momento "${data.title}" adicionado ao modelo.`);
   }
 
-  // Remove um momento do modelo. Só mexe no state local depois do sucesso,
-  // evitando redesenhar com o item ainda no banco.
+  // Lápis da linha: o formulário rápido passa a carregar o momento e o botão
+  // Adicionar vira Salvar, com Cancelar ao lado. A linha editada fica
+  // marcada, porque um formulário que edita e outro que cria no mesmo lugar
+  // só se distinguem por isso.
+  function startTemplateActivityEdit(activityId) {
+    state.editingTemplateActivityId = activityId;
+    // Editar e marcar para apagar ao mesmo tempo é um caminho sem volta
+    // fácil: soltar a seleção junto evita o conflito.
+    state.templateSelection.clear();
+    renderTemplatesModal();
+    document.getElementById('template-act-title')?.focus();
+  }
+
+  function cancelTemplateActivityEdit() {
+    state.editingTemplateActivityId = null;
+    renderTemplatesModal();
+  }
+
+  // Remove um momento do modelo. A confirmação vem antes do DELETE, com o nome
+  // do momento na pergunta: a linha some da tela junto com o botão e o app não
+  // tem como desfazer. Só mexe no state local depois do sucesso, evitando
+  // redesenhar com o item ainda no banco.
   async function removeTemplateActivity(activityId) {
     const sb = getSupabase();
-    if (!sb) return;
+    const item = state.templateActivities.find(entry => entry.id === activityId);
+    if (!sb || !item) return;
+
+    if (!confirm(`Remover o momento "${item.title}" do modelo?`)) return;
 
     const { error } = await sb.from('ceremonial_template_activities').delete().eq('id', activityId);
     if (error) {
@@ -2181,8 +2362,111 @@
       return;
     }
 
-    state.templateActivities = state.templateActivities.filter(item => item.id !== activityId);
+    state.templateActivities = state.templateActivities.filter(entry => entry.id !== activityId);
+    state.templateSelection.delete(activityId);
+    if (state.editingTemplateActivityId === activityId) state.editingTemplateActivityId = null;
     renderTemplatesModal();
+    notify(`Momento "${item.title}" removido do modelo.`);
+  }
+
+  // ==========================================================================
+  // SELEÇÃO E EXCLUSÃO EM BLOCO DOS MOMENTOS DO MODELO
+  // ==========================================================================
+  // Marcar uma caixa não redesenha a lista: só o contador e o botão mudam.
+  // Por isso a seleção mora no state (templateSelection) e as caixas são
+  // desenhadas a partir dele — quem sobrevive a render é o estado, não o DOM.
+
+  function selectedTemplateActivityIds() {
+    const template = selectedTemplate();
+    if (!template) return [];
+    return templateActivities(template.id)
+      .filter(item => state.templateSelection.has(item.id))
+      .map(item => item.id);
+  }
+
+  function toggleTemplateActivitySelection(activityId, checked) {
+    if (checked) state.templateSelection.add(activityId);
+    else state.templateSelection.delete(activityId);
+    updateTemplateSelectionBar();
+  }
+
+  // Marcar todos precisa redesenhar a lista, porque o desenho de cada caixa
+  // (`checked`) só acontece no render do detalhe.
+  function toggleAllTemplateActivities(checked) {
+    const template = selectedTemplate();
+    if (!template) return;
+    state.templateSelection = checked
+      ? new Set(templateActivities(template.id).map(item => item.id))
+      : new Set();
+    renderTemplatesModal();
+  }
+
+  // Contador, "selecionar todos" (com estado indeterminado quando só parte está
+  // marcada) e o botão de excluir. Sem a barra — lista vazia ou modo reordenar
+  // ligado — não há nada para atualizar.
+  function updateTemplateSelectionBar() {
+    const bar = document.getElementById('template-selection-bar');
+    if (!bar) return;
+
+    const boxes = document.querySelectorAll('#templates-detail .templates-act-check');
+    const total = boxes.length;
+    const checked = Array.from(boxes).filter(box => box.checked).length;
+
+    const counter = document.getElementById('template-selection-count');
+    if (counter) {
+      counter.textContent = total
+        ? `${checked} de ${total} ${total === 1 ? 'momento' : 'momentos'}`
+        : '';
+    }
+
+    const allBox = document.getElementById('template-act-select-all');
+    if (allBox) {
+      allBox.checked = total > 0 && checked === total;
+      allBox.indeterminate = checked > 0 && checked < total;
+    }
+
+    const deleteButton = bar.querySelector('[data-template-act-delete-selected]');
+    if (deleteButton) deleteButton.disabled = checked === 0;
+  }
+
+  // Exclusão em bloco: uma confirmação com a quantidade e uma única instrução.
+  // O `in` aceita a lista inteira, então o custo é o mesmo de apagar um item.
+  async function removeSelectedTemplateActivities() {
+    const sb = getSupabase();
+    const template = selectedTemplate();
+    const ids = selectedTemplateActivityIds();
+    if (!sb || !template || !ids.length) return;
+
+    const what = ids.length === 1 ? 'o momento selecionado' : `os ${ids.length} momentos selecionados`;
+    if (!confirm(`Excluir ${what} do modelo "${template.name}"?`)) return;
+
+    const { error } = await sb.from('ceremonial_template_activities').delete().in('id', ids);
+    if (error) {
+      setTemplatesFeedback('Não foi possível excluir os momentos selecionados: ' + error.message, true);
+      return;
+    }
+
+    state.templateActivities = state.templateActivities.filter(item => !ids.includes(item.id));
+    state.templateSelection.clear();
+    renderTemplatesModal();
+    notify(`${ids.length} ${ids.length === 1 ? 'momento excluído' : 'momentos excluídos'} do modelo.`);
+  }
+
+  // ==========================================================================
+  // MODO REORDENAR DOS MOMENTOS DO MODELO
+  // ==========================================================================
+  // Mesmo interruptor do roteiro: um botão liga e desliga o arraste. Com o modo
+  // desligado a linha mostra a caixa de seleção e não existe punho, então
+  // nenhum clique acidental arrasta um momento. Com o modo ligado, a seleção
+  // é descartada porque as duas coisas competem pelo mesmo lugar na linha.
+
+  function toggleTemplateReorderMode() {
+    state.templateReorderEnabled = !state.templateReorderEnabled;
+    if (state.templateReorderEnabled) state.templateSelection.clear();
+    renderTemplatesModal();
+    notify(state.templateReorderEnabled
+      ? 'Modo reordenar ativado. Arraste os momentos pelo punho.'
+      : 'Modo reordenar desativado.');
   }
 
   // Reordena gravando a ordem inteira no banco, o mesmo caminho do roteiro.
@@ -2282,6 +2566,10 @@
   }
 
   function onTemplateGripPointerDown(event) {
+    // Reordenar é opt-in: sem o botão Reordenar ligado, o punho nem existe na
+    // linha. O guard cobre o ponteiro que ficou preso de um render antigo.
+    if (!state.templateReorderEnabled) return;
+
     // Só o botão principal; o clique direito não deve iniciar arraste.
     if (event.button !== undefined && event.button !== 0) return;
 
@@ -3042,6 +3330,10 @@
       if (target.hasAttribute('data-select-template')) {
         e.preventDefault();
         state.editingTemplateId = target.dataset.selectTemplate;
+        // Seleção e edição são do modelo que estava aberto: trocar de modelo
+        // descarta as duas, senão os ids marcados apontam para o roteiro errado.
+        state.templateSelection.clear();
+        state.editingTemplateActivityId = null;
         setTemplatesFeedback('');
         renderTemplatesModal();
         return;
@@ -3053,9 +3345,40 @@
         return;
       }
 
+      if (target.hasAttribute('data-duplicate-template')) {
+        e.preventDefault();
+        duplicateTemplate(target.dataset.duplicateTemplate);
+        return;
+      }
+
       if (target.hasAttribute('data-delete-template')) {
         e.preventDefault();
         deleteTemplate(target.dataset.deleteTemplate);
+        return;
+      }
+
+      if (target.hasAttribute('data-toggle-template-reorder')) {
+        e.preventDefault();
+        toggleTemplateReorderMode();
+        return;
+      }
+
+      if (target.hasAttribute('data-edit-template-act')) {
+        e.preventDefault();
+        const item = state.templateActivities.find(entry => entry.id === target.dataset.editTemplateAct);
+        if (item) startTemplateActivityEdit(item.id);
+        return;
+      }
+
+      if (target.hasAttribute('data-cancel-template-act-edit')) {
+        e.preventDefault();
+        cancelTemplateActivityEdit();
+        return;
+      }
+
+      if (target.hasAttribute('data-template-act-delete-selected')) {
+        e.preventDefault();
+        removeSelectedTemplateActivities();
         return;
       }
 
@@ -3222,6 +3545,19 @@
         const actId = e.target.dataset.changeActivityStatus;
         const newStatus = e.target.value;
         updateActivityStatus(actId, newStatus);
+        return;
+      }
+
+      // 3b. Caixas de seleção dos momentos do modelo padrão. Delegado porque
+      // as linhas são redesenhadas a cada render, e `change` em vez de `click`
+      // porque o clique também é o inicio do arraste do card de seleção.
+      if (e.target.hasAttribute('data-template-act-select')) {
+        toggleTemplateActivitySelection(e.target.dataset.templateActSelect, e.target.checked);
+        return;
+      }
+
+      if (e.target.id === 'template-act-select-all') {
+        toggleAllTemplateActivities(e.target.checked);
       }
     });
 

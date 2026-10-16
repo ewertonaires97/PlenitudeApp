@@ -713,14 +713,47 @@ eventos passados fiquem com status incorreto.
 | ↳ Mesas | `renderTablesTab()` — `ceremonial.js:1182` |
 | ↳ Ao vivo | `renderLiveTab()` — `ceremonial.js:1276` |
 | **JS abas** | delegated em `setupEventListeners()` — `ceremonial.js:2628` (`data-ceremonial-tab`) |
-| **JS abrir modelos** | `openTemplatesModal()` — `ceremonial.js:1656` |
-| **JS aplicar modelo** | `applyTemplateToEvent()` — `ceremonial.js:2034` |
+| **JS abrir modelos** | `openTemplatesModal()` — `ceremonial.js:1949` |
+| **JS aplicar modelo** | `applyTemplateToEvent()` — `ceremonial.js:2628` |
 | **Abrir a partir de** | `data-open-ceremonial` → `ceremonial.js:2635` |
 
 > 💡 **Este é o exemplo didático mais bonito do projeto.** Uma única função
 > (`renderActiveTab`) decide qual das 5 abas desenhar, chamando a `render*`
 > correspondente. Para mudar a aba de Roteiro, você mexe só em
 > `renderTimelineTab()`. Nada mais é afetado.
+
+#### Modelos padrão de roteiro (`ceremonial.js`, seção "MODELOS PADRÃO DE ROTEIRO")
+
+Tudo da tela de modelos vive a partir de `renderTemplatesModal()` (`ceremonial.js:1975`),
+que desenha a lista da esquerda e chama `renderTemplateDetail()` (`:2004`) para o
+detalhe da direita — cabeçalho, formulário do momento e lista. O modal é
+registrado em `navigation.js` (`SCREENS`) como
+`['ceremonial-templates-modal', 'data-close-templates-modal']`.
+
+| | |
+|---|---|
+| **CSS** | BLOCO 41/42 em `styles.css`: `.templates-*` (linha ~773) e o responsivo de ≤720px (linha ~814) |
+| **JS abrir/fechar** | `openTemplatesModal()` — `:1949` · `closeTemplatesModal()` — `:1963` |
+| **JS desenhar** | `renderTemplatesModal()` — `:1975` · `renderTemplateDetail()` — `:2004` |
+| **JS criar/editar modelo** | `createTemplate()` — `:2124` · `renameTemplate()` — `:2155` · `duplicateTemplate()` — `:2180` · `deleteTemplate()` — `:2237` |
+| **JS momento** | `handleTemplateActivitySubmit()` (cria e edita) — `:2267` · `startTemplateActivityEdit()` — `:2334` · `cancelTemplateActivityEdit()` — `:2343` · `removeTemplateActivity()` — `:2352` |
+| **JS seleção/exclusão em bloco** | `selectedTemplateActivityIds()` — `:2379` · `toggleTemplateActivitySelection()` — `:2387` · `toggleAllTemplateActivities()` — `:2395` · `updateTemplateSelectionBar()` — `:2407` · `removeSelectedTemplateActivities()` — `:2434` |
+| **JS reordenar** | `toggleTemplateReorderMode()` — `:2463` · `persistTemplateActivityOrder()` — `:2477` (RPC) |
+| **State** | `templates`, `templateActivities`, `editingTemplateId`, `editingTemplateActivityId`, `templateSelection` (Set), `templateReorderEnabled` |
+| **Delegação** | clique em `setupEventListeners()` (`data-edit-template-act`, `data-duplicate-template`, `data-toggle-template-reorder`, `data-cancel-template-act-edit`, `data-template-act-delete`, `data-template-act-delete-selected`) · `change` em `data-template-act-select` e em `#template-act-select-all` · `pointerdown` em `onTemplateGripPointerDown` |
+
+Três regras que sustentam a tela:
+
+- **O mesmo formulário cria e edita.** Quem decide é o id oculto
+  `#template-act-id`, preenchido pelo lápis e vazio na criação. É o mesmo
+  caminho do modal de momento do roteiro, sem precisar de um modal dentro do
+  outro.
+- **Marcar uma caixa não redesenha a lista.** A seleção mora em
+  `state.templateSelection` e só o contador e o botão mudam
+  (`updateTemplateSelectionBar`). "Selecionar todos" é a exceção: precisa
+  redesenhar, porque o desenho de cada caixa vem do render.
+- **Reordenar é opt-in.** Com `templateReorderEnabled` desligado a linha mostra
+  a caixa de seleção e não existe punho; ligado, a caixa some e entra o `⠿`.
 
 ### 7.13 Configurações
 
