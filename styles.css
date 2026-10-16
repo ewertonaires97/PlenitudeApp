@@ -165,12 +165,13 @@ h1 span { color: var(--gold); }
 /* Sobreposição modal usada por todas as telas internas: fundo */
 /* escurecido com blur, cartão central rolável. Existem duas cascas: */
 /* .service-panel (lista) e .client-panel/.client-form-panel (formulário). */
-.client-panel, .client-form-panel { position: fixed; z-index: 8; inset: 0; display: flex; justify-content: center; padding: 22px; overflow-y: auto; background: rgba(36, 56, 46, .55); backdrop-filter: blur(4px); }.client-panel[hidden], .client-form-panel[hidden] { display: none; }.client-panel-card, .client-form-card { width: min(100%, 480px); min-height: calc(100vh - 44px); margin: auto; padding: 25px 21px 92px; background: var(--paper); }.client-form-panel { z-index: 9; align-items: center; }.client-form-card { min-height: auto; padding-bottom: 28px; border-radius: 5px; }.client-panel-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 21px; }.client-panel-header h2 { font-size: 25px; }
-/* Voltar e início à esquerda de todo cabeçalho de tela. O título é a única
-   peça que cresce, então o grupo da esquerda encosta nele e as ações da tela
-   continuam na ponta direita, mesmo quando há muitas. */
+.client-panel, .client-form-panel { position: fixed; z-index: 8; inset: 0; display: flex; justify-content: center; padding: 22px; overflow-y: auto; background: rgba(36, 56, 46, .55); backdrop-filter: blur(4px); }.client-panel[hidden], .client-form-panel[hidden] { display: none; }.client-panel-card, .client-form-card { width: min(100%, 480px); min-height: calc(100vh - 44px); margin: auto; padding: 25px 21px 92px; background: var(--paper); }.client-form-panel { z-index: 9; align-items: center; }.client-form-card { min-height: auto; padding-bottom: 28px; border-radius: 5px; }.client-panel-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "nav title tools" "actions actions actions"; align-items: start; gap: 10px 12px; margin-bottom: 21px; }.client-panel-header h2 { font-size: 25px; line-height: 1.15; overflow-wrap: anywhere; }
+/* Voltar e início à esquerda de todo cabeçalho de tela. O cabeçalho é um
+   grid de duas linhas: a de cima tem voltar/início, o título e os botões de
+   ícone; a de baixo, os botões de texto. O título é a única peça que cresce,
+   então as pontas ficam sempre no lugar e nada cobre o texto. */
 .screen-nav { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; margin: -4px 0 0 -6px; }
-.client-panel-header > div:not(.screen-nav):not(.panel-header-actions) { flex: 1 1 auto; min-width: 0; }
+.client-panel-header > .screen-nav { grid-area: nav; }.client-panel-header > div:not(.screen-nav):not(.panel-header-actions):not(.panel-header-tools), .client-panel-header > h2 { grid-area: title; min-width: 0; }.client-panel-header > .icon-button { grid-area: tools; justify-self: end; }
 .screen-nav .icon-button { color: var(--moss); }
 .screen-nav .icon-button:hover { color: var(--gold); }
 /* Anel de foco em duas cores: o dourado marca a borda e o verde escuro
@@ -187,10 +188,13 @@ h1 span { color: var(--gold); }
 /* Fim do bloco do visualizador de imagem; daqui em diante é a lista de */
 /* clientes: cabeçalho, busca, mensagens e a linha de cada cliente. */
 .image-viewer > .screen-nav svg { width: 20px; height: 20px; }.client-panel-header .eyebrow { margin-bottom: 5px; }.client-toolbar { display: flex; gap: 8px; margin-bottom: 13px; }.search-field { display: flex; align-items: center; flex: 1; gap: 8px; min-width: 0; padding: 0 11px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }.search-field svg { flex: 0 0 auto; width: 16px; color: var(--muted); }.search-field input { width: 100%; min-width: 0; height: 40px; border: 0; outline: 0; color: var(--ink); background: transparent; font: inherit; font-size: 11px; }.add-client-button { display: inline-flex; align-items: center; gap: 5px; padding: 0 11px; border-radius: 4px; color: var(--paper); background: var(--moss); font-size: 12px; font-weight: 700; }.add-client-button svg { width: 15px; }.client-feedback, .client-form-feedback { min-height: 17px; margin: 8px 0; color: var(--muted); font-size: 11px; }.client-form-feedback { color: #a0483d; }.client-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }.client-row { display: flex; align-items: center; gap: 11px; padding: 13px 11px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }.client-initial { display: grid; flex: 0 0 auto; place-items: center; width: 36px; height: 36px; border-radius: 50%; color: var(--moss); background: var(--sage-light); font: 600 15px "Playfair Display", serif; }.client-details { flex: 1; min-width: 0; }.client-details strong, .client-details span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.client-details strong { margin-bottom: 3px; font: 600 14px "Playfair Display", serif; }.client-details span { color: var(--muted); font-size: 12px; }.client-actions { display: flex; gap: 2px; }.client-action { display: grid; place-items: center; width: 29px; height: 29px; padding: 0; color: var(--muted); background: transparent; }.client-action:hover { color: var(--moss); }.client-action svg { width: 15px; }.empty-clients { padding: 33px 15px; border: 1px dashed #d7d3c9; color: var(--muted); text-align: center; font-size: 11px; line-height: 1.5; }.client-form-card > label { display: block; margin: 12px 0 6px; color: var(--ink); font-size: 12px; font-weight: 700; }.client-form-card > input:not([type="hidden"]), .client-form-card textarea { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; resize: vertical; }.client-form-card > input:focus, .client-form-card textarea:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(179, 138, 77, .12); }.client-form-card .login-button { width: 100%; }
-/* Ações à direita do cabeçalho de qualquer painel (filtros, menus, */
-/* botões extras). O .catalog-filter é o select de filtro reaproveitado */
-/* por todas as telas. */
-.panel-header-actions { display: flex; align-items: center; gap: 5px; }.catalog-filter { max-width: 132px; min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.service-menus { color: var(--moss) !important; font-size: 12px !important; }/* fieldset tem min-inline-size: min-content por padrao, o que estouraba a
+/* Os dois grupos de ações do cabeçalho. O .panel-header-tools fica na */
+/* linha do título e leva só botões de ícone; o .panel-header-actions ocupa */
+/* a linha inteira de baixo com os botões de texto ("Novo", "Lembretes", */
+/* "Ao Vivo"). Antes os dois grupos disputavam a mesma linha do título, que */
+/* ficava sem espaço e os botões cobriam o texto. */
+/* O .catalog-filter é o select de filtro reaproveitado por todas as telas. */
+.panel-header-tools { grid-area: tools; justify-self: end; display: flex; align-items: center; gap: 5px; }.panel-header-actions { grid-area: actions; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }.panel-header-actions .add-client-button { min-height: 40px; }.catalog-filter { max-width: 132px; min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.service-menus { color: var(--moss) !important; font-size: 12px !important; }/* fieldset tem min-inline-size: min-content por padrao, o que estouraba a
    largura do cartao quando um item tinha um texto longo sem quebra. */
 .menu-checkboxes { min-width: 0; max-width: 100%; margin: 15px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 4px; }.menu-checkboxes legend { padding: 0 5px; color: var(--ink); font-size: 12px; font-weight: 700; }.menu-option { display: flex; align-items: center; gap: 7px; margin: 8px 0; color: var(--ink); font-size: 11px; }.menu-option input { accent-color: var(--moss); }.field-hint { color: var(--muted); font-size: 12px; }
 /* ==========================================================================
@@ -1610,6 +1614,11 @@ a:focus-visible,
    .eyebrow { font-size: 11px; }
    .field-hint, .client-feedback, .client-form-feedback, .access-warning { font-size: 12px; line-height: 1.5; }
    .client-panel-header .eyebrow { font-size: 11px; }
+   /* O cabeçalho é uma linha de três áreas (voltar/início, título, ícones): em
+      tela estreita o título encolhe um ponto e o vão entre as áreas aperta, para
+      que ele caiba sem quebrar no meio da palavra. */
+   .client-panel-header { column-gap: 10px; }
+   .client-panel-header h2 { font-size: 22px; }
    .client-form-card > label, .quote-form-card > label, .quote-event-fields label { font-size: 12px; }
    .client-details span, .visual-card-heading div > span, .service-description { font-size: 12px !important; line-height: 1.45; }
    .service-status, .quote-status { font-size: 12px; }

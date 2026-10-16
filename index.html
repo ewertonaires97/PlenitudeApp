@@ -211,7 +211,7 @@
             <p class="eyebrow">CONTROLE</p>
             <h2 id="inventory-title">Estoque</h2>
           </div>
-          <div class="panel-header-actions">
+          <div class="panel-header-tools">
             <button class="icon-button" type="button" data-open-inventory-categories aria-label="Gerenciar categorias" title="Categorias"><i data-lucide="tags"></i></button>
             <button class="icon-button" type="button" data-close-inventory aria-label="Fechar estoque"><i data-lucide="x"></i></button>
           </div>
@@ -333,7 +333,7 @@
             <p class="eyebrow">CATÁLOGO</p>
             <h2 id="services-title">Serviços</h2>
           </div>
-          <div class="panel-header-actions">
+          <div class="panel-header-tools">
             <button class="icon-button" type="button" data-open-menus aria-label="Gerenciar cardápios" title="Cardápios"><i data-lucide="book-open"></i></button>
             <button class="icon-button" type="button" data-close-services aria-label="Fechar serviços"><i data-lucide="x"></i></button>
           </div>
@@ -359,10 +359,12 @@
             <p class="eyebrow">CATÁLOGO</p>
             <h2 id="menus-title">Cardápios</h2>
           </div>
-          <div class="panel-header-actions">
-            <button class="add-client-button" type="button" data-new-menu><i data-lucide="plus"></i><span>Novo</span></button>
+          <div class="panel-header-tools">
             <button class="icon-button" type="button" data-open-categories aria-label="Gerenciar categorias" title="Categorias"><i data-lucide="tags"></i></button>
             <button class="icon-button" type="button" data-close-menus aria-label="Fechar cardápios"><i data-lucide="x"></i></button>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-menu><i data-lucide="plus"></i><span>Novo</span></button>
           </div>
         </header>
         <div class="menu-filter-row">
@@ -416,9 +418,11 @@
             <p class="eyebrow">ACESSO</p>
             <h2 id="users-title">Usuários</h2>
           </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-users aria-label="Fechar usuários"><i data-lucide="x"></i></button>
+          </div>
           <div class="panel-header-actions">
             <button class="add-client-button" type="button" data-new-user><i data-lucide="user-plus"></i><span>Novo</span></button>
-            <button class="icon-button" type="button" data-close-users aria-label="Fechar usuários"><i data-lucide="x"></i></button>
           </div>
         </header>
         <div class="client-toolbar">
@@ -492,9 +496,11 @@
             <p class="eyebrow">CONTROLE</p>
             <h2 id="inventory-categories-title">Categorias de itens</h2>
           </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-inventory-categories aria-label="Fechar categorias de itens"><i data-lucide="x"></i></button>
+          </div>
           <div class="panel-header-actions">
             <button class="add-client-button" type="button" data-new-inventory-category><i data-lucide="plus"></i><span>Nova</span></button>
-            <button class="icon-button" type="button" data-close-inventory-categories aria-label="Fechar categorias de itens"><i data-lucide="x"></i></button>
           </div>
         </header>
         <p class="client-feedback" id="inventory-category-feedback" role="status"></p>
@@ -509,9 +515,11 @@
             <p class="eyebrow">CATÁLOGO</p>
             <h2 id="categories-title">Categorias</h2>
           </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-categories aria-label="Fechar categorias"><i data-lucide="x"></i></button>
+          </div>
           <div class="panel-header-actions">
             <button class="add-client-button" type="button" data-new-category><i data-lucide="plus"></i><span>Nova</span></button>
-            <button class="icon-button" type="button" data-close-categories aria-label="Fechar categorias"><i data-lucide="x"></i></button>
           </div>
         </header>
         <p class="client-feedback" id="category-feedback" role="status"></p>
@@ -586,7 +594,8 @@
       <div class="service-panel-card quote-panel-card">
         <header class="client-panel-header">
           <div><p class="eyebrow">NEGÓCIOS</p><h2 id="quotes-title">Orçamentos</h2></div>
-          <div class="panel-header-actions"><button class="add-client-button quote-reminder-button" type="button" data-open-quote-reminders><i data-lucide="bell-ring"></i><span>Lembretes</span><span class="quote-reminder-count" id="quote-reminder-count" hidden>0</span></button><button class="add-client-button" type="button" data-new-quote><i data-lucide="plus"></i><span>Novo</span></button><button class="icon-button" type="button" data-close-quotes aria-label="Fechar orçamentos"><i data-lucide="x"></i></button></div>
+          <div class="panel-header-tools"><button class="icon-button" type="button" data-close-quotes aria-label="Fechar orçamentos"><i data-lucide="x"></i></button></div>
+          <div class="panel-header-actions"><button class="add-client-button quote-reminder-button" type="button" data-open-quote-reminders><i data-lucide="bell-ring"></i><span>Lembretes</span><span class="quote-reminder-count" id="quote-reminder-count" hidden>0</span></button><button class="add-client-button" type="button" data-new-quote><i data-lucide="plus"></i><span>Novo</span></button></div>
         </header>
         <div class="client-toolbar"><label class="search-field" for="quote-search"><i data-lucide="search"></i><input id="quote-search" type="search" placeholder="Buscar orçamento, cliente ou local" /></label><select class="catalog-filter" id="quote-status-filter" aria-label="Filtrar status"><option value="">Todos</option><option value="draft">Rascunhos</option><option value="sent">Enviados</option><option value="confirmed">Confirmados</option><option value="expired">Expirados</option><option value="cancelled">Cancelados</option></select></div>
         <p class="client-feedback" id="quote-feedback" role="status"></p><div class="client-list" id="quote-list"></div>
@@ -689,9 +698,11 @@
             <p class="eyebrow">PRODUÇÃO</p>
             <h2 id="events-title">Eventos</h2>
           </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-events aria-label="Fechar eventos"><i data-lucide="x"></i></button>
+          </div>
           <div class="panel-header-actions">
             <button class="add-client-button" type="button" data-new-event><i data-lucide="plus"></i><span>Novo</span></button>
-            <button class="icon-button" type="button" data-close-events aria-label="Fechar eventos"><i data-lucide="x"></i></button>
           </div>
         </header>
         <div class="client-toolbar">
@@ -891,12 +902,14 @@
             <p class="eyebrow">OPERAÇÃO & CERIMÔNIA</p>
             <h2 id="ceremonial-title">Cerimonial</h2>
           </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-ceremonial aria-label="Fechar cerimonial"><i data-lucide="x"></i></button>
+          </div>
           <div class="panel-header-actions">
             <button class="add-client-button ceremonial-live-toggle-btn" type="button" data-ceremonial-live-toggle title="Alternar Modo Ao Vivo">
               <i data-lucide="play-circle"></i>
               <span>Ao Vivo</span>
             </button>
-            <button class="icon-button" type="button" data-close-ceremonial aria-label="Fechar cerimonial"><i data-lucide="x"></i></button>
           </div>
         </header>
 

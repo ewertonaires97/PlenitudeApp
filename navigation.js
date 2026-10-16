@@ -322,9 +322,10 @@
     closeTop();
   });
 
-  // Os dois botões entram em todo cabeçalho de tela. O cabeçalho vira uma linha
-  // de três áreas (voltar, título, ações), então o título é o que estica e as
-  // pontas ficam sempre no lugar, mesmo com muitas ações no meio.
+  // Os dois botões entram em todo cabeçalho de tela. O cabeçalho é um grid de
+  // duas linhas: a de cima tem voltar/início, o título e os botões de ícone; a
+  // de baixo, os botões de texto. O título é o que estica, então as pontas
+  // ficam sempre no lugar e nenhuma ação se sobrepõe a ele.
   const NAV_MARKUP = `
     <button class="icon-button" type="button" data-nav-back aria-label="Voltar para a tela anterior" title="Voltar">
       <i data-lucide="arrow-left"></i>

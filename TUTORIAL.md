@@ -982,7 +982,16 @@ Cole no `index.html` logo antes de `<section class="print-doc"`:
 <section class="service-panel" id="supplier-panel" hidden aria-labelledby="suppliers-title">
   <div class="service-panel-card">
     <header class="client-panel-header">
-      <h2 id="suppliers-title">Fornecedores</h2>
+      <div>
+        <p class="eyebrow">CADASTO</p>
+        <h2 id="suppliers-title">Fornecedores</h2>
+      </div>
+      <div class="panel-header-tools">
+        <button class="icon-button" type="button" data-close-suppliers aria-label="Fechar fornecedores"><i data-lucide="x"></i></button>
+      </div>
+      <div class="panel-header-actions">
+        <button class="add-client-button" type="button" data-new-supplier><i data-lucide="plus"></i><span>Novo</span></button>
+      </div>
     </header>
     <div class="client-list" id="supplier-list"></div>
     <button class="add-client-button" data-new-supplier>
@@ -995,6 +1004,18 @@ Cole no `index.html` logo antes de `<section class="print-doc"`:
 Repare que você **reaproveitou as classes existentes**
 (`service-panel`, `client-panel-header`, `client-list`, `add-client-button`) —
 por isso a tela já nasce com a aparência certa.
+
+O cabeçalho tem **duas faixas** e cada grupo de botão pertence a uma delas:
+
+| Grupo | Onde fica | O que vai nele |
+|---|---|---|
+| `.screen-nav` (injetado por `navigation.js`) | 1ª linha, à esquerda | voltar e início — nunca editar à mão |
+| `<div>` com o `eyebrow` + `<h2>` | 1ª linha, no meio | o título da tela |
+| `.panel-header-tools` | 1ª linha, à direita | só botões de **ícone** (fechar, categorias, cardápios) |
+| `.panel-header-actions` | 2ª linha, ocupando tudo | botões de **texto** (`Novo`, `Nova`, `Lembretes`, `Ao Vivo`) |
+
+Se um botão com texto ficar no `.panel-header-tools`, ele volta a competir com
+o título — que é o que o cabeçalho em duas faixas existe para evitar.
 
 ### Passo 2 — O CSS
 
