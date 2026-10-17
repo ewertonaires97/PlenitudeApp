@@ -584,9 +584,6 @@
                 <i data-lucide="message-circle"></i>
               </a>
             ` : ''}
-            <button class="client-action" type="button" data-manage-event="${event.id}" title="Gerenciar Evento" aria-label="Gerenciar Evento">
-              <i data-lucide="calendar-check"></i>
-            </button>
             <button class="client-action" type="button" data-edit-event="${event.id}" title="Editar Evento" aria-label="Editar Evento">
               <i data-lucide="pencil"></i>
             </button>

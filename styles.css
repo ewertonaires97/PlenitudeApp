@@ -470,7 +470,7 @@ h1 span { color: var(--gold); }
 .hero-meta-item a { color: #e9e5dc; text-decoration: underline; }
 .event-hero-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 15px; padding-top: 13px; border-top: 1px solid rgba(255, 255, 255, .15); }
 .status-pill-group { display: flex; gap: 4px; }
-.status-btn { padding: 4px 8px; border: 1px solid rgba(255, 255, 255, .25); border-radius: 3px; color: #d8dfd2; background: rgba(0, 0, 0, .15); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; transition: all .15s; }
+.status-btn { padding: 4px 8px; border: 1px solid rgba(255, 255, 255, .25); border-radius: 3px; color: #d8dfd2; background: rgba(0, 0, 0, .15); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; transition: all .15s; }
 .status-btn:hover { background: rgba(255, 255, 255, .15); color: #fff; }
 .status-btn.active { border-color: var(--gold); color: #fff; background: var(--gold); }
 .hero-action-buttons { display: flex; gap: 6px; }
@@ -650,7 +650,7 @@ h1 span { color: var(--gold); }
 .guests-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 14px; }
 .guest-stat-box { text-align: center; padding: 8px 4px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .guest-stat-box strong { display: block; font: 700 16px "Playfair Display", serif; color: var(--moss); line-height: 1.1; }
-.guest-stat-box span { display: block; margin-top: 3px; font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: .04em; }
+.guest-stat-box span { display: block; margin-top: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: .04em; }
 /* Mesmo limite de coluna do .ceremonial-list: o nome do convidado também é
    nowrap, e sem isso a linha estica a coluna e vaza do painel. */
 .guest-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 16px; }
