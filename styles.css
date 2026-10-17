@@ -619,8 +619,10 @@ h1 span { color: var(--gold); }
 .ceremonial-body { flex: 1; min-width: 0; }
 .ceremonial-title { font-size: 11.5px; font-weight: 600; color: var(--ink); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ceremonial-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 12px; color: var(--muted); }
-.ceremonial-checkbox { width: 17px; height: 17px; accent-color: var(--moss); cursor: pointer; flex: 0 0 auto; }
-.ceremonial-actions { display: flex; gap: 2px; flex: 0 0 auto; }
+/* Ficha do evento: o roteiro ali é histórico, então o lugar do checkbox que
+   marcava o momento como concluído é um ícone estático. */
+.ceremonial-history-mark { width: 17px; height: 17px; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+.ceremonial-item.done .ceremonial-history-mark { color: var(--moss); }
 
 /* ==========================================================================
    BLOCO 36 — FORMULÁRIOS EMBUTIDOS (.inline-form-box)
@@ -648,6 +650,9 @@ h1 span { color: var(--gold); }
 .guest-status-select.confirmed { color: #2d693c; background: #eaf5eb; border-color: #bcdcbc; }
 .guest-status-select.pending { color: #8b6e28; background: #fdf5e2; border-color: #ebd9ad; }
 .guest-status-select.declined { color: #9a554c; background: #f8e8e6; border-color: #e5beba; }
+/* Na ficha do evento o status é um selo, não um <select>: sem cursor de link,
+   porque a edição de convidado é feita no módulo de Cerimonial. */
+span.guest-status-select { cursor: default; }
 
 /* ==========================================================================
    MÓDULO DE CERIMONIAL & OPERAÇÃO

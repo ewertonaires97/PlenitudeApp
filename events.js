@@ -187,6 +187,18 @@
     }
   }
 
+  // Rótulo do guest_status para o selo da lista de convidados. É o mesmo mapa do
+  // módulo de Cerimonial, replicado porque os dois arquivos são módulos isolados
+  // que não compartilham escopo.
+  function formatGuestStatusLabel(status) {
+    switch (status) {
+      case 'confirmed': return 'Confirmado';
+      case 'pending': return 'Pendente';
+      case 'declined': return 'Recusado';
+      default: return status || 'Pendente';
+    }
+  }
+
   // Escape de HTML. Quase toda tela deste módulo é montada por template string
   // com dados que o usuário digitou (nome do evento, local, observações), e
   // innerHTML não escapa nada. Por isso todo texto que vem do banco passa por
@@ -258,44 +270,63 @@
     }
   }
 
-  // A data aqui é a de UTC (toISOString), diferente do parseDateOnly: entre 21h
-  // e meia-noite no Brasil o "hoje" já é o dia seguinte. A comparação entre as
-  // duas strings funciona porque o Postgres devolve 'YYYY-MM-DD' e nesse
-  // formato a ordem alfabética é a ordem do calendário.
+  // 'today' no fuso de quem está olhando. O recorte é o mesmo do parseDateOnly:
+  // entre 21h e meia-noite no Brasil o toISOString já devolve o dia seguinte, e
+  // um evento que acontece agora à noite seria marcado como realizado antes da
+  // hora. Montar a string com o ano/mês/dia locais evita esse dia adiantado.
+  function todayDateStr() {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${now.getFullYear()}-${month}-${day}`;
+  }
+
+  // 'completed' não vem de trigger do banco, vem desta regra: data de hoje maior
+  // que a data do evento significa que a realização já passou. Vale para
+  // 'planned' e 'in_progress'; 'cancelled' é decisão de negócio e fica como está.
+  // O status volta no objeto porque a lista e a ficha se repintam em seguida, e
+  // recarregar tudo só para trocar um selo custaria quatro consultas ao banco.
+  async function syncPastEventStatus(event) {
+    const sb = getSupabase();
+    if (!sb || !event || !event.event_date) return false;
+    if (event.status !== 'planned' && event.status !== 'in_progress') return false;
+    if (!(event.event_date < todayDateStr())) return false;
+
+    try {
+      const { error } = await sb
+        .from('events')
+        .update({ status: 'completed' })
+        .eq('id', event.id);
+
+      if (error) {
+        console.warn(`Erro ao atualizar status do evento ${event.id}:`, error);
+        return false;
+      }
+
+      event.status = 'completed';
+      return true;
+    } catch (err) {
+      console.error('Erro ao atualizar status de evento passado:', err);
+      return false;
+    }
+  }
+
+  // A mesma regra aplicada à agenda inteira: quem abre a lista não deve ver um
+  // evento de ontem ainda marcado como "planejado". Um UPDATE por evento em vez
+  // de um UPDATE ... IN: são poucos por rodada e este módulo não monta filtro de
+  // lista para o .update().
   async function updatePastEventsStatus() {
     const sb = getSupabase();
     if (!sb) return;
 
-    // Gambiarra de negócio: o status 'completed' não vem de um trigger, vem
-    // desta varredura. Só alguém que abre a agenda faz um evento virar
-    // "realizado" sozinho, e quem não abre a agenda nunca vê o evento sair
-    // de 'planned' por data.
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayDateStr();
     const pastEvents = state.events.filter(e =>
       e.event_date < todayStr &&
       (e.status === 'planned' || e.status === 'in_progress')
     );
 
-    if (pastEvents.length === 0) return;
-
-    try {
-      // Um UPDATE por evento em vez de um UPDATE ... IN: são poucos por rodada e o
-      // update em lote exigiria uma consulta por id de qualquer jeito, já que
-      // este módulo não monta filtro de lista para o .update().
-      for (const event of pastEvents) {
-        const { error } = await sb
-          .from('events')
-          .update({ status: 'completed' })
-          .eq('id', event.id);
-
-        if (error) {
-          console.warn(`Erro ao atualizar status do evento ${event.id}:`, error);
-        } else {
-          event.status = 'completed';
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao atualizar status de eventos passados:', err);
+    for (const event of pastEvents) {
+      await syncPastEventStatus(event);
     }
   }
 
@@ -359,7 +390,7 @@
   // agenda, mesmo com a tela de Eventos fechada, porque esse resumo fica na
   // tela inicial e é o que muda de forma visível mais rápido.
   function updateTodaySummary() {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayDateStr();
     const todayEvents = state.events.filter(e => e.event_date === todayStr && e.status !== 'cancelled');
     
     // Atualiza o resumo da tela inicial
@@ -400,9 +431,10 @@
       availableQuotes = state.quotes.filter(q => q.client_id === clientId);
     }
 
-    // A primeira opção é a saída para quem não quer vincular nada: o evento
-    // nasce sem orçamento e o submit cria um rascunho na hora.
-    let html = '<option value="">Gerar / Vincular automaticamente</option>';
+    // A primeira opção é a saída para quem não quer trocar nada: como o
+    // formulário só edita, o id escondido do evento é o que vale quando ela
+    // fica escolhida.
+    let html = '<option value="">Manter o orçamento atual</option>';
     availableQuotes.forEach(q => {
       const num = q.quote_number ? `#${q.quote_number} - ` : '';
       const total = formatCurrency(q.total);
@@ -431,7 +463,7 @@
     const listEl = document.getElementById('event-list');
     if (!listEl) return;
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayDateStr();
 
     // Filtrar no navegador, e não no banco: a lista inteira já está em memória
     // e assim o filtro responde sem ida ao Supabase nem delay de rede.
@@ -476,15 +508,16 @@
       return true;
     });
 
-    // Lista vazia com a saída para criar o evento: quem procurou e não achou quase
-    // sempre está querendo cadastrar o que procurou.
+    // Lista vazia sem a saída para criar o evento: aqui não se cria evento. O
+    // caminho é confirmar um orçamento, e a agenda só passa a listar o que já
+    // nasceu dessa rotina.
     if (filtered.length === 0) {
       listEl.innerHTML = `
         <div class="empty-clients">
           <p>Nenhum evento encontrado para os filtros selecionados.</p>
-          <button class="text-button" type="button" data-new-event style="margin-top: 8px;">
-            + Criar novo evento
-          </button>
+          <p class="field-hint" style="margin-top: 8px;">
+            Eventos são gerados automaticamente ao confirmar um orçamento.
+          </p>
         </div>
       `;
       refreshIcons();
@@ -557,9 +590,6 @@
             <button class="client-action" type="button" data-edit-event="${event.id}" title="Editar Evento" aria-label="Editar Evento">
               <i data-lucide="pencil"></i>
             </button>
-            <button class="client-action" type="button" data-duplicate="event" data-duplicate-id="${event.id}" title="Duplicar Evento" aria-label="Duplicar Evento">
-              <i data-lucide="copy"></i>
-            </button>
             <button class="client-action" type="button" data-delete-event="${event.id}" title="Excluir Evento" aria-label="Excluir Evento">
               <i data-lucide="trash-2"></i>
             </button>
@@ -615,8 +645,10 @@
     if (panel) panel.hidden = true;
   }
 
-  // O mesmo formulário serve para criar e para editar: o que decide é o
-  // #event-id, campo escondido que fica vazio no cadastro e cheio na edição.
+  // O formulário existe só para editar. Evento nasce da rotina automática de
+  // confirmação do orçamento (onQuoteConfirmed e a trigger do banco), então uma
+  // chamada sem id é recusada aqui em vez de abrir um formulário que criaria um
+  // evento fora desse caminho.
   function openEventForm(eventData = null) {
     const panel = document.getElementById('event-form-panel');
     const form = document.getElementById('event-form');
@@ -625,46 +657,33 @@
 
     if (!panel || !form) return;
 
+    if (!eventData || !eventData.id) {
+      notify('Eventos são criados automaticamente ao confirmar um orçamento.');
+      return;
+    }
+
     feedbackEl.textContent = '';
     form.reset();
 
     populateClientSelect();
     populateQuoteSelect();
 
-    // Edição vs. criação é decidido pelo id, não pela presença do objeto: assim
-    // a cópia da duplicação (sem id) abre como "Novo evento" já preenchida.
-    const isEdit = Boolean(eventData?.id);
-    if (titleEl) titleEl.textContent = isEdit ? 'Editar evento' : 'Novo evento';
-    // Os campos são preenchidos com o que veio em qualquer um dos modos. Só o
-    // id e o orçamento vinculado ficam de fora na criação: um evento novo nasce
-    // sem orçamento e o submit cria um rascunho na hora.
-    document.getElementById('event-id').value = isEdit ? eventData.id : '';
-    document.getElementById('event-quote-id').value = isEdit ? (eventData.quote_id || '') : '';
-    document.getElementById('event-name').value = eventData?.name || '';
-    document.getElementById('event-client').value = eventData?.client_id || '';
-    document.getElementById('event-time').value = eventData?.event_time ? eventData.event_time.slice(0, 5) : '';
-    document.getElementById('event-venue').value = eventData?.venue || '';
-    // O status de uma cópia volta para 'planned'. Um evento em andamento ou
-    // realizado faria o orçamento de apoio nascer 'confirmed', e a trigger
-    // create_event_when_quote_confirmed criaria um segundo evento além deste.
-    document.getElementById('event-status').value = isEdit ? (eventData?.status || 'planned') : 'planned';
-    document.getElementById('event-notes').value = eventData?.notes || '';
+    if (titleEl) titleEl.textContent = 'Editar evento';
+    // Só o id e o orçamento vinculado ficam de fora da lista de orçamentos: eles
+    // são o vínculo que o evento já tem e não podem ser recriados aqui.
+    document.getElementById('event-id').value = eventData.id;
+    document.getElementById('event-quote-id').value = eventData.quote_id || '';
+    document.getElementById('event-name').value = eventData.name || '';
+    document.getElementById('event-client').value = eventData.client_id || '';
+    document.getElementById('event-time').value = eventData.event_time ? eventData.event_time.slice(0, 5) : '';
+    document.getElementById('event-venue').value = eventData.venue || '';
+    document.getElementById('event-status').value = eventData.status || 'planned';
+    document.getElementById('event-notes').value = eventData.notes || '';
+    document.getElementById('event-date').value = eventData.event_date || '';
 
-    if (isEdit) {
-      document.getElementById('event-date').value = eventData.event_date || '';
-      const quoteSelect = document.getElementById('event-quote-select');
-      if (quoteSelect && eventData.quote_id) {
-        quoteSelect.value = eventData.quote_id;
-      }
-    } else {
-      // Data padrão: 7 dias a partir de hoje. Numa cópia, mantém a data do
-      // original para o novo evento nascer com a mesma do que foi duplicado.
-      // É só um chute para o campo não vir vazio e obrigar a abrir o calendário,
-      // e sai em UTC por causa do toISOString — o mesmo recorte de data usado
-      // nos filtros da lista, coerente com ela.
-      const nextWeek = new Date();
-      nextWeek.setDate(nextWeek.getDate() + 7);
-      document.getElementById('event-date').value = eventData?.event_date || nextWeek.toISOString().split('T')[0];
+    const quoteSelect = document.getElementById('event-quote-select');
+    if (quoteSelect && eventData.quote_id) {
+      quoteSelect.value = eventData.quote_id;
     }
 
     panel.hidden = false;
@@ -679,11 +698,12 @@
   // ==========================================================================
   // Salvar / Excluir Eventos
   //
-  // Regras que valem mais que o código: events.quote_id é NOT NULL, então não
-  // existe evento sem orçamento; e a trigger create_event_when_quote_confirmed
-  // só cria evento quando o orçamento vira 'confirmed'. Salvar um evento aqui
-  // não passa pela trigger, e é por isso que o orçamento de apoio é criado aqui
-  // mesmo — com 'draft' ou 'confirmed' conforme o status escolhido.
+  // Regra que vale mais que o código: o evento nasce da rotina automática de
+  // confirmação do orçamento — a trigger create_event_when_quote_confirmed do
+  // banco ou o onQuoteConfirmed do próprio módulo. Esta tela só grava UPDATE
+  // sobre um evento que já existe, e por isso não há caminho de INSERT aqui nem
+  // de orçamento de apoio: events.quote_id é NOT NULL e o formulário sempre traz
+  // o id do orçamento que o evento já tem.
   // ==========================================================================
 
   async function handleEventFormSubmit(e) {
@@ -701,8 +721,9 @@
     const name = document.getElementById('event-name').value.trim();
     const clientId = document.getElementById('event-client').value;
     // O selete tem prioridade sobre o campo oculto: se o usuário escolheu outro
-    // orçamento na hora, é esse que vale.
-    let quoteId = document.getElementById('event-quote-select').value || document.getElementById('event-quote-id').value.trim();
+    // orçamento na hora, é esse que vale. Havendo nada escolhido, o oculto
+    // mantém o orçamento que o evento já tem.
+    const quoteId = document.getElementById('event-quote-select').value || document.getElementById('event-quote-id').value.trim();
     const eventDate = document.getElementById('event-date').value;
     const eventTime = document.getElementById('event-time').value || null;
     const venue = document.getElementById('event-venue').value.trim() || null;
@@ -712,6 +733,13 @@
     // Validação mínima no navegador: o banco cobra o resto (client_id, event_date,
     // quote_id NOT NULL). Aqui só o que evita erro de digitação óbvio, porque
     // o erro do banco aparece traduzido em inglês no campo de feedback.
+    // Sem id não há evento para atualizar: o formulário só abre em modo edição,
+    // e um submit avulso é descartado em vez de virar criação.
+    if (!id) {
+      if (feedbackEl) feedbackEl.textContent = 'Eventos são criados automaticamente ao confirmar um orçamento.';
+      return;
+    }
+
     if (!name || !clientId || !eventDate) {
       if (feedbackEl) feedbackEl.textContent = 'Preencha o nome do evento, cliente e data.';
       return;
@@ -721,30 +749,7 @@
     if (feedbackEl) feedbackEl.textContent = 'Salvando evento...';
 
     try {
-      // Se não houver quote_id vinculado (o banco de dados requer quote_id NOT NULL),
-      // criamos um orçamento correspondente automaticamente!
-      if (!quoteId) {
-        // O orçamento nasce com os mesmos dados do evento e vira 'confirmed'
-        // só quando o evento já está em andamento ou realizado — é esse status
-        // que decide se o evento entra para o Financeiro. Fora disso fica
-        // 'draft', e a trigger nunca o promoveria por si só.
-        const { data: newQuote, error: quoteErr } = await sb
-          .from('quotes')
-          .insert({
-            name: `Orçamento - ${name}`,
-            client_id: clientId,
-            venue: venue,
-            event_date: eventDate,
-            event_time: eventTime,
-            status: status === 'completed' || status === 'in_progress' ? 'confirmed' : 'draft',
-            notes: notes || 'Gerado a partir do módulo de eventos'
-          })
-          .select('id')
-          .single();
-
-        if (quoteErr) throw quoteErr;
-        quoteId = newQuote.id;
-      }
+      if (!quoteId) throw new Error('O evento precisa manter um orçamento vinculado.');
 
       const eventPayload = {
         name,
@@ -757,17 +762,9 @@
         notes
       };
 
-      if (id) {
-        // Atualização
-        const { error } = await sb.from('events').update(eventPayload).eq('id', id);
-        if (error) throw error;
-        notify('Evento atualizado com sucesso!');
-      } else {
-        // Inserção
-        const { error } = await sb.from('events').insert(eventPayload);
-        if (error) throw error;
-        notify('Evento criado com sucesso!');
-      }
+      const { error } = await sb.from('events').update(eventPayload).eq('id', id);
+      if (error) throw error;
+      notify('Evento atualizado com sucesso!');
 
       closeEventForm();
       await loadEvents();
@@ -777,7 +774,7 @@
       // A ficha é reaberta (e não só atualizada) porque ela é quem decide a ordem de
       // exibição; voltar a abrir garante que cronogramas e convidados voltem
       // também.
-      if (state.currentEventId === id && id) {
+      if (state.currentEventId === id) {
         await openEventDetail(id);
       }
     } catch (err) {
@@ -886,6 +883,12 @@
 
       if (eventErr) throw eventErr;
       state.currentEventData = eventData;
+
+      // Mesma regra da agenda: data de hoje maior que a data do evento já
+      // significa realizado. Sem isso a ficha aberta direto (confirmação de
+      // orçamento, atalho do orçamento, Realtime) mostraria o selo antigo por
+      // tempo indeterminado, já que aqui ninguém passa por loadEvents().
+      await syncPastEventStatus(state.currentEventData);
 
       // 2. Cerimonial (atividades)
       // 'position' é a ordem do roteiro e é UNIQUE por evento; o horário é
@@ -1074,9 +1077,11 @@
     }
 
     // 2. Aba Cerimonial & Cronograma
-    // Roteiro resumido: marcar concluído e incluir um momento novo. Quem precisa
-    // da operação completa (chegada, equipe, mesas ao vivo) sai pelo botão do
-    // topo para o módulo de Cerimonial, que trabalha nas mesmas linhas.
+    // Histórico do roteiro, somente leitura. Quem monta e ajusta a operação
+    // (chegada, equipe, mesas ao vivo) trabalha no módulo de Cerimonial, que
+    // opera as mesmas linhas; aqui a aba serve para consultar o que ficou
+    // registrado, e por isso não há checkbox, exclusão nem formulário de
+    // inclusão — só o atalho para o outro módulo.
     const timelineEl = document.getElementById('event-tab-timeline');
     if (timelineEl) {
       timelineEl.innerHTML = `
@@ -1090,6 +1095,10 @@
           </button>
         </div>
 
+        <p class="field-hint" style="margin-bottom: 10px;">
+          Histórico do cerimonial. Incluir, alterar e excluir momentos é feito no módulo de Cerimonial.
+        </p>
+
         <div class="ceremonial-list" id="ceremonial-items-container">
           ${state.ceremonialActivities.length === 0 ? `
             <div class="empty-clients" style="padding: 16px;">
@@ -1097,7 +1106,9 @@
             </div>
           ` : state.ceremonialActivities.map(act => `
             <div class="ceremonial-item ${act.status === 'completed' ? 'done' : ''}" data-activity-id="${act.id}">
-              <input type="checkbox" class="ceremonial-checkbox" ${act.status === 'completed' ? 'checked' : ''} data-toggle-activity="${act.id}" title="Marcar como concluído" />
+              <span class="ceremonial-history-mark" aria-hidden="true">
+                <i data-lucide="${act.status === 'completed' ? 'check' : 'clock'}" style="width: 14px;"></i>
+              </span>
               ${act.scheduled_time ? `<span class="ceremonial-time">${act.scheduled_time.slice(0, 5)}</span>` : ''}
               <div class="ceremonial-body">
                 <span class="ceremonial-title">${sanitizeHtml(act.title)}</span>
@@ -1108,37 +1119,16 @@
                   </div>
                 ` : ''}
               </div>
-              <div class="ceremonial-actions">
-                <button class="client-action" type="button" data-delete-activity="${act.id}" title="Excluir momento">
-                  <i data-lucide="trash-2" style="width: 13px;"></i>
-                </button>
-              </div>
             </div>
           `).join('')}
-        </div>
-
-        <div class="inline-form-box">
-          <h5>+ Adicionar momento ao cronograma</h5>
-          <form id="add-activity-form">
-            <div class="inline-form-row">
-              <input type="time" id="new-act-time" placeholder="Horário" />
-              <input type="text" id="new-act-title" placeholder="Ex.: Entrada dos noivos, brinde, abertura da pista" required />
-            </div>
-            <div class="inline-form-row-3">
-              <input type="text" id="new-act-resp" placeholder="Responsável (ex.: Cerimonialista, DJ)" />
-              <input type="text" id="new-act-desc" placeholder="Detalhes / Músicas / Orientações" />
-            </div>
-            <button class="login-button" type="submit" style="margin-top: 8px; min-height: 38px; font-size: 10px;">
-              <span>Adicionar ao cerimonial</span><i data-lucide="plus"></i>
-            </button>
-          </form>
         </div>
       `;
     }
 
     // 3. Aba Convidados & Mesas
-    // Convidados com status e, quando existe, a mesa da relação. A mesa de
-    // verdade fica no módulo de Cerimonial; aqui é só para conferência rápida.
+    // Histórico da lista de convidados, somente leitura. O status vem como selo
+    // e a mesa de verdade é a que o módulo de Cerimonial vinculou; quem inclui,
+    // remaneja ou exclui convidado trabalha por lá.
     const guestsEl = document.getElementById('event-tab-guests');
     if (guestsEl) {
       // Os quatro contadores saem de três varreduras do mesmo array, e não de um
@@ -1169,6 +1159,10 @@
           </div>
         </div>
 
+        <p class="field-hint" style="margin-bottom: 10px;">
+          Histórico da lista de convidados. Alterar status, mesa ou remover alguém é feito no módulo de Cerimonial.
+        </p>
+
         <div class="guest-list">
           ${state.guests.length === 0 ? `
             <div class="empty-clients" style="padding: 16px;">
@@ -1182,6 +1176,7 @@
             // pela lista resumida cai no notes; quem foi para o Cerimonial tem
             // o vínculo e usa a relação.
             const tableName = guest.event_tables ? `Mesa ${guest.event_tables.table_number}` : (guest.notes || '');
+            const guestStatusLabel = formatGuestStatusLabel(guest.status);
 
             return `
               <div class="guest-row" data-guest-id="${guest.id}">
@@ -1193,245 +1188,21 @@
                   </div>
                 </div>
 
-                // O status da linha é também classe do <select>, para o CSS pintar a cor. A
-                // troca dispara o listener de 'change' no document, que é quem
-                // grava no banco.
-                <select class="guest-status-select ${guest.status}" data-change-guest-status="${guest.id}">
-                  <option value="confirmed" ${guest.status === 'confirmed' ? 'selected' : ''}>Confirmado</option>
-                  <option value="pending" ${guest.status === 'pending' ? 'selected' : ''}>Pendente</option>
-                  <option value="declined" ${guest.status === 'declined' ? 'selected' : ''}>Recusado</option>
-                </select>
+                <span class="guest-status-select ${guest.status}">${guestStatusLabel}</span>
 
                 ${guestWa ? `
                   <a class="client-action whatsapp-action" href="https://wa.me/${guestWa}" target="_blank" rel="noopener noreferrer" title="WhatsApp com convidado">
                     <i data-lucide="message-circle" style="width: 14px;"></i>
                   </a>
                 ` : ''}
-
-                <button class="client-action" type="button" data-delete-guest="${guest.id}" title="Remover convidado">
-                  <i data-lucide="trash-2" style="width: 13px;"></i>
-                </button>
               </div>
             `;
           }).join('')}
-        </div>
-
-        <div class="inline-form-box">
-          <h5>+ Adicionar convidado</h5>
-          <form id="add-guest-form">
-            <div class="inline-form-row">
-              <input type="text" id="new-guest-name" placeholder="Nome do convidado" required style="grid-column: 1 / -1;" />
-            </div>
-            <div class="inline-form-row-3">
-              <input type="tel" id="new-guest-phone" placeholder="WhatsApp (opcional)" />
-              <input type="text" id="new-guest-table" placeholder="Mesa / Acompanhantes" />
-            </div>
-            <button class="login-button" type="submit" style="margin-top: 8px; min-height: 38px; font-size: 10px;">
-              <span>Adicionar convidado</span><i data-lucide="user-plus"></i>
-            </button>
-          </form>
         </div>
       `;
     }
 
     refreshIcons();
-  }
-
-  // ==========================================================================
-  // Atividades do Cerimonial & Convidados (Ações no Supabase)
-  //
-  // Estas ações escrevem nas mesmas tabelas que o módulo de Cerimonial usa,
-  // então a mudança feita aqui chega à tela de lá pelo Realtime — e a de lá
-  // pode ter sido feita por outra pessoa, no celular dela. A única confirmação
-  // visual é a de excluir um momento; quem pode gravar continua sendo a RLS,
-  // e o erro de escrita aparece no console e, quando há alert, para o usuário.
-  // ==========================================================================
-
-  // Inclui um momento no roteiro do evento aberto. O id do evento nunca vem do
-  // formulário: sai de state.currentEventId, que a ficha preencheu ao abrir.
-  async function handleAddActivity(e) {
-    e.preventDefault();
-    const sb = getSupabase();
-    if (!sb || !state.currentEventId) return;
-
-    const time = document.getElementById('new-act-time').value || null;
-    const title = document.getElementById('new-act-title').value.trim();
-    const resp = document.getElementById('new-act-resp').value.trim() || null;
-    const desc = document.getElementById('new-act-desc').value.trim() || null;
-
-    if (!title) return;
-
-    try {
-      // A posição vai para o fim do roteiro. (event_id, position) é único, então a
-      // contagem do cache local serve: só quebra se duas pessoas incluírem
-      // momentos ao mesmo tempo, e aí o banco recusa o segundo INSERT.
-      const nextPosition = state.ceremonialActivities.length + 1;
-      const { error } = await sb.from('ceremonial_activities').insert({
-        event_id: state.currentEventId,
-        position: nextPosition,
-        title,
-        scheduled_time: time,
-        responsible: resp,
-        description: desc,
-        status: 'pending'
-      });
-
-      if (error) throw error;
-      notify('Momento adicionado ao cerimonial!');
-
-      // Cadastra automaticamente o(s) responsável(is) na equipe do cerimonial
-      // Digitar o nome no roteiro já cria a pessoa na equipe do evento, porque
-      // é assim que a equipe cresce no dia a dia: quem aparece no roteiro está
-      // escalado. Separar por vírgula ou ponto e vírgula aceita os dois formatos
-      // que aparecem na digitação.
-      if (resp) {
-        const names = resp.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
-        for (const name of names) {
-          // Verifica se já existe
-          // ilike, e não eq: "ana" e "Ana" são a mesma pessoa, e duplicar a
-          // linha só faria a equipe parecer maior do que é.
-          const { data: existing } = await sb
-            .from('ceremonialistas')
-            .select('id')
-            .eq('event_id', state.currentEventId)
-            .ilike('name', name)
-            .limit(1);
-          if (existing && existing.length > 0) continue;
-          await sb.from('ceremonialistas').insert({ event_id: state.currentEventId, name });
-        }
-      }
-
-      await loadEventFullDetails(state.currentEventId);
-    } catch (err) {
-      console.error('Erro ao adicionar momento:', err);
-      alert(`Erro: ${err.message}`);
-    }
-  }
-
-  // Marcador do roteiro. Só dois estados são usados aqui (pendente e concluído),
-  // embora o enum activity_status aceite mais: alternar é mais rápido do que
-  // descer um selete no meio da festa.
-  async function toggleActivityStatus(actId) {
-    const sb = getSupabase();
-    if (!sb) return;
-
-    const current = state.ceremonialActivities.find(a => a.id === actId);
-    if (!current) return;
-
-    const newStatus = current.status === 'completed' ? 'pending' : 'completed';
-
-    try {
-      const { error } = await sb
-        .from('ceremonial_activities')
-        .update({ status: newStatus })
-        .eq('id', actId);
-
-      if (error) throw error;
-      // Ajusta o cache e redesenha só a aba. É o caminho curto de propósito: a
-      // carga completa custaria quatro consultas para trocar uma palavra.
-      current.status = newStatus;
-      renderEventTabContent();
-    } catch (err) {
-      console.error('Erro ao atualizar status da atividade:', err);
-    }
-  }
-
-  async function deleteActivity(actId) {
-    const act = state.ceremonialActivities.find(a => a.id === actId);
-    const title = act ? `"${act.title}"` : 'este momento';
-
-    if (!confirm(`Deseja remover ${title} do roteiro?`)) return;
-
-    const sb = getSupabase();
-    if (!sb) return;
-
-    try {
-      const { error } = await sb.from('ceremonial_activities').delete().eq('id', actId);
-      if (error) throw error;
-
-      // Reempacota posições para evitar buracos na sequência
-      // A função do banco renumera as posições em 1..N. Sem ela, o próximo
-      // momento usaria length + 1 e cairia em um buraco deixado pela exclusão,
-      // brigando com a restrição de unicidade de (event_id, position).
-      await sb.rpc('pack_ceremonial_activities', { target_event_id: state.currentEventId });
-
-      notify('Momento removido.');
-      await loadEventFullDetails(state.currentEventId);
-    } catch (err) {
-      console.error('Erro ao excluir momento:', err);
-    }
-  }
-
-  // Convidado cadastrado pela equipe já entra como 'confirmed', e não 'pending'
-  // como é o default da tabela. Quem digita o nome aqui já sabe que a pessoa
-  // está convidada; 'pending' fica para quem entra pela lista do Cerimonial,
-  // ainda sem resposta.
-  async function handleAddGuest(e) {
-    e.preventDefault();
-    const sb = getSupabase();
-    if (!sb || !state.currentEventId) return;
-
-    const name = document.getElementById('new-guest-name').value.trim();
-    const phone = document.getElementById('new-guest-phone').value.trim() || null;
-    // O campo "Mesa / Acompanhantes" vai para guests.notes, e não para o
-    // table_id: é texto livre, e o vínculo com a mesa de verdade é feito no
-    // módulo de Cerimonial. A aba de convidados usa notes como reserva quando o
-    // convidado não tem mesa vinculada.
-    const notes = document.getElementById('new-guest-table').value.trim() || null;
-
-    if (!name) return;
-
-    try {
-      const { error } = await sb.from('guests').insert({
-        event_id: state.currentEventId,
-        name,
-        whatsapp: phone,
-        status: 'confirmed',
-        notes
-      });
-
-      if (error) throw error;
-      notify('Convidado adicionado!');
-      await loadEventFullDetails(state.currentEventId);
-    } catch (err) {
-      console.error('Erro ao adicionar convidado:', err);
-      alert(`Erro: ${err.message}`);
-    }
-  }
-
-  // Muda o status do convidado pelo <select> da lista. Recarrega a ficha toda em
-  // vez de ajustar a linha: é a mudança que a central de avisos acompanha
-  // (quem marca "confirmado" faz o aviso do convidado sair), e recarregar deixa
-  // os contadores batendo sem lógica extra.
-  async function updateGuestStatus(guestId, newStatus) {
-    const sb = getSupabase();
-    if (!sb) return;
-
-    try {
-      const { error } = await sb.from('guests').update({ status: newStatus }).eq('id', guestId);
-      if (error) throw error;
-      notify('Status do convidado atualizado.');
-      await loadEventFullDetails(state.currentEventId);
-    } catch (err) {
-      console.error('Erro ao atualizar convidado:', err);
-    }
-  }
-
-  // Sem confirm(): remover convidado é um toque e desfazer seria um segundo
-  // caminho só para isso. A exclusão é definitiva para quem não tem o contato em
-  // outro lugar.
-  async function deleteGuest(guestId) {
-    const sb = getSupabase();
-    if (!sb) return;
-
-    try {
-      const { error } = await sb.from('guests').delete().eq('id', guestId);
-      if (error) throw error;
-      notify('Convidado removido.');
-      await loadEventFullDetails(state.currentEventId);
-    } catch (err) {
-      console.error('Erro ao remover convidado:', err);
-    }
   }
 
   // Mudança rápida de status pelas pílulas do hero. O cache é corrigido na mão
@@ -1585,11 +1356,9 @@
         return;
       }
 
-      if (target.dataset.action === 'Novo evento' || target.hasAttribute('data-new-event')) {
-        e.preventDefault();
-        openEventForm();
-        return;
-      }
+      // Não há atalho de criação: evento nasce da rotina automática de
+      // confirmação do orçamento. O bloco que existia aqui (data-new-event e
+      // "Novo evento") foi removido junto com os botões que o usavam.
 
       if (target.dataset.action === 'Agenda de hoje') {
         e.preventDefault();
@@ -1700,31 +1469,6 @@
         return;
       }
 
-      // Ações do Cerimonial
-      // O checkbox do roteiro não tem preventDefault: marcar e desmarcar é
-      // justamente o que ele deve fazer, e a re-renderização logo em seguida
-      // devolve o checkbox ao estado do banco.
-      if (target.hasAttribute('data-toggle-activity')) {
-        const actId = target.dataset.toggleActivity;
-        toggleActivityStatus(actId);
-        return;
-      }
-
-      if (target.hasAttribute('data-delete-activity')) {
-        e.preventDefault();
-        const actId = target.dataset.deleteActivity;
-        deleteActivity(actId);
-        return;
-      }
-
-      // Ações de Convidados
-      if (target.hasAttribute('data-delete-guest')) {
-        e.preventDefault();
-        const gstId = target.dataset.deleteGuest;
-        deleteGuest(gstId);
-        return;
-      }
-
       // Botão de filtro de período (tabs rápidas)
       if (target.hasAttribute('data-event-filter')) {
         e.preventDefault();
@@ -1737,33 +1481,13 @@
       }
     });
 
-    // 2. Submit do formulário de criação/edição de evento
+    // 2. Submit do formulário de edição de evento
     const eventForm = document.getElementById('event-form');
     if (eventForm) {
       eventForm.addEventListener('submit', handleEventFormSubmit);
     }
 
-    // 3. Submits de cronograma e convidados dentro do modal de detalhes
-    // Os dois formulários da ficha vivem dentro do innerHTML da aba, então são
-    // recriados a cada render: listener delegado também aqui, pelo id do form.
-    document.addEventListener('submit', e => {
-      if (e.target.id === 'add-activity-form') {
-        handleAddActivity(e);
-      } else if (e.target.id === 'add-guest-form') {
-        handleAddGuest(e);
-      }
-    });
-
-    // 4. Mudança de status do convidado
-    document.addEventListener('change', e => {
-      if (e.target.hasAttribute('data-change-guest-status')) {
-        const guestId = e.target.dataset.changeGuestStatus;
-        const newStatus = e.target.value;
-        updateGuestStatus(guestId, newStatus);
-      }
-    });
-
-    // 5. Busca e Filtro de status em tempo real
+    // 3. Busca e Filtro de status em tempo real
     // Filtrar é local e instantâneo, então não há debounce: a lista já está em
     // memória e um atraso aqui só apareceria como travamento na digitação.
     const searchInput = document.getElementById('event-search');
@@ -1782,7 +1506,7 @@
       });
     }
 
-    // 6. Ao selecionar um cliente no formulário, sincroniza os orçamentos disponíveis
+    // 4. Ao selecionar um cliente no formulário, sincroniza os orçamentos disponíveis
     // Trocar de cliente refaz a lista de orçamentos e descarta a seleção que
     // não serviria mais para o novo cliente.
     const clientSelect = document.getElementById('event-client');
@@ -1792,7 +1516,7 @@
       });
     }
 
-    // 7. Ao selecionar um orçamento no formulário de eventos, preenche data, hora, local automaticamente
+    // 5. Ao selecionar um orçamento no formulário de eventos, preenche data, hora, local automaticamente
     // Os dados do orçamento copiam para o evento, e não o contrário: o orçamento
     // continua sendo a fonte comercial. O nome só é preenchido se estiver
     // vazio, para não sobrescrever o que a pessoa já digitou.
@@ -1814,7 +1538,7 @@
       });
     }
 
-    // 8. Ouvir confirmações de orçamentos pelo app para atualizar eventos automaticamente
+    // 6. Ouvir confirmações de orçamentos pelo app para atualizar eventos automaticamente
     // Ponto de entrada por evento de window: qualquer módulo (ou o console)
     // pode disparar plenitude:quote-confirmed com { quoteId } para gerar o
     // evento. onQuoteConfirmed é idempotente, então chamar duas vezes não cria
@@ -1826,7 +1550,7 @@
       }
     });
 
-    // 9. Observar e enriquecer os cards de orçamento com atalhos de evento
+    // 7. Observar e enriquecer os cards de orçamento com atalhos de evento
     // O formulário de orçamento é do módulo de Orçamentos (app.js), não deste.
     // O listener é o gancho para o caso em que a confirmação acontece lá e o
     // evento precisa aparecer na agenda: só interessa quando o status escolhido
@@ -1851,7 +1575,7 @@
       });
     }
 
-    // 10. Ações em orçamentos para confirmar e gerar evento
+    // 8. Ações em orçamentos para confirmar e gerar evento
     // Segundo listener de clique, separado do primeiro porque é assíncrono:
     // um listener async não pode conviver com o encadeamento de return do
     // outro, e os dois tentam casar com o mesmo alvo.
@@ -1946,13 +1670,10 @@
     }
   };
 
-  // Duplicação: a cópia (sem id) abre o formulário em modo criação já
-  // preenchido. O orçamento vinculado não vai junto, então o novo evento nasce
-  // sem orçamento e o salvamento cria um rascunho.
-  window.plenitudeDuplicate?.register('event', (id) => {
-    const item = state.events.find((event) => event.id === id);
-    if (item) openEventForm(window.plenitudeDuplicate.copy(item));
-  });
+  // Duplicação: não há registro para 'event'. Duplicar é criar um evento novo,
+  // e evento novo só nasce da rotina automática de confirmação do orçamento.
+  // Os outros módulos (cliente, serviço, orçamento, cerimonial) seguem duplicando
+  // normalmente.
 
   // Carrega quando o DOM estiver pronto
   // A agenda é carregada no boot mesmo com a tela fechada: é o que alimenta o

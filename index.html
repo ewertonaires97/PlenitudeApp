@@ -706,10 +706,10 @@
           <div class="panel-header-tools">
             <button class="icon-button" type="button" data-close-events aria-label="Fechar eventos"><i data-lucide="x"></i></button>
           </div>
-          <div class="panel-header-actions">
-            <button class="add-client-button" type="button" data-new-event><i data-lucide="plus"></i><span>Novo</span></button>
-          </div>
         </header>
+        <p class="field-hint" style="margin: 0 0 10px;">
+          Eventos nascem da rotina automática de criação ao confirmar um orçamento.
+        </p>
         <div class="client-toolbar">
           <label class="search-field" for="event-search">
             <i data-lucide="search"></i>
@@ -738,7 +738,7 @@
         <header class="client-panel-header">
           <div>
             <p class="eyebrow">PRODUÇÃO</p>
-            <h2 id="event-form-title">Novo evento</h2>
+            <h2 id="event-form-title">Editar evento</h2>
           </div>
           <button class="icon-button" type="button" data-close-event-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
         </header>
@@ -752,9 +752,9 @@
         </select>
         <label for="event-quote-select">Orçamento vinculado</label>
         <select id="event-quote-select" class="movement-select">
-          <option value="">Gerar / Vincular automaticamente</option>
+          <option value="">Manter o orçamento atual</option>
         </select>
-        <span class="field-hint">Os eventos podem ser originados de orçamentos confirmados.</span>
+        <span class="field-hint">O evento é criado pela rotina automática de confirmação do orçamento; aqui ele só pode ser editado.</span>
         <div class="quote-event-fields">
           <div>
             <label for="event-date">Data do evento</label>

@@ -673,15 +673,28 @@ sinal vencido). Cada fonte se cadastra com
 | **JS abrir detalhe** | `openEventDetail(id)` — `events.js:616` |
 | **JS desenhar detalhe** | `renderEventDetailHero()` `events.js:698`, `renderEventTabContent()` `events.js:752` |
 | **JS sumário do dia** | `updateTodaySummary()` — `events.js:228` |
-| **JS atualizar status automático** | `updatePastEventsStatus()` — `events.js:146` (marca eventos passados como "Realizado") |
+| **JS atualizar status automático** | `updatePastEventsStatus()` (varre a agenda) e `syncPastEventStatus()` (um evento) — marcam eventos passados como "Realizado" |
 | **JS todos os cliques** | `setupEventListeners()` — `events.js:1234` (um listener gigante no `document`) |
 | **Abrir a partir de** | `data-open-events` / `data-action="Agenda de hoje"` |
 
-**Comportamento automático de status:** ao carregar a lista de eventos, a função
-`updatePastEventsStatus()` verifica todos os eventos com data anterior a hoje e
-status `planned` (Planejado) ou `in_progress` (Em andamento) e os atualiza
-automaticamente para `completed` (Realizado) no banco de dados. Isso evita que
-eventos passados fiquem com status incorreto.
+**Não se cria evento aqui.** O botão "Novo" do cabeçalho, o atalho da lista
+vazia e o de duplicar foram removidos: `openEventForm()` só abre com um evento
+em mãos (modo edição) e `handleEventFormSubmit()` só faz `UPDATE`. O evento nasce
+da rotina automática de confirmação de orçamento (trigger
+`create_event_when_quote_confirmed` do banco ou `onQuoteConfirmed()`), inclusive
+o orçamento que o sinal confirma.
+
+**A ficha é de consulta.** As abas *Cerimonial* e *Convidados* do
+`#event-detail-panel` são histórico: não há mais inclusion, exclusão nem
+`<select>` de status de convidado ali — quem opera isso é o módulo de
+Cerimonial, que trabalha nas mesmas tabelas (`ceremonial_activities`, `guests`).
+
+**Comportamento automático de status:** data de hoje maior que a data do evento
+significa `completed`. A regra roda em `loadEvents()` ( agenda inteira) e também
+em `loadEventFullDetails()` (a ficha aberta direto), e vale para `planned` e
+`in_progress`; `cancelled` é decisão de negócio e fica como está. "Hoje" é a data
+local (`todayDateStr()`), coerente com o `parseDateOnly()` — não o `toISOString()`,
+que entre 21h e meia-noite no Brasil já devolve o dia seguinte.
 
 ### 7.11 Financeiro (`financial.js`)
 
