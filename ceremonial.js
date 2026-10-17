@@ -2007,7 +2007,7 @@
 
     const template = selectedTemplate();
     if (!template) {
-      detail.innerHTML = '<div class="templates-empty-detail">Escolha um modelo à esquerda ou crie um novo.</div>';
+      detail.innerHTML = '<div class="templates-empty-detail">Escolha um modelo ou crie um novo.</div>';
       return;
     }
 
