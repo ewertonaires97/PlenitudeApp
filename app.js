@@ -2383,7 +2383,7 @@ async function openDetail(type, id) {
     ? `<button class="client-action-button quote-reminder-action" type="button" data-quote-reminder-detail="${actionQuoteId}"><i data-lucide="bell-ring"></i><span>Lembrete de sinal</span></button>`
     : '';
   detailViewContent.innerHTML = actionQuoteId
-    ? `${content}<div class="quote-saved-actions">${sentButton}${depositButton}${reminderButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="whatsapp-action-button" type="button" data-quote-whatsapp-row="${actionQuoteId}"><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
+    ? `${content}<div class="quote-saved-actions">${sentButton}${depositButton}${reminderButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
     : content;
   // Ficha aberta por cima de outra: o cardápio dentro da ficha do serviço ou do
   // orçamento. Quem fica embaixo continua na tela e o X volta para ele. Reabrir a
@@ -2820,10 +2820,10 @@ async function printQuotePdf(quoteId) {
   }
 }
 
-// O texto do WhatsApp é montado aqui e vai na query do link wa.me, e não por
-// API: mandar mensagem pela API exigiria credencial da Meta no app e um custo
-// por conversa. O teto é o de URL do navegador, e é a razão de os cardápios
-// entrarem aqui só como nome, separados por vírgula.
+// O texto do orçamento é montado aqui e usado no compartilhamento nativo e na
+// área de transferência. O botão do WhatsApp abre a conversa sem texto: quem
+// envia digita no próprio aparelho. O teto é o de URL do navegador, e é a razão
+// de os cardápios entrarem aqui só como nome, separados por vírgula.
 function quoteWhatsappText({ quote, items, menusByService }) {
   const lines = [`*ORÇAMENTO #${String(quote.quote_number ?? 0).padStart(4, '0')}*`, `*${quote.name}*`, ''];
   lines.push(`Olá, ${quote.clients?.name || 'tudo bem'}!`.trim());
@@ -2889,7 +2889,7 @@ async function sendQuoteOnWhatsapp(quoteId) {
       setQuoteOutputFeedback('Cadastre o WhatsApp do cliente para enviar.', true);
       return;
     }
-    window.open(`https://wa.me/${number}?text=${encodeURIComponent(quoteWhatsappText(payload))}`, '_blank', 'noopener,noreferrer');
+    window.open(`https://wa.me/${number}`, '_blank', 'noopener,noreferrer');
     await markQuoteAsSent(quoteId);
   } catch (error) {
     setQuoteOutputFeedback(`Não foi possível preparar o envio: ${error.message}`, true);
@@ -3303,7 +3303,8 @@ function setQuoteReminderFeedback(message, isError = false) {
 }
 
 // Um cartão por orçamento, com o texto já montado para conferência: quem opera
-// lê antes de mandar, e o WhatsApp abre com exatamente o que está na tela.
+// lê antes de mandar. O botão do WhatsApp abre a conversa vazia, então a
+// mensagem precisa ser copiada ou reescrita por quem está com o celular na mão.
 function quoteReminderCard(quote, group) {
   const hasWhatsapp = Boolean(whatsappNumber(quote.clients?.whatsapp));
   const custom = String(quote.reminder_message || '').trim();
@@ -3456,7 +3457,7 @@ async function sendQuoteExpiryReminder(quoteId) {
       setQuoteReminderFeedback('Cadastre o WhatsApp do cliente para enviar o lembrete.');
       return;
     }
-    window.open(`https://wa.me/${number}?text=${encodeURIComponent(quoteExpiryReminderText(quote))}`, '_blank', 'noopener,noreferrer');
+    window.open(`https://wa.me/${number}`, '_blank', 'noopener,noreferrer');
     // O carimbo vem depois de abrir o WhatsApp, nunca antes: se a gravação
     // falhar, o lembrete continua na lista e é possível tentar de novo, o que é
     // melhor do que perdê-lo sem que ele tenha saído.
