@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="42" fill="#31483b"/>
+  <circle cx="96" cy="96" r="58" fill="none" stroke="#b38a4d" stroke-width="4"/>
+  <text x="96" y="108" text-anchor="middle" fill="#f6f1e8" font-family="Georgia, serif" font-size="48" font-weight="bold">PR</text>
+</svg>

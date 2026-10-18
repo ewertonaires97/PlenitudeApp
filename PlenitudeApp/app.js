@@ -1,0 +1,4096 @@
+/* ========================================================================== */
+/* APP.JS — O NÚCLEO DO PLENITUDE REALIZAÇÕES                                 */
+/*                                                                           */
+/* Este arquivo é o coração do app e não um módulo entre vários: login,       */
+/* clientes, serviços, cardápios, categorias, estoque, orçamentos, ficha de   */
+/* detalhes, visualizador de imagem, avisos de sinal e lembretes de vencimento */
+/* vivem todos aqui. Cada tela tem seus loaders, seus renderizadores e seus    */
+/* formulários, mas todos compartilham o mesmo espelho em memória e as        */
+/* mesmas tabelas do Supabase.                                                 */
+/*                                                                           */
+/* Não há framework, build nem router: cada tela é uma <section> que aparece   */
+/* e some pelo atributo `hidden`, e o HTML é montado por template string. Por  */
+/* isso os dois motivos que mais explicam este arquivo são:                */
+/*                                                                           */
+/*   - os estados em memória (`clients`, `services`, `menus`, `quotes`...)     */
+/*     existem para o filtro e a ficha de detalhes não precisarem consultar */
+/*     o banco a cada clique;                                                    */
+/*   - quase todo campo que vem do banco é digitado por alguém e por isso     */
+/*     passa por escapeHTML antes de virar HTML.                              */
+/*                                                                           */
+/* Os módulos irmãos (alerts.js, navigation.js, realtime.js, permissions.js)  */
+/* conversam com este arquivo pela janela: window.plenitudeApp exporta os     */
+/* loaders, e window.plenitudeNav / window.plenitudeAlerts são consumidos     */
+/* aqui. O export está no fim do arquivo.                                     */
+/* ========================================================================== */
+
+// Os ícones do Lucide chegam no HTML como <i data-lucide="..."> e só viram
+// SVG depois desta chamada. Ela roda antes de qualquer coisa para que a
+// primeira pintura da tela já mostre os ícones, e não um monte de tags vazias.
+// Os renderizadores voltaram a chamar lucide.createIcons() depois de reescrever
+// um innerHTML, porque cada trecho novo nasce com os <i> sem converter.
+lucide.createIcons();
+
+// Os dias e os meses por extenso do cabeçalho. Ficam em maiúsculas aqui e não
+// por conta do CSS: o texto é montado num único lugar e quem abrir o console
+// precisa ver exatamente o que aparece na tela.
+const days = ['DOMINGO', 'SEGUNDA-FEIRA', 'TERÇA-FEIRA', 'QUARTA-FEIRA', 'QUINTA-FEIRA', 'SEXTA-FEIRA', 'SÁBADO'];
+const months = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+
+// A saudação do início mostra a data de hoje uma única vez, no carregamento.
+// Não é um relógio: ninguém fica olhando a tela inicial à meia-noite esperando
+// o "SEGUNDA-FEIRA" virar "TERÇA-FEIRA", e recarregar a data não traz nenhum
+// dado novo do banco.
+function updateWelcomeDate() {
+  const now = new Date();
+  const dayName = days[now.getDay()];
+  const day = now.getDate();
+  const month = months[now.getMonth()];
+  const welcomeEyebrow = document.querySelector('.welcome-copy .eyebrow');
+  if (welcomeEyebrow) welcomeEyebrow.textContent = `${dayName}, ${day} DE ${month}`;
+}
+updateWelcomeDate();
+
+// Modo offline. O registro espera o evento `load` para não competir com a
+// primeira renderização, e a falha é apenas um erro no console: o app
+// funciona inteiro sem service worker, então não vale derrubar o carregamento
+// por causa dele.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((error) => {
+      console.error('Não foi possível ativar o modo offline:', error);
+    });
+  });
+}
+
+/* ========================================================================== */
+/* REFERÊNCIAS DO DOM E ESTADO EM MEMÓRIA                                      */
+/* ========================================================================== */
+
+// Sem framework, tudo é `document.querySelector`. Feito uma vez e guardado em
+// `const` funciona bem para os elementos que existem desde o carregamento e
+// nunca saem do DOM — painéis, listas, formulários, feedbacks.
+//
+// Os que nascem e morrem a cada render não podem ser fixados: por isso os
+// inputs dos formulários são buscados com `document.querySelector('#client-name')`
+// na hora de ler, e não na de cima. É a diferença entre `clientForm` (fixo) e
+// os campos dentro dele (procurados a cada uso).
+const authScreen = document.querySelector('#auth-screen');
+const appShell = document.querySelector('.app-shell');
+const loginForm = document.querySelector('#login-form');
+const loginButton = document.querySelector('.login-button');
+const loginFeedback = document.querySelector('#login-feedback');
+const googleLoginButton = document.querySelector('#google-login-button');
+const logoutButton = document.querySelector('#logout-button');
+const clientPanel = document.querySelector('#client-panel');
+const clientFormPanel = document.querySelector('#client-form-panel');
+const clientList = document.querySelector('#client-list');
+const clientSearch = document.querySelector('#client-search');
+const clientForm = document.querySelector('#client-form');
+const clientFormTitle = document.querySelector('#client-form-title');
+const clientFormFeedback = document.querySelector('#client-form-feedback');
+const clientFeedback = document.querySelector('#client-feedback');
+const servicePanel = document.querySelector('#service-panel');
+const serviceFormPanel = document.querySelector('#service-form-panel');
+const serviceList = document.querySelector('#service-list');
+const serviceSearch = document.querySelector('#service-search');
+const serviceForm = document.querySelector('#service-form');
+const serviceFormTitle = document.querySelector('#service-form-title');
+const serviceFormFeedback = document.querySelector('#service-form-feedback');
+const serviceFeedback = document.querySelector('#service-feedback');
+const serviceMenuFilter = document.querySelector('#service-menu-filter');
+const serviceMenuOptions = document.querySelector('#service-menu-options');
+const serviceMaterialOptions = document.querySelector('#service-material-options');
+const serviceMenuCreate = document.querySelector('[data-new-menu-from-service]');
+const menuPanel = document.querySelector('#menu-panel');
+const menuList = document.querySelector('#menu-list');
+const menuFormPanel = document.querySelector('#menu-form-panel');
+const menuForm = document.querySelector('#menu-form');
+const menuFormTitle = document.querySelector('#menu-form-title');
+const menuFormFeedback = document.querySelector('#menu-form-feedback');
+const menuFeedback = document.querySelector('#menu-feedback');
+const menuCategoryFilter = document.querySelector('#menu-category-filter');
+const menuImageInput = document.querySelector('#menu-images');
+const menuImagePreviews = document.querySelector('#menu-image-previews');
+const menuCategoryOptions = document.querySelector('#menu-category-options');
+const categoryPanel = document.querySelector('#category-panel');
+const categoryList = document.querySelector('#category-list');
+const categoryFeedback = document.querySelector('#category-feedback');
+const settingsPanel = document.querySelector('#settings-panel');
+const inventoryCategoryPanel = document.querySelector('#inventory-category-panel');
+const inventoryCategoryList = document.querySelector('#inventory-category-list');
+const inventoryCategoryFeedback = document.querySelector('#inventory-category-feedback');
+const inventoryPanel = document.querySelector('#inventory-panel');
+const inventoryList = document.querySelector('#inventory-list');
+const inventorySearch = document.querySelector('#inventory-search');
+const inventoryLowOnly = document.querySelector('#inventory-low-only');
+const inventoryCategoryFilter = document.querySelector('#inventory-category-filter');
+const inventoryCategoryOptions = document.querySelector('#inventory-category-options');
+const inventoryImageInput = document.querySelector('#inventory-images');
+const inventoryImagePreviews = document.querySelector('#inventory-image-previews');
+const inventoryFeedback = document.querySelector('#inventory-feedback');
+const inventoryFormPanel = document.querySelector('#inventory-form-panel');
+const inventoryForm = document.querySelector('#inventory-form');
+const inventoryFormTitle = document.querySelector('#inventory-form-title');
+const inventoryFormFeedback = document.querySelector('#inventory-form-feedback');
+const movementFormPanel = document.querySelector('#movement-form-panel');
+const movementForm = document.querySelector('#movement-form');
+const movementItemName = document.querySelector('#movement-item-name');
+const movementFormFeedback = document.querySelector('#movement-form-feedback');
+const movementType = document.querySelector('#movement-type');
+const movementQuantityLabel = document.querySelector('#movement-quantity-label');
+const imageViewer = document.querySelector('#image-viewer');
+const imageViewerImage = document.querySelector('#image-viewer-image');
+const detailView = document.querySelector('#detail-view');
+const detailViewTitle = document.querySelector('#detail-view-title');
+const detailViewEyebrow = document.querySelector('#detail-view-eyebrow');
+const detailViewContent = document.querySelector('#detail-view-content');
+const quotePanel = document.querySelector('#quote-panel');
+const quoteList = document.querySelector('#quote-list');
+const quoteSearch = document.querySelector('#quote-search');
+const quoteStatusFilter = document.querySelector('#quote-status-filter');
+const quoteFeedback = document.querySelector('#quote-feedback');
+const quoteFormPanel = document.querySelector('#quote-form-panel');
+const quoteForm = document.querySelector('#quote-form');
+const quoteFormTitle = document.querySelector('#quote-form-title');
+const quoteFormFeedback = document.querySelector('#quote-form-feedback');
+const quoteServicePicker = document.querySelector('#quote-service-picker');
+const menuServiceOptions = document.querySelector('#menu-service-options');
+const quoteClientSelect = document.querySelector('#quote-client');
+const quoteSubtotalPreview = document.querySelector('#quote-subtotal-preview');
+const quoteTotalPreview = document.querySelector('#quote-total-preview');
+const quoteDepositPercentInput = document.querySelector('#quote-deposit-percent');
+const quoteValidUntilInput = document.querySelector('#quote-valid-until');
+const quoteDepositPreview = document.querySelector('#quote-deposit-preview');
+
+// O espelho em memória do que está no banco. Existe para o filtro, a ficha de
+// detalhes e os seletores de referência não fazerem uma consulta ao banco a cada
+// clique: quem abre a ficha de um cliente lê o objeto que veio junto com a
+// lista.
+//
+// O preço é que esses valores só são confiáveis depois do loader
+// correspondente rodar. Por isso `loadQuotes()` é disparado já no login e não
+// só ao abrir a tela de Orçamentos: o sino do topo precisa saber o que está
+// vencendo mesmo com a lista fechada. O mesmo vale para menus, que o orçamento,
+// a ficha de serviço e o PDF leem sem nunca chamar o próprio loader.
+let clients = [];
+let services = [];
+let menus = [];
+let menuImages = [];
+let menuCategories = [];
+let menuCategoryLinks = [];
+
+// As duas filas de imagem do cardápio. `pendingMenuImages` são os arquivos que
+// a pessoa escolheu mas que ainda não subiram: o upload só acontece no submit,
+// para não gastar banda com uma imagem que ela ainda pode remover.
+// `removedMenuImageIds` são os ids que já estavam no banco e saíram da tela: o X
+// marca, o save apaga o arquivo no storage e a linha em menu_images.
+//
+// Sem essas filas, fechar o formulário sem salvar deixaria arquivo no bucket e
+// linha no banco que ninguém está mais vendo.
+let pendingMenuImages = [];
+let removedMenuImageIds = [];
+let quotes = [];
+let inventoryItems = [];
+let inventoryImages = [];
+let inventoryCategories = [];
+let inventoryCategoryLinks = [];
+
+// Quais itens de estoque cada serviço utiliza. `service_materials` é o N:N
+// (serviço, item) e este é o lado dele que o app guarda em memória: o formulário
+// de serviço mostra os marcados, a ficha do serviço lista os consumidos e o
+// estoque usa a mesma lista ao contrário, para avisar o que está reservado.
+let serviceMaterials = [];
+
+// O caminho inverso do mesmo dado, já derivado: item -> eventos em que ele está
+// confirmado. Vem do orçamento confirmado que criou o evento e dos serviços que
+// esse orçamento contratou (ver `loadInventoryRentals`). É um Map porque a tela
+// de estoque pergunta isso uma vez por card, em lista.
+let inventoryRentals = new Map();
+
+// Mesmas duas filas, para as imagens do estoque. Não são compartilhadas com as
+// do cardápio de propósito: um item de estoque aberto enquanto um cardápio está
+// sendo editado não pode roubar a seleção de imagens do outro formulário.
+let pendingInventoryImages = [];
+let removedInventoryImageIds = [];
+
+/* ========================================================================== */
+/* AUTENTICAÇÃO                                                               */
+/* ========================================================================== */
+
+// Entra e sai da sessão. Este é o único ponto do arquivo que troca a tela de
+// login pelo app: tanto a sessão carregada no começo quanto o onAuthStateChange
+// passam por aqui, então nunca há dois lugares decidindo quem está logado.
+function setAuthenticated(isAuthenticated) {
+  authScreen.hidden = isAuthenticated;
+  appShell.classList.toggle('ready', isAuthenticated);
+  // Um orçamento vencendo é o único problema do app que não pode esperar
+  // alguém se lembrar de abrir um módulo. Carregar no login faz o sino do topo
+  // já apontar o que está vencendo na primeira tela, sem depender de a tela de
+  // Orçamentos ter sido aberta alguma vez.
+  //
+  // Sai para o próximo tick pelos dois motivos que o permissions.js já cita: o
+  // cliente do Supabase serializa as chamadas de auth e um await aqui trava a
+  // renovação do token, e os avisos do orçamento são declarados bem depois
+  // desta função — chamar antes os deixaria em zona morta.
+  if (isAuthenticated) {
+    setTimeout(() => {
+      watchQuoteDeadline();
+      loadQuotes();
+    }, 0);
+  }
+}
+
+// A mensagem de erro do login. Ela também devolve os dois botões ao estado
+// inicial: eles são desabilitados enquanto a chamada está no ar, e sem desfazer
+// isso aqui uma senha errada deixaria a tela travada num botão morto em vez de
+// devolver a pessoa para tentar de novo.
+function showLoginError(message) {
+  loginFeedback.textContent = message;
+  loginButton.disabled = false;
+  loginButton.querySelector('span').textContent = 'Entrar no backoffice';
+  if (googleLoginButton) {
+    googleLoginButton.disabled = false;
+    googleLoginButton.querySelector('span').textContent = 'Entrar com Google';
+  }
+}
+
+// Entrar com a conta Google da pessoa. A configuração do provedor é feita no
+// painel do Supabase e no Google Cloud Console, não aqui: o app só dispara o
+// redirect e o Supabase devolve a sessão no mesmo endereço.
+//
+// A URL de retorno é a da própria página, e não uma rota inventada: o app não
+// tem router, e é esse endereço que precisa estar na lista de Redirect URLs do
+// Supabase.
+googleLoginButton?.addEventListener('click', async () => {
+  loginFeedback.textContent = '';
+  googleLoginButton.disabled = true;
+  googleLoginButton.querySelector('span').textContent = 'Abrindo o Google...';
+
+  const { error } = await supabaseClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.href.split('#')[0] }
+  });
+
+  // Sem este return a execução continuaria e religaria o botão: o redirect é
+  // assíncrono e o erro chega logo em seguida.
+  if (error) {
+    showLoginError('O login com Google ainda não está liberado para este app.');
+    console.error('Falha no login com Google:', error.message);
+    return;
+  }
+
+  // Só chega aqui se o redirect falhar de verdade. Sem isso o botão ficaria
+  // travado em "Abrindo o Google..." para sempre.
+  setTimeout(() => {
+    showLoginError('Não foi possível abrir o Google. Tente novamente.');
+  }, 4000);
+});
+
+supabaseClient.auth.getSession().then(({ data, error }) => {
+  if (error) {
+    console.error('Não foi possível inicializar o Supabase:', error.message);
+    showLoginError('Não foi possível verificar a sessão. Tente novamente.');
+    return;
+  }
+
+  setAuthenticated(Boolean(data.session));
+  mostrarErroDoOAuth();
+  console.info('Supabase conectado ao projeto Plenitude Realizações.');
+});
+
+// Login social devolve o erro na URL, não no retorno da chamada. Sem tratar
+// isso, quemconfigurou o endereço errado no Supabase voltaria para a tela de
+// login sem nenhuma pista do que aconteceu.
+function mostrarErroDoOAuth() {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const query = new URLSearchParams(window.location.search);
+  const ler = (chave) => hash.get(chave) ?? query.get(chave);
+
+  const codigo = ler('error_code');
+  const descricao = ler('error_description');
+  const erro = ler('error');
+
+  if (!codigo && !erro) return false;
+
+  const detalhe = `${erro || ''} ${codigo || ''} ${descricao || ''}`;
+  let mensagem = 'Não foi possível entrar com o Google.';
+
+  if (codigo === 'access_denied') {
+    mensagem = 'O acesso foi cancelado na tela do Google.';
+  } else if (/redirect|uri_not|invalid_request/i.test(detalhe)) {
+    // É o caso mais comum de verdade: o Site URL ou a Redirect URL não
+    // includes o endereço deste app.
+    mensagem = 'O endereço deste app ainda não foi liberado no painel do Supabase.';
+  } else if (descricao) {
+    mensagem = descricao;
+  }
+
+  console.error('[OAuth] Falha ao voltar do login:', codigo || erro, descricao || '');
+  showLoginError(mensagem);
+  authScreen.hidden = false;
+  if (appShell) appShell.classList.remove('ready');
+
+  // Só limpa a URL no caso de erro: num login bem-sucedido o hash traz o
+  // token, e apagá-lo aqui derrubaria a sessão que acabou de chegar.
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  return true;
+}
+
+supabaseClient.auth.onAuthStateChange((_event, session) => {
+  setAuthenticated(Boolean(session));
+});
+
+// Login por e-mail e senha. O formulário é preventDefault porque o app trata a
+// sessão sozinho: quem autentica é o onAuthStateChange acima, que é quem troca
+// a tela. O botão volta ao normal antes do return para o caso de o erro estar
+// no `showLoginError` acima — ali quem o destrava é o próprio showLoginError.
+loginForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  loginFeedback.textContent = '';
+  loginButton.disabled = true;
+  loginButton.querySelector('span').textContent = 'Entrando...';
+
+  const formData = new FormData(loginForm);
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email: formData.get('email'),
+    password: formData.get('password')
+  });
+
+  if (error) {
+    showLoginError('E-mail ou senha inválidos.');
+    return;
+  }
+
+  loginForm.reset();
+  loginButton.disabled = false;
+  loginButton.querySelector('span').textContent = 'Entrar no backoffice';
+});
+
+// Sair da sessão. O logout é desenhado para o caso feliz: quando dá erro o
+// botão não muda de estado, a sessão continua valendo e o app segue como estava,
+// que é melhor do que fingir que saiu.
+logoutButton.addEventListener('click', async () => {
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) showToast('Não foi possível sair');
+});
+
+// Trava a abertura de uma tela para quem não tem a permissão correspondente.
+// A decisão vem do banco (my_access, resolvido pelo permissions.js); aqui o
+// papel é só não mostrar uma tela que a pessoa não pode usar. A regra de
+// escrita continua sendo a RLS, que nega o salvamento de qualquer forma.
+function permitir(permission) {
+  const access = window.plenitudePermissions;
+  if (!access) return true;
+  return access.allow(permission);
+}
+
+/* ========================================================================== */
+/* AJUDANTES COMPARTILHADOS                                                   */
+/* ========================================================================== */
+
+// A linha de feedback de cada tela: um status ("12 clientes cadastrados") ou um
+// erro. O erro é só uma cor vermelha e não um toast, porque o texto precisa
+// ficar ali depois que a pessoa tira o dedo da tela — um toast some antes de ser
+// lido.
+function setClientFeedback(message, isError = false) {
+  clientFeedback.textContent = message;
+  clientFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+// A bolinha colorida da lista: a inicial do nome. O `|| '?'` cobre o cliente
+// sem nome preenchido, que a RLS não impede — o campo é obrigatório só no
+// formulário, e o banco aceita linha sem ele.
+function clientInitial(name) {
+  return name.trim().charAt(0).toUpperCase() || '?';
+}
+
+// Quase todo o HTML deste arquivo é montado por template string, inclusive com
+// o que alguém digitou (nome do cliente, observação, nome do cardápio,
+// descrição do serviço). Sem escapar, um `<script>` no campo de nome viraria
+// HTML executado dentro do app. Todo campo vindo do banco passa por aqui antes
+// de entrar em um innerHTML.
+function escapeHTML(value) {
+  return String(value || '').replace(/[&<>'"]/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  }[character]));
+}
+
+// O link do WhatsApp só funciona com o número no formato internacional, e o
+// cadastro guarda o que a pessoa digitou. O 55 é assumido porque o app só
+// atende o Brasil; quem já digitou com o 55 escrito não ganha um 5555.
+function whatsappNumber(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits ? (digits.startsWith('55') ? digits : `55${digits}`) : '';
+}
+
+/* ========================================================================== */
+/* CLIENTES                                                                   */
+/* O filtro roda no navegador, e não no banco: a lista inteira já está em      */
+/* memória e o volume cabe sem paginação. Cada linha recebe `detail-trigger`,  */
+/* que é o atributo que o clique delegado do fim do arquivo lê para abrir a     */
+/* ficha de detalhes.                                                          */
+/* ========================================================================== */
+function renderClients() {
+  const searchTerm = clientSearch.value.trim().toLowerCase();
+  const visibleClients = clients.filter((client) => [client.name, client.whatsapp, client.email].some((value) => (value || '').toLowerCase().includes(searchTerm)));
+
+  if (!visibleClients.length) {
+    clientList.innerHTML = `<div class="empty-clients">${searchTerm ? 'Nenhum cliente encontrado para essa busca.' : 'Ainda não há clientes cadastrados.'}</div>`;
+    return;
+  }
+
+  clientList.innerHTML = visibleClients.map((client) => `
+    <article class="client-row detail-trigger" data-detail-type="client" data-detail-id="${client.id}">
+      <span class="client-initial">${clientInitial(client.name)}</span>
+      <div class="client-details">
+        <strong>${escapeHTML(client.name)}</strong>
+        <span>${client.whatsapp || client.email || 'Sem contato informado'}</span>
+      </div>
+      <div class="client-actions">
+        <button class="client-action" type="button" data-edit-client="${client.id}" aria-label="Editar ${client.name}" title="Editar"><i data-lucide="pencil"></i></button>
+        <button class="client-action" type="button" data-duplicate="client" data-duplicate-id="${client.id}" aria-label="Duplicar ${escapeHTML(client.name)}" title="Duplicar"><i data-lucide="copy"></i></button>
+        ${client.whatsapp ? `<button class="client-action whatsapp-action" type="button" data-whatsapp="${whatsappNumber(client.whatsapp)}" aria-label="Abrir WhatsApp de ${escapeHTML(client.name)}" title="WhatsApp"><i data-lucide="message-circle"></i></button>` : ''}
+        <button class="client-action" type="button" data-delete-client="${client.id}" aria-label="Excluir ${client.name}" title="Excluir"><i data-lucide="trash-2"></i></button>
+      </div>
+    </article>
+  `).join('');
+  lucide.createIcons();
+}
+
+// Recarrega a lista do banco. Em caso de erro a lista é esvaziada em vez de ficar
+// com o conteúdo antigo: depois de uma falha, mostrar o que estava lá antes é
+// pior do que mostrar a tela vazia com o aviso do lado.
+async function loadClients() {
+  setClientFeedback('Carregando clientes...');
+  const { data, error } = await supabaseClient.from('clients').select('id, name, whatsapp, email, notes, created_at').order('name');
+  if (error) {
+    setClientFeedback('Não foi possível carregar os clientes. Verifique seu acesso.', true);
+    clientList.innerHTML = '';
+    return;
+  }
+  clients = data || [];
+  setClientFeedback(`${clients.length} ${clients.length === 1 ? 'cliente cadastrado' : 'clientes cadastrados'}`);
+  renderClients();
+}
+
+function openClients() {
+  if (!permitir('clientes')) return;
+  clientPanel.hidden = false;
+  clientSearch.value = '';
+  loadClients();
+}
+
+// Abre a tela ou o formulário vazio ou preenchido. O `reset()` vem antes
+// porque é ele que limpa o campo #client-id: sem ele, um "editar" seguido de um
+// "novo" abriria o segundo formulário editando o cliente anterior.
+function openClientForm(client = null) {
+  clientForm.reset();
+  document.querySelector('#client-id').value = client?.id || '';
+  document.querySelector('#client-name').value = client?.name || '';
+  document.querySelector('#client-whatsapp').value = client?.whatsapp || '';
+  document.querySelector('#client-email').value = client?.email || '';
+  document.querySelector('#client-notes').value = client?.notes || '';
+  clientFormTitle.textContent = client?.id ? 'Editar cliente' : 'Novo cliente';
+  clientFormFeedback.textContent = '';
+  clientFormPanel.hidden = false;
+}
+
+// Os botões que abrem e fecham telas são procurados por atributo, e não por id:
+// o mesmo botão aparece em mais de um lugar — o menu lateral, os cards do início
+// e a faixa do topo — e nenhum deles pode ficar sem listener por causa de outro
+// ter sido escolhido.
+document.querySelectorAll('[data-open-clients]').forEach((button) => button.addEventListener('click', openClients));
+document.querySelectorAll('[data-close-clients]').forEach((button) => button.addEventListener('click', () => { clientPanel.hidden = true; }));
+document.querySelectorAll('[data-new-client]').forEach((button) => button.addEventListener('click', () => openClientForm()));
+document.querySelectorAll('[data-close-client-form]').forEach((button) => button.addEventListener('click', () => { clientFormPanel.hidden = true; }));
+clientSearch.addEventListener('input', renderClients);
+
+// Salvar o cliente. O mesmo formulário serve para os dois casos e o que decide
+// é o #client-id: vazio é insert, preenchido é update.
+//
+// Campo em branco vai como null e não como string vazia: no Postgres a
+// diferença aparece no filtro, no botão do WhatsApp da lista e no PDF, que
+// verificam se o contato existe antes de usá-lo.
+clientForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = clientForm.querySelector('button[type="submit"]');
+  const clientId = document.querySelector('#client-id').value;
+  const payload = {
+    name: document.querySelector('#client-name').value.trim(),
+    whatsapp: document.querySelector('#client-whatsapp').value.trim() || null,
+    email: document.querySelector('#client-email').value.trim() || null,
+    notes: document.querySelector('#client-notes').value.trim() || null
+  };
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Salvando...';
+  clientFormFeedback.textContent = '';
+
+  const result = clientId
+    ? await supabaseClient.from('clients').update(payload).eq('id', clientId)
+    : await supabaseClient.from('clients').insert(payload);
+
+  if (result.error) {
+    clientFormFeedback.textContent = 'Não foi possível salvar. Confira os dados e tente novamente.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cliente';
+    return;
+  }
+
+  clientFormPanel.hidden = true;
+  await loadClients();
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Salvar cliente';
+  showToast(clientId ? 'Cliente atualizado' : 'Cliente cadastrado');
+});
+
+// Um listener só para a lista inteira, apesar de os botões nascerem a cada
+// render: eles são procurados no alvo do clique, então um cliente que acabou de
+// carregar já funciona sem nada ser ligado de novo.
+//
+// O botão do WhatsApp vem antes dos outros porque ele não tem um data-* próprio
+// e usa o atributo com o número já normalizado.
+clientList.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('[data-edit-client]');
+  const deleteButton = event.target.closest('[data-delete-client]');
+  const whatsappButton = event.target.closest('[data-whatsapp]');
+  if (whatsappButton) {
+    window.open(`https://wa.me/${whatsappButton.dataset.whatsapp}`, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  if (editButton) {
+    openClientForm(clients.find((client) => client.id === editButton.dataset.editClient));
+    return;
+  }
+  if (deleteButton) {
+    const client = clients.find((item) => item.id === deleteButton.dataset.deleteClient);
+    if (!client || !window.confirm(`Excluir o cliente ${client.name}?`)) return;
+    const { error } = await supabaseClient.from('clients').delete().eq('id', client.id);
+    if (error) {
+      setClientFeedback('Não foi possível excluir este cliente. Ele pode estar ligado a um orçamento.', true);
+      return;
+    }
+    await loadClients();
+    showToast('Cliente excluído');
+  }
+});
+
+function setServiceFeedback(message, isError = false) {
+  serviceFeedback.textContent = message;
+  serviceFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+/* ========================================================================== */
+/* SERVIÇOS                                                                   */
+/* ========================================================================== */
+
+// Dinheiro no formato pt-BR. O Number() cobre o caso do Postgres devolver
+// `numeric` como string: sem ele o toLocaleString receberia texto e a máscara
+// sairia com o valor bruto no meio.
+function formatCurrency(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+// Filtros da tela de serviços: a busca e o cardápio. Eles se combinam por
+// E: escolher um cardápio mostra só os serviços que participam dele, e a busca
+// continua valendo em cima desse resultado.
+//
+// Desativar um serviço não o remove da lista. Serviços inativos ainda aparecem
+// porque eles continuam citados em orçamentos antigos e no cardápio do PDF.
+function renderServices() {
+  const searchTerm = serviceSearch.value.trim().toLowerCase();
+  const selectedMenuId = serviceMenuFilter.value;
+  const visibleServices = services.filter((service) => {
+    const matchesSearch = [service.name, service.category, service.description].some((value) => (value || '').toLowerCase().includes(searchTerm));
+    const matchesMenu = !selectedMenuId || service.menuIds.includes(selectedMenuId);
+    return matchesSearch && matchesMenu;
+  });
+
+  if (!visibleServices.length) {
+    serviceList.innerHTML = `<div class="empty-clients">${searchTerm ? 'Nenhum serviço encontrado para essa busca.' : 'Ainda não há serviços cadastrados.'}</div>`;
+    return;
+  }
+
+  serviceList.innerHTML = visibleServices.map((service) => `
+    <article class="client-row service-row detail-trigger" data-detail-type="service" data-detail-id="${service.id}">
+      <span class="client-initial">${escapeHTML(clientInitial(service.name))}</span>
+      <div class="client-details">
+        <strong>${escapeHTML(service.name)}</strong>
+        <span>${escapeHTML(service.category || 'Sem categoria')}</span>
+        ${service.menuNames.length ? `<span class="service-menus">${escapeHTML(service.menuNames.join(' · '))}</span>` : ''}
+        ${service.description ? `<span class="service-description">${escapeHTML(service.description)}</span>` : ''}
+        <span class="service-price">${formatCurrency(service.default_price)}</span>
+        <span class="service-status${service.active ? '' : ' inactive'}">${service.active ? 'Ativo' : 'Inativo'}</span>
+        ${service.is_ceremonial ? '<span class="service-status ceremonial">Cerimonial</span>' : ''}
+      </div>
+      <div class="client-actions">
+        <button class="client-action service-toggle" type="button" data-toggle-service="${service.id}" aria-label="${service.active ? 'Desativar' : 'Ativar'} ${escapeHTML(service.name)}" title="${service.active ? 'Desativar' : 'Ativar'}">${service.active ? 'Desativar' : 'Ativar'}</button>
+        <button class="client-action" type="button" data-edit-service="${service.id}" aria-label="Editar ${escapeHTML(service.name)}" title="Editar"><i data-lucide="pencil"></i></button>
+        <button class="client-action" type="button" data-duplicate="service" data-duplicate-id="${service.id}" aria-label="Duplicar ${escapeHTML(service.name)}" title="Duplicar"><i data-lucide="copy"></i></button>
+        <button class="client-action" type="button" data-delete-service="${service.id}" aria-label="Excluir ${escapeHTML(service.name)}" title="Excluir"><i data-lucide="trash-2"></i></button>
+      </div>
+    </article>
+  `).join('');
+  lucide.createIcons();
+}
+
+// Além da lista, este loader refaz os vínculos cardápio <-> serviço e, se a
+// tela de cardápios estiver aberta, redesenha ela também: o nome do serviço
+// aparece nos cards de cardápio, e salvar ou renomear um serviço muda esse nome.
+// Sem isso, alguém deixaria a tela de cardápios aberta em uma aba e o serviço
+// novo em outra sem nunca ver o resultado.
+async function loadServices() {
+  setServiceFeedback('Carregando serviços...');
+  const { data, error } = await supabaseClient.from('services').select('id, name, description, category, default_price, active, is_ceremonial, created_at').order('name');
+  if (error) {
+    setServiceFeedback('Não foi possível carregar os serviços. Verifique seu acesso.', true);
+    serviceList.innerHTML = '';
+    return;
+  }
+  services = data || [];
+  hydrateMenuServiceLinks();
+  setServiceFeedback(`${services.length} ${services.length === 1 ? 'serviço cadastrado' : 'serviços cadastrados'}`);
+  renderServices();
+  if (!menuPanel.hidden) renderMenus();
+}
+
+// A lista de materiais é curta (uma linha por vínculo serviço x item) e é lida
+// por três telas: o formulário de serviço, a ficha do serviço e o alerta de
+// aluguel do estoque. Separar do loader de serviços evita que salvar um item de
+// estoque reescreva a lista de serviços, e vice-versa.
+//
+// Um erro aqui não pode derrubar a tela que chamou: a lista fica vazia e cada
+// tela segue mostrando o que já tinha — no caso do formulário, nenhum item
+// marcado, que é o estado de um serviço novo.
+async function loadServiceMaterials() {
+  const { data, error } = await supabaseClient.from('service_materials').select('service_id, inventory_item_id, quantity');
+  serviceMaterials = error ? [] : data || [];
+  return serviceMaterials;
+}
+
+// O vinculo cardapio <-> serviço é N:N: um mesmo cardapio pode participar de
+// varios servicos e, por isso, aparece em mais de um deles no orcamento.
+function groupMenusByService(menus, serviceIds) {
+  const wanted = new Set(serviceIds.filter(Boolean));
+  const byService = new Map();
+  menus.forEach((menu) => {
+    menu.serviceIds.forEach((serviceId) => {
+      if (!wanted.has(serviceId)) return;
+      if (!byService.has(serviceId)) byService.set(serviceId, []);
+      byService.get(serviceId).push(menu);
+    });
+  });
+  return byService;
+}
+
+// Os cardapios aparecem sempre por categoria, e nao em uma lista solta. As
+// categorias ja chegam em ordem alfabetica do banco (ORDER BY name em
+// loadMenus) e o grupo "Sem categoria" fecha a lista, para nenhum cardapio ficar
+// de fora da tela. Um cardapio em duas categorias aparece nas duas, que e o
+// mesmo criterio do filtro da tela de cardapios.
+const MENU_UNGROUPED_LABEL = 'Sem categoria';
+
+function groupMenusByCategory(list) {
+  const groups = menuCategories.map((category) => ({ id: category.id, name: category.name, menus: [] }));
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const ungrouped = { id: '', name: MENU_UNGROUPED_LABEL, menus: [] };
+  list.forEach((menu) => {
+    const targets = menuCategoryLinks
+      .filter((link) => link.menu_id === menu.id)
+      .map((link) => byId.get(link.category_id))
+      .filter(Boolean);
+    if (targets.length) targets.forEach((group) => group.menus.push(menu));
+    else ungrouped.menus.push(menu);
+  });
+  return groups.concat(ungrouped).filter((group) => group.menus.length);
+}
+
+// A etiqueta de cardapio e a mesma em todas as telas: abre a ficha do cardapio.
+function menuChip(menu) {
+  return `<button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}"><i data-lucide="book-open"></i><span>${escapeHTML(menu.name)}</span></button>`;
+}
+
+// A etiqueta de item de estoque é a mesma ideia: o nome abre a ficha do item.
+// Reaproveita o desenho da etiqueta de cardápio e só troca o ícone, para as duas
+// listas não divergirem visualmente.
+function itemChip(item) {
+  return `<button class="linked-menu-chip linked-item-chip" type="button" data-open-inventory-detail="${item.id}" aria-label="Abrir ficha do item ${escapeHTML(item.name)}"><i data-lucide="box"></i><span>${escapeHTML(item.name)}</span></button>`;
+}
+
+// O vinculo cardapio <-> serviço é N:N e mora em menu_services. Derivar os dois
+// lados aqui mantem services e menus coerentes mesmo com os dois loaders rodando
+// em paralelo.
+function hydrateMenuServiceLinks() {
+  services = services.map((service) => {
+    const linked = menus.filter((menu) => menu.serviceIds.includes(service.id));
+    return { ...service, menuIds: linked.map((menu) => menu.id), menuNames: linked.map((menu) => menu.name) };
+  });
+  menus = menus.map((menu) => ({
+    ...menu,
+    serviceNames: menu.serviceIds.map((id) => services.find((item) => item.id === id)?.name).filter(Boolean)
+  }));
+}
+
+// Cardápios e serviços carregam juntos porque nenhum dos dois sabe o nome do
+// outro sem o vínculo, e a tela de serviços já abre com o filtro de cardápios
+// montado — um deles esperando o outro deixaria a lista sem filtro uma fração
+// de segundo.
+function openServices() {
+  if (!permitir('servicos')) return;
+  servicePanel.hidden = false;
+  serviceSearch.value = '';
+  serviceMenuFilter.value = '';
+  Promise.all([loadMenus(), loadServices()]);
+}
+
+// No formulario de servico todos os cardapios sao listados: os marcados sao os
+// que participam deste servico. O mesmo cardapio pode estar marcado em outros
+// servicos ao mesmo tempo, e o nome do cardapio abre a tela de detalhes dele.
+// A lista vem por categoria, cada uma numa sanfona que encolhe e expande: com
+// muitas categorias abertas a leitura fica longa e o servico perde o foco.
+let serviceMenusBefore = [];
+// loadMenus re-renderiza esta lista a cada evento de realtime, entao o estado da
+// sanfona fica guardado por id de categoria em vez de no DOM.
+let serviceMenuCollapsedGroups = new Set();
+
+function renderServiceMenuOptions(serviceId) {
+  if (!menus.length) {
+    serviceMenuOptions.innerHTML = '<span class="field-hint">Nenhum cardápio cadastrado ainda.</span>';
+    return;
+  }
+  serviceMenuOptions.innerHTML = groupMenusByCategory(menus).map((group) => {
+    const isCollapsed = serviceMenuCollapsedGroups.has(group.id);
+    const options = group.menus.map((menu) => {
+      const checked = serviceId ? menu.serviceIds.includes(serviceId) : false;
+      const others = menu.serviceIds
+        .filter((id) => id !== serviceId)
+        .map((id) => services.find((service) => service.id === id)?.name)
+        .filter(Boolean);
+      const othersLine = others.length
+        ? `<span class="service-menu-owner">também em ${escapeHTML(others.join(', '))}</span>`
+        : '';
+      // Um cardapio em duas categorias aparece nas duas, entao o id leva a
+      // categoria junto: dois elementos com o mesmo id fariam o <label> marcar
+      // sempre o primeiro.
+      const inputId = `service-menu-${group.id || 'sem-categoria'}-${menu.id}`;
+      return `<div class="service-menu-option${checked ? ' selected' : ''}">
+        <label class="service-menu-check" for="${inputId}"><input id="${inputId}" type="checkbox" data-service-menu="${menu.id}" ${checked ? 'checked' : ''} /></label>
+        ${menuChip(menu)}
+        ${othersLine}
+      </div>`;
+    }).join('');
+    const count = group.menus.length;
+    return `<details class="menu-category-group" data-menu-group="${group.id}"${isCollapsed ? '' : ' open'}>
+      <summary class="menu-category-summary" data-toggle-menu-group="${group.id}" aria-expanded="${isCollapsed ? 'false' : 'true'}">
+        <i data-lucide="chevron-down" class="menu-category-chevron"></i>
+        <span class="menu-category-name">${escapeHTML(group.name)}</span>
+        <span class="menu-category-count">${count}</span>
+      </summary>
+      <div class="menu-category-body">${options}</div>
+    </details>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+// O mesmo cardapio aparece em todas as suas categorias, e por isso tem mais de
+// uma caixa de marcacao. Marcar em uma precisa marcar nas outras: sao o mesmo
+// vinculo, nao dois.
+serviceMenuOptions.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-service-menu]');
+  if (!checkbox) return;
+  serviceMenuOptions.querySelectorAll(`[data-service-menu="${CSS.escape(checkbox.dataset.serviceMenu)}"]`).forEach((input) => {
+    input.checked = checkbox.checked;
+    input.closest('.service-menu-option').classList.toggle('selected', input.checked);
+  });
+});
+
+// O toggle é delegated porque a lista inteira é re-renderizada a cada
+// carregamento: um listener direto no botão morreria junto com ele.
+// Aqui o details.open ainda é o valor de antes: o abrir/fechar do <details> é a
+// ação padrão do clique no summary e roda depois do dispatch. Por isso o
+// próximo estado é o inverso do que está no DOM.
+serviceMenuOptions.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-menu-group]');
+  if (!toggle) return;
+  const groupId = toggle.dataset.toggleMenuGroup;
+  const willOpen = !toggle.closest('[data-menu-group]').open;
+  if (willOpen) serviceMenuCollapsedGroups.delete(groupId);
+  else serviceMenuCollapsedGroups.add(groupId);
+  toggle.setAttribute('aria-expanded', String(willOpen));
+});
+
+// ========================================================================== */
+/* ITENS DE ESTOQUE USADOS POR UM SERVIÇO                                     */
+/* ========================================================================== */
+// service_materials é o N:N entre serviço e item de estoque. O formulário de
+// serviço marca os itens que o serviço utiliza e a ficha do serviço lista os
+// mesmos; o estoque lê a relação ao contrário, para avisar que o item está
+// confirmado em algum evento (ver `loadInventoryRentals`).
+//
+// O desenho é o dos cardápios de propósito: mesma sanfona por categoria, mesmo
+// "também em ..." para os outros serviços que usam o mesmo item e mesmo cuidado
+// com item em duas categorias (é um vínculo só, marcado nas duas).
+//
+// O estado anterior dos vínculos é fotografado na abertura do formulário, pelo
+// mesmo motivo dos cardápios: é o que distingue, no save, o vínculo que já
+// existia do que a pessoa acabou de marcar — sem isso, todo save tentaria
+// reinserir as linhas que já estavam em service_materials e bateria na chave
+// primária (service_id, inventory_item_id).
+let serviceMaterialsBefore = [];
+// loadInventory re-renderiza esta lista a cada evento de realtime, então o
+// estado da sanfona fica guardado por id de categoria em vez de no DOM.
+let serviceMaterialCollapsedGroups = new Set();
+
+// Os dois lados da relação a partir da mesma lista em memória. Filtrar por
+// serviço é o formulário e a ficha; filtrar por item é o alerta do estoque.
+function materialsForService(serviceId) {
+  return serviceMaterials.filter((material) => material.service_id === serviceId);
+}
+
+function serviceIdsForItem(itemId) {
+  return serviceMaterials.filter((material) => material.inventory_item_id === itemId).map((material) => material.service_id);
+}
+
+// `failed` é o que separa "o estoque está vazio" de "a consulta de estoque não
+// passou". Sem ele, quem abre o formulário num banco que recusou a leitura vê
+// "nenhum item cadastrado" e conclui que o cadastro está errado.
+function renderServiceMaterialOptions(serviceId, failed = false) {
+  if (failed) {
+    serviceMaterialOptions.innerHTML = '<span class="field-hint">Não foi possível carregar o estoque. Confira o acesso e recarregue a página.</span>';
+    return;
+  }
+  if (!inventoryItems.length) {
+    serviceMaterialOptions.innerHTML = '<span class="field-hint">Nenhum item cadastrado no estoque ainda.</span>';
+    return;
+  }
+  serviceMaterialOptions.innerHTML = groupInventoryByCategory(inventoryItems).map((group) => {
+    const isCollapsed = serviceMaterialCollapsedGroups.has(group.id);
+    const options = group.items.map((item) => {
+      const material = materialsForService(serviceId).find((entry) => entry.inventory_item_id === item.id);
+      const checked = Boolean(material);
+      const others = serviceIdsForItem(item.id)
+        .filter((id) => id !== serviceId)
+        .map((id) => services.find((service) => service.id === id)?.name)
+        .filter(Boolean);
+      const othersLine = others.length
+        ? `<span class="service-material-owner">também em ${escapeHTML(others.join(', '))}</span>`
+        : '';
+      // Um item em duas categorias aparece nas duas, então o id leva a categoria
+      // junto: dois elementos com o mesmo id fariam o <label> marcar sempre o
+      // primeiro.
+      const inputId = `service-material-${group.id || 'sem-categoria'}-${item.id}`;
+      return `<div class="service-material-option${checked ? ' selected' : ''}">
+        <label class="service-material-check" for="${inputId}"><input id="${inputId}" type="checkbox" data-service-material="${item.id}" ${checked ? 'checked' : ''} /></label>
+        ${itemChip(item)}
+        <label class="service-material-quantity" for="material-qty-${inputId}">Qtd.</label>
+        <input class="service-material-quantity-input" type="number" min="0.01" step="0.01" id="material-qty-${inputId}" value="${material?.quantity ?? 1}" data-material-quantity="${item.id}" aria-label="Quantidade de ${escapeHTML(item.name)} usada pelo serviço" />
+        ${othersLine}
+      </div>`;
+    }).join('');
+    const count = group.items.length;
+    return `<details class="menu-category-group" data-material-group="${group.id}"${isCollapsed ? '' : ' open'}>
+      <summary class="menu-category-summary" data-toggle-material-group="${group.id}" aria-expanded="${isCollapsed ? 'false' : 'true'}">
+        <i data-lucide="chevron-down" class="menu-category-chevron"></i>
+        <span class="menu-category-name">${escapeHTML(group.name)}</span>
+        <span class="menu-category-count">${count}</span>
+      </summary>
+      <div class="menu-category-body">${options}</div>
+    </details>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+// O mesmo item pode estar em duas categorias do estoque, e por isso tem mais de
+// uma caixa de marcação. Marcar em uma precisa marcar nas outras: é o mesmo
+// vínculo, não dois.
+serviceMaterialOptions.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-service-material]');
+  if (!checkbox) return;
+  serviceMaterialOptions.querySelectorAll(`[data-service-material="${CSS.escape(checkbox.dataset.serviceMaterial)}"]`).forEach((input) => {
+    input.checked = checkbox.checked;
+    input.closest('.service-material-option').classList.toggle('selected', input.checked);
+  });
+});
+
+// Delegado pelo mesmo motivo do cardápio: a lista inteira é re-renderizada a
+// cada load do estoque. O details.open ainda é o valor de antes aqui — o abrir
+// e fechar do <details> é a ação padrão do clique no summary e roda depois do
+// dispatch, então o próximo estado é o inverso do que está no DOM.
+serviceMaterialOptions.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-material-group]');
+  if (!toggle) return;
+  const groupId = toggle.dataset.toggleMaterialGroup;
+  const willOpen = !toggle.closest('[data-material-group]').open;
+  if (willOpen) serviceMaterialCollapsedGroups.delete(groupId);
+  else serviceMaterialCollapsedGroups.add(groupId);
+  toggle.setAttribute('aria-expanded', String(willOpen));
+});
+
+async function openServiceForm(service = null) {
+  serviceForm.reset();
+  document.querySelector('#service-id').value = service?.id || '';
+  document.querySelector('#service-name').value = service?.name || '';
+  document.querySelector('#service-category').value = service?.category || '';
+  document.querySelector('#service-price').value = service?.default_price ?? '';
+  document.querySelector('#service-description').value = service?.description || '';
+  document.querySelector('#service-active').checked = service?.active ?? true;
+  document.querySelector('#service-is-ceremonial').checked = service?.is_ceremonial ?? false;
+  serviceFormTitle.textContent = service?.id ? 'Editar serviço' : 'Novo serviço';
+  serviceFormFeedback.textContent = '';
+  serviceFormPanel.hidden = false;
+  // O estoque entra pelo loader de dado: o formulário só precisa da lista de
+// itens por categoria, e não deve herdar nem o desenho da tela de estoque nem a
+// contagem de alugados. O `ok` volta para a caixa avisar quando a leitura falha.
+  const [itemsLoaded] = await Promise.all([
+    loadInventoryItems(),
+    loadMenus(),
+    loadServices(),
+    loadServiceMaterials()
+  ]);
+  // O estado anterior dos vínculos é fotografado aqui, antes de renderizar, e é
+  // ele que permite distinguir na hora de salvar entre "o vínculo já existia" e
+  // "a pessoa acabou de marcar": sem isso, todo save tentaria reinserir as
+  // linhas que já estavam em menu_services e bateria na chave única.
+  serviceMenusBefore = service?.id ? menus.filter((menu) => menu.serviceIds.includes(service.id)).map((menu) => menu.id) : [];
+  renderServiceMenuOptions(service?.id || '');
+  // Mesma fotografia para os itens de estoque, com a mesma razão: as linhas que
+  // já estavam em service_materials não podem ser inseridas de novo. Aqui vão as
+  // linhas inteiras, e não só os ids, porque o save precisa da quantidade antiga
+  // para saber se a digitada é uma mudança ou a mesma de antes.
+  serviceMaterialsBefore = service?.id ? materialsForService(service.id) : [];
+  renderServiceMaterialOptions(service?.id || '', !itemsLoaded);
+  // Criar um cardápio de dentro do serviço já o marca no cardápio novo: o
+  // `presetServiceId` acima evita que a pessoa tenha de marcar de novo. Num
+  // serviço novo o botão some, porque o serviço ainda nem tem id no banco para
+  // ser gravado como vínculo.
+  serviceMenuCreate.hidden = !service?.id;
+}
+
+document.querySelectorAll('[data-open-services]').forEach((button) => button.addEventListener('click', openServices));
+document.querySelectorAll('[data-close-services]').forEach((button) => button.addEventListener('click', () => { servicePanel.hidden = true; }));
+document.querySelectorAll('[data-new-service]').forEach((button) => button.addEventListener('click', () => openServiceForm()));
+document.querySelectorAll('[data-close-service-form]').forEach((button) => button.addEventListener('click', () => { serviceFormPanel.hidden = true; }));
+serviceSearch.addEventListener('input', renderServices);
+serviceMenuFilter.addEventListener('change', renderServices);
+
+// Salvamento do serviço. O `.select('id').single()` no insert e no update existe
+// porque o formulário precisa do id gravado antes de mexer em menu_services —
+// e porque, se a RLS negar o insert, vem `error` sem `data`, o que o bloco
+// abaixo trata separadamente.
+serviceForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = serviceForm.querySelector('button[type="submit"]');
+  const serviceId = document.querySelector('#service-id').value;
+  const payload = {
+    name: document.querySelector('#service-name').value.trim(),
+    category: document.querySelector('#service-category').value.trim() || null,
+    default_price: Number(document.querySelector('#service-price').value),
+    description: document.querySelector('#service-description').value.trim() || null,
+    active: document.querySelector('#service-active').checked,
+    is_ceremonial: document.querySelector('#service-is-ceremonial').checked
+  };
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Salvando...';
+  serviceFormFeedback.textContent = '';
+
+  const result = serviceId
+    ? await supabaseClient.from('services').update(payload).eq('id', serviceId).select('id').single()
+    : await supabaseClient.from('services').insert(payload).select('id').single();
+
+  if (result.error) {
+    serviceFormFeedback.textContent = 'Não foi possível salvar. Confira os dados e tente novamente.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar serviço';
+    return;
+  }
+
+  const savedId = result.data?.id;
+  if (!savedId) {
+    serviceFormFeedback.textContent = 'Não foi possível salvar. Confira os dados e tente novamente.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar serviço';
+    return;
+  }
+  // Vinculo N:N em menu_services. Os cardapios marcados passam a participar
+  // deste servico; os que estavam vinculados e foram desmarcados saem apenas
+  // deste servico, continuando nos demais onde tambem aparecem.
+  // Um mesmo cardapio aparece em todas as suas categorias, entao pode vir mais
+  // de uma vez marcado: o Set evita tentar inserir o mesmo vinculo duas vezes.
+  const checkedMenus = [...new Set([...serviceMenuOptions.querySelectorAll('[data-service-menu]:checked')].map((checkbox) => checkbox.dataset.serviceMenu))];
+  const releasedMenus = serviceMenusBefore.filter((menuId) => !checkedMenus.includes(menuId));
+  let menusError = null;
+  if (releasedMenus.length) {
+    const release = await supabaseClient.from('menu_services').delete().eq('service_id', savedId).in('menu_id', releasedMenus);
+    if (release.error) menusError = release.error;
+  }
+  if (!menusError && checkedMenus.length) {
+    // Só entram os vínculos novos: os que já existiam permanecem intactos, para
+    // não repetir a chave (menu_id, service_id).
+    const newLinks = checkedMenus.filter((menuId) => !serviceMenusBefore.includes(menuId));
+    if (newLinks.length) {
+      const attach = await supabaseClient.from('menu_services').insert(
+        newLinks.map((menuId, index) => ({ menu_id: menuId, service_id: savedId, sort_order: index }))
+      );
+      if (attach.error) menusError = attach.error;
+    }
+  }
+  if (menusError) {
+    serviceFormFeedback.textContent = 'Serviço salvo, mas não foi possível atualizar os cardápios vinculados.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar serviço';
+    return;
+  }
+
+  // Mesmo desenho para os itens de estoque, em service_materials: desmarcar tira
+  // o vínculo deste serviço e o item continua livre para os outros; marcar
+  // cria o vínculo com a quantidade digitada. O que já estava marcado só é
+  // reescrito quando a quantidade mudou — inserir de novo bateria na chave
+  // primária (service_id, inventory_item_id).
+  const quantityByItem = new Map();
+  serviceMaterialOptions.querySelectorAll('[data-service-material]:checked').forEach((checkbox) => {
+    // Um item em duas categorias aparece duas vezes com o mesmo vínculo, então
+    // a primeira cópia do campo é a que vale.
+    const input = serviceMaterialOptions.querySelector(`[data-material-quantity="${CSS.escape(checkbox.dataset.serviceMaterial)}"]`);
+    const typed = Number(input?.value);
+    // Valor zerado, negativo ou em branco não pode ser gravado: o banco exige
+    // quantidade maior que zero, e o padrão da linha é 1.
+    quantityByItem.set(checkbox.dataset.serviceMaterial, typed > 0 ? typed : 1);
+  });
+  const beforeIds = serviceMaterialsBefore.map((material) => material.inventory_item_id);
+  const releasedItems = beforeIds.filter((itemId) => !quantityByItem.has(itemId));
+  let materialsError = null;
+  if (releasedItems.length) {
+    const release = await supabaseClient.from('service_materials').delete().eq('service_id', savedId).in('inventory_item_id', releasedItems);
+    if (release.error) materialsError = release.error;
+  }
+  if (!materialsError) {
+    // Quantidade nova em vínculo já existente é UPDATE: o item continua o mesmo,
+    // muda só quanto o serviço usa dele.
+    const changed = serviceMaterialsBefore.filter((material) => quantityByItem.has(material.inventory_item_id) && Number(material.quantity) !== quantityByItem.get(material.inventory_item_id));
+    for (const material of changed) {
+      const update = await supabaseClient.from('service_materials').update({ quantity: quantityByItem.get(material.inventory_item_id) }).eq('service_id', savedId).eq('inventory_item_id', material.inventory_item_id);
+      if (update.error) {
+        materialsError = update.error;
+        break;
+      }
+    }
+  }
+  if (!materialsError) {
+    // Um item em duas categorias aparece marcado nas duas, então o Set evita
+    // tentar inserir o mesmo vínculo duas vezes.
+    const newItems = [...quantityByItem.keys()].filter((itemId) => !beforeIds.includes(itemId));
+    if (newItems.length) {
+      const attach = await supabaseClient.from('service_materials').insert(
+        newItems.map((itemId) => ({ service_id: savedId, inventory_item_id: itemId, quantity: quantityByItem.get(itemId) }))
+      );
+      if (attach.error) materialsError = attach.error;
+    }
+  }
+  if (materialsError) {
+    serviceFormFeedback.textContent = 'Serviço salvo, mas não foi possível atualizar os itens de estoque vinculados.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar serviço';
+    return;
+  }
+
+  serviceFormPanel.hidden = true;
+  // Os dois vínculos N:N do serviço morrem em tabelas próprias (menu_services e
+  // service_materials), então os dois lados são recarregados juntos. Quem estiver
+  // com a tela de estoque aberta vê o aviso de aluguel se atualizar pelo
+  // realtime, que escuta service_materials.
+  await Promise.all([loadServices(), loadMenus(), loadServiceMaterials()]);
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Salvar serviço';
+  showToast(serviceId ? 'Serviço atualizado' : 'Serviço cadastrado');
+});
+
+// Ações da linha: editar, ativar/desativar e excluir. Desativar é um UPDATE de
+// uma coluna e não uma tela de edição, porque é a decisão que se toma todos os
+// dias e a mais rápida de desfazer. Excluir leva junto os vínculos em
+// menu_services, por causa do ON DELETE CASCADE no banco.
+serviceList.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('[data-edit-service]');
+  const deleteButton = event.target.closest('[data-delete-service]');
+  const toggleButton = event.target.closest('[data-toggle-service]');
+  if (editButton) {
+    openServiceForm(services.find((service) => service.id === editButton.dataset.editService));
+    return;
+  }
+  if (toggleButton) {
+    const service = services.find((item) => item.id === toggleButton.dataset.toggleService);
+    if (!service) return;
+    const { error } = await supabaseClient.from('services').update({ active: !service.active }).eq('id', service.id);
+    if (error) {
+      setServiceFeedback('Não foi possível alterar a disponibilidade deste serviço.', true);
+      return;
+    }
+    await loadServices();
+    return;
+  }
+  if (deleteButton) {
+    const service = services.find((item) => item.id === deleteButton.dataset.deleteService);
+    if (!service || !window.confirm(`Excluir o serviço ${service.name}?`)) return;
+    const { error } = await supabaseClient.from('services').delete().eq('id', service.id);
+    if (error) {
+      setServiceFeedback('Não foi possível excluir este serviço.', true);
+      return;
+    }
+    // Os materiais do serviço caem junto por causa do ON DELETE CASCADE, então a
+    // lista em memória é refeita: sem isso, a ficha de um item de estoque
+    // continuaria dizendo que este serviço usa ele.
+    await Promise.all([loadServices(), loadServiceMaterials()]);
+    showToast('Serviço excluído');
+  }
+});
+
+/* ========================================================================== */
+/* CARDÁPIOS E CATEGORIAS                                                      */
+/* Cardápio e serviço se ligam por uma tabela N:N (menu_services), e cardápio   */
+/* e categoria também (menu_category_links). Nenhuma das duas junções vira      */
+/* consulta aninhada do Supabase: as tabelas de vínculo são carregadas inteiras */
+/* e a montagem acontece no navegador, em hydrateMenuServiceLinks e            */
+/* renderMenus. O mesmo desenho vale para o estoque, com                         */
+/* inventory_category_links.                                                    */
+/* ========================================================================== */
+function setMenuFeedback(message, isError = false) {
+  menuFeedback.textContent = message;
+  menuFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+function setCategoryFeedback(message, isError = false) {
+  categoryFeedback.textContent = message;
+  categoryFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+// A lista de categorias. O número de cardápios vem do vínculo e não de um
+// contador guardado na categoria: um cardápio pode estar em duas categorias ao
+// mesmo tempo, e é o vínculo que diz quantos são — o mesmo critério do filtro da
+// tela de cardápios.
+function renderCategories() {
+  if (!menuCategories.length) {
+    categoryList.innerHTML = '<div class="empty-clients">Ainda não há categorias cadastradas.</div>';
+    return;
+  }
+  categoryList.innerHTML = menuCategories.map((category) => {
+    const menuCount = menuCategoryLinks.filter((link) => link.category_id === category.id).length;
+    return `<article class="client-row detail-trigger" data-detail-type="category" data-detail-id="${category.id}"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${menuCount} ${menuCount === 1 ? 'cardápio' : 'cardápios'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="menu-category" data-duplicate-id="${category.id}" aria-label="Duplicar ${escapeHTML(category.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+// Recria o filtro de cardápios da tela de serviços. A seleção anterior só
+// sobrevive se o cardápio escolhido ainda existir: excluir um cardápio em outra
+// aba deixaria a lista vazia sem explicação se o id fosse mantido.
+function renderMenuFilter() {
+  const selectedValue = serviceMenuFilter.value;
+  serviceMenuFilter.innerHTML = '<option value="">Todos os cardápios</option>' + menus.map((menu) => `<option value="${menu.id}">${escapeHTML(menu.name)}</option>`).join('');
+  serviceMenuFilter.value = menus.some((menu) => menu.id === selectedValue) ? selectedValue : '';
+}
+
+// O filtro de categoria da tela de cardápios, com o mesmo cuidado de preservar
+// a seleção do filtro de cardápios acima.
+function renderMenuCategoryFilter() {
+  const selectedValue = menuCategoryFilter.value;
+  menuCategoryFilter.innerHTML = '<option value="">Todas as categorias</option>' + menuCategories.map((category) => `<option value="${category.id}">${escapeHTML(category.name)}</option>`).join('');
+  menuCategoryFilter.value = menuCategories.some((category) => category.id === selectedValue) ? selectedValue : '';
+}
+
+function renderMenus() {
+  // O filtro é aplicado antes do agrupamento, e não depois: a categoria escolhida
+  // tem que decidir quais cardápios existem antes de eles serem distribuídos
+  // nos blocos, ou apareceria um bloco vazio com nome de categoria.
+  const selectedCategoryId = menuCategoryFilter.value;
+  const visibleMenus = menus.filter((menu) => !selectedCategoryId || menuCategoryLinks.some((link) => link.menu_id === menu.id && link.category_id === selectedCategoryId));
+  if (!visibleMenus.length) {
+    menuList.innerHTML = '<div class="empty-clients">Ainda não há cardápios cadastrados.</div>';
+    return;
+  }
+// O card do cardápio. A primeira imagem (a de menor sort_order) é a capa e as
+  // seguintes viram miniaturas. O limite de quatro mantém o card com a mesma
+  // altura mesmo com vinte fotos enviadas, e o placeholder reserva o mesmo
+  // espaço quando não há imagem nenhuma — sem isso a grade quebraria a cada
+  // cardápio sem foto.
+  const card = (menu) => {
+    const images = menuImages.filter((image) => image.menu_id === menu.id).slice(0, 4);
+    const heroImage = images[0]?.public_url;
+    return `<article class="visual-card menu-card detail-trigger" data-detail-type="menu" data-detail-id="${menu.id}">
+      <button class="visual-card-hero${heroImage ? '' : ' visual-card-placeholder'}" type="button" ${heroImage ? `data-view-image="${escapeHTML(heroImage)}"` : ''} aria-label="${heroImage ? `Ver imagem de ${escapeHTML(menu.name)}` : 'Cardápio sem imagem'}">${heroImage ? `<img src="${escapeHTML(heroImage)}" alt="${escapeHTML(menu.name)}" />` : '<i data-lucide="book-open"></i><span>Sem imagem</span>'}</button>
+      <div class="visual-card-body"><div class="visual-card-heading"><div><strong>${escapeHTML(menu.name)}</strong><span>${escapeHTML(menu.description || 'Sem descrição')}</span></div><span class="service-status${menu.active ? '' : ' inactive'}">${menu.active ? 'Ativo' : 'Inativo'}</span></div>
+        <div class="visual-card-meta"><span class="menu-owner">${menu.serviceNames.length ? escapeHTML(menu.serviceNames.join(' · ')) : 'Sem serviço vinculado'}</span>${images.length > 1 ? `<span>${images.length} imagens</span>` : ''}</div>
+        ${images.length > 1 ? `<div class="visual-card-thumbs">${images.slice(1).map((image) => `<button type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ver imagem do cardápio"><img src="${escapeHTML(image.public_url)}" alt="" /></button>`).join('')}</div>` : ''}
+        <div class="visual-card-actions"><button class="client-action" type="button" data-edit-menu="${menu.id}" aria-label="Editar ${escapeHTML(menu.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="menu" data-duplicate-id="${menu.id}" aria-label="Duplicar ${escapeHTML(menu.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-menu="${menu.id}" aria-label="Excluir ${escapeHTML(menu.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div>
+      </div>
+    </article>`;
+  };
+  // A grade e montada categoria por categoria, e nao como uma lista solta: o
+  // cabecalho de cada bloco diz de onde vem cada cardapio, que antes so aparecia
+  // depois de aberto o detalhe de cada um.
+  menuList.innerHTML = groupMenusByCategory(visibleMenus).map((group) => {
+    const count = group.menus.length;
+    return `<section class="menu-group">
+      <div class="menu-group-head">
+        <strong>${escapeHTML(group.name)}</strong>
+        <span>${count} ${count === 1 ? 'cardápio' : 'cardápios'}</span>
+      </div>
+      <div class="menu-group-grid">${group.menus.map(card).join('')}</div>
+    </section>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+async function loadMenus() {
+  // O formulário pode estar aberto e visível quando este loader roda: o
+  // realtime de outro usuário chega aqui, e abrir a tela de serviços também
+  // carrega cardápios. O que está marcado é lido do DOM antes de re-renderizar
+  // qualquer coisa, para ser devolvido marcado depois — sem isso, salvar um
+  // serviço derrubaria as seleções de quem estava preenchendo o formulário.
+  const selectedCategoryIds = !menuFormPanel.hidden ? [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value) : [];
+  const openMenuId = !menuFormPanel.hidden ? document.querySelector('#menu-id').value || null : null;
+  const checkedServiceIds = !menuFormPanel.hidden ? [...menuServiceOptions.querySelectorAll('input:checked')].map((input) => input.value) : [];
+  // O vinculo cardapio <-> servico e N:N e mora em menu_services.
+  const [menusResult, linksResult, imagesResult, categoriesResult, categoryLinksResult] = await Promise.all([
+    supabaseClient.from('menus').select('id, name, description, active, created_at').order('name'),
+    supabaseClient.from('menu_services').select('menu_id, service_id, sort_order').order('sort_order'),
+    supabaseClient.from('menu_images').select('id, menu_id, storage_path, public_url, sort_order').order('sort_order'),
+    supabaseClient.from('menu_categories').select('id, name').order('name'),
+    supabaseClient.from('menu_category_links').select('menu_id, category_id')
+  ]);
+  // Só a falha em `menus` interrompe o carregamento. As outras respostas viram
+  // lista vazia, o que degrada a tela em vez de impedi-la de abrir: imagens e
+  // categorias vêm de migrações separadas (003 e seguintes) e um projeto que não
+  // rodou tudo ainda precisa deixar o usuário cadastrar cardápios.
+  if (menusResult.error) {
+    setMenuFeedback(`Não foi possível carregar os cardápios: ${menusResult.error.message}`, true);
+    return;
+  }
+  // serviceIdsByMenu achata menu_services em id do cardápio -> lista de
+  // serviços, que é a forma que o resto do arquivo consome. O menu em si
+  // continua vindo da consulta de `menus`, sem a coluna de vínculo.
+  const serviceIdsByMenu = new Map();
+  (linksResult.data || []).forEach((link) => {
+    if (!serviceIdsByMenu.has(link.menu_id)) serviceIdsByMenu.set(link.menu_id, []);
+    serviceIdsByMenu.get(link.menu_id).push(link.service_id);
+  });
+  menus = (menusResult.data || []).map((menu) => ({ ...menu, serviceIds: serviceIdsByMenu.get(menu.id) || [] }));
+  menuImages = imagesResult.data || [];
+  menuCategories = categoriesResult.data || [];
+  menuCategoryLinks = categoryLinksResult.data || [];
+  hydrateMenuServiceLinks();
+  renderMenuFilter();
+  renderMenuCategoryFilter();
+  renderMenus();
+  renderCategories();
+  if (!menuFormPanel.hidden) {
+    renderMenuServiceOptions(checkedServiceIds);
+    renderMenuCategoryOptions(selectedCategoryIds);
+    renderMenuImagePreviews(openMenuId);
+  }
+  if (!serviceFormPanel.hidden) renderServiceMenuOptions(document.querySelector('#service-id').value);
+}
+
+// Cardápios e serviços juntos: o card de cardápio mostra o nome dos serviços que
+// o usam, e o serviço mostra os cardápios que o acompanham. Um sem o outro
+// deixaria a tela com metade da informação.
+function openMenus() {
+  if (!permitir('cardapios')) return;
+  menuPanel.hidden = false;
+  Promise.all([loadMenus(), loadServices()]);
+}
+
+// O checkbox de serviços dentro do cardápio. O nome do serviço é um segundo
+// <label> ligado ao mesmo input, e não um <span>: clicar no nome marca o serviço
+// também, que é o que se espera num formulário.
+function renderMenuServiceOptions(selectedServiceIds = []) {
+  if (!services.length) {
+    menuServiceOptions.innerHTML = '<span class="field-hint">Cadastre um serviço primeiro.</span>';
+    return;
+  }
+  const selected = new Set(selectedServiceIds);
+  menuServiceOptions.innerHTML = services.map((service) => `<div class="service-menu-option${selected.has(service.id) ? ' selected' : ''}">
+    <label class="service-menu-check" for="menu-service-${service.id}"><input id="menu-service-${service.id}" type="checkbox" value="${service.id}" data-menu-service ${selected.has(service.id) ? 'checked' : ''} /></label>
+    <label class="menu-service-name" for="menu-service-${service.id}">${escapeHTML(service.name)}</label>
+  </div>`).join('');
+}
+
+menuServiceOptions.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-menu-service]');
+  if (checkbox) checkbox.closest('.service-menu-option').classList.toggle('selected', checkbox.checked);
+});
+
+// Abrir o formulário zera as duas filas de imagem. São rascunhos do formulário
+// anterior, e sem o reset a próxima edição começaria com arquivos marcados para
+// apagar que já não estavam na tela — e o save apagaria imagens do cardápio
+// errado.
+async function openMenuForm(menu = null, presetServiceId = '') {
+  menuForm.reset();
+  pendingMenuImages = [];
+  removedMenuImageIds = [];
+  document.querySelector('#menu-id').value = menu?.id || '';
+  document.querySelector('#menu-name').value = menu?.name || '';
+  document.querySelector('#menu-description').value = menu?.description || '';
+  document.querySelector('#menu-active').checked = menu?.active ?? true;
+  menuFormTitle.textContent = menu?.id ? 'Editar cardápio' : 'Novo cardápio';
+  menuFormFeedback.textContent = '';
+  menuFormPanel.hidden = false;
+  await Promise.all([loadServices(), loadMenus()]);
+  renderMenuServiceOptions(menu?.id ? menu.serviceIds : (presetServiceId ? [presetServiceId] : []));
+  renderMenuCategoryOptions(menu?.id ? menuCategoryLinks.filter((link) => link.menu_id === menu.id).map((link) => link.category_id) : []);
+  renderMenuImagePreviews(menu?.id || null);
+}
+
+// Os botões de abrir cardápio pelo serviço. `data-new-menu-from-service` é
+// outro botão, ligado logo abaixo com o id do serviço já preenchido.
+document.querySelectorAll('[data-open-menus]').forEach((button) => button.addEventListener('click', openMenus));
+document.querySelectorAll('[data-close-menus]').forEach((button) => button.addEventListener('click', () => { fecharPainelDeApoio(menuPanel); }));
+document.querySelectorAll('[data-new-menu]').forEach((button) => button.addEventListener('click', () => openMenuForm()));
+document.querySelectorAll('[data-close-menu-form]').forEach((button) => button.addEventListener('click', () => { menuFormPanel.hidden = true; }));
+serviceMenuCreate.addEventListener('click', () => {
+  openMenuForm(null, document.querySelector('#service-id').value);
+});
+
+document.querySelector('[data-open-categories]').addEventListener('click', () => {
+  categoryPanel.hidden = false;
+  loadMenus();
+});
+
+/* ========================================================================== */
+/* CONFIGURAÇÕES                                                              */
+/* Reúne as telas de apoio que antes só eram acessadas por ícones pequenos    */
+/* dentro de outros módulos.                                                  */
+/* ========================================================================== */
+// Abrir Configurações. A tela é um índice de atalhos, não um painel de opções:
+// quase tudo o que ela mostra também existe como botão em outra tela. O que ela
+// guarda de verdade é o acesso a categorias, que não têm botão próprio nas
+// telas de cardápio e estoque.
+function openSettings() {
+  if (!permitir('configuracoes')) return;
+  settingsPanel.hidden = false;
+}
+
+// Configurações é só um índice: as telas de apoio saem de cima dela. O
+// navigation.js registra que Configurações continua na pilha enquanto uma delas
+// estiver aberta, e é ele quem traz Configurações de volta quando a tela de
+// apoio fecha, tanto pelo X quanto pelo botão de voltar.
+function fecharPainelDeApoio(panel) {
+  panel.hidden = true;
+}
+
+// `cover` antes de esconder: o navigation.js precisa saber que Configurações
+// continua na pilha mesmo escondida, senão fechar a tela de apoio pulava direto
+// para o início em vez de voltar para o índice.
+function abrirDeConfiguracoes(destino) {
+  // As telas de apoio têm permissão própria: quem abre Configurações nem
+  // sempre pode abrir o que está dentro dela.
+  if (destino === 'menus' || destino === 'menu-categories') {
+    if (!permitir('cardapios')) return;
+  }
+  if (destino === 'inventory-categories') {
+    if (!permitir('estoque')) return;
+  }
+  window.plenitudeNav.cover(settingsPanel);
+  settingsPanel.hidden = true;
+  if (destino === 'menus') openMenus();
+  if (destino === 'menu-categories') { categoryPanel.hidden = false; loadMenus(); }
+  if (destino === 'inventory-categories') { inventoryCategoryPanel.hidden = false; loadInventoryCategories(); }
+}
+
+document.querySelectorAll('[data-open-settings]').forEach((button) => button.addEventListener('click', openSettings));
+document.querySelectorAll('[data-close-settings]').forEach((button) => button.addEventListener('click', () => {
+  settingsPanel.hidden = true;
+}));
+// Clicar fora do painel fecha, como o X. Um listener só para o painel inteiro
+// porque os itens são procurados por atributo: a lista é curta e vive no HTML,
+// mas os itens crescem conforme as telas de apoio entram no índice.
+settingsPanel.addEventListener('click', (event) => {
+  if (event.target === settingsPanel) { settingsPanel.hidden = true; return; }
+  const item = event.target.closest('[data-settings-goto]');
+  if (!item) return;
+  abrirDeConfiguracoes(item.dataset.settingsGoto);
+});
+
+/* Categorias de itens do estoque: espelha o painel de categorias de cardapio. */
+function setInventoryCategoryFeedback(message, isError = false) {
+  inventoryCategoryFeedback.textContent = message;
+  inventoryCategoryFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+// Categorias do estoque: a mesma ideia das de cardápio, com as mesmas duas
+// tabelas (inventory_categories e inventory_category_links) e o mesmo painel de
+// prompt/confirm. Ficam em funções próprias porque os dados são outros.
+async function loadInventoryCategories() {
+  const [categoriesResult, linksResult] = await Promise.all([
+    supabaseClient.from('inventory_categories').select('id, name').order('name'),
+    supabaseClient.from('inventory_category_links').select('inventory_item_id, category_id')
+  ]);
+  if (categoriesResult.error) {
+    setInventoryCategoryFeedback(`Não foi possível carregar as categorias: ${categoriesResult.error.message}`, true);
+    return;
+  }
+  inventoryCategories = categoriesResult.data || [];
+  inventoryCategoryLinks = linksResult.data || [];
+  renderInventoryCategories();
+}
+
+// A lista de categorias do estoque. Sem `detail-trigger` aqui, ao contrário do
+// painel de cardápios: não existe ficha de categoria de item, e o clique na
+// linha não abre nada.
+function renderInventoryCategories() {
+  if (!inventoryCategories.length) {
+    inventoryCategoryList.innerHTML = '<div class="empty-clients">Ainda não há categorias cadastradas.</div>';
+    return;
+  }
+  inventoryCategoryList.innerHTML = inventoryCategories.map((category) => {
+    const itemCount = inventoryCategoryLinks.filter((link) => link.category_id === category.id).length;
+    return `<article class="client-row"><span class="client-initial">${escapeHTML(clientInitial(category.name))}</span><div class="client-details"><strong>${escapeHTML(category.name)}</strong><span>${itemCount} ${itemCount === 1 ? 'item' : 'itens'}</span></div><div class="client-actions"><button class="client-action" type="button" data-edit-inventory-category="${category.id}" aria-label="Editar ${escapeHTML(category.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="inventory-category" data-duplicate-id="${category.id}" aria-label="Duplicar ${escapeHTML(category.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-inventory-category="${category.id}" aria-label="Excluir ${escapeHTML(category.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+// Criar e editar categoria de estoque recarrega o estoque junto com o painel de
+// categorias: o filtro de categoria da tela de estoque é montado a partir daqui,
+// e ele ficaria sem a categoria que acabou de ser criada.
+async function createInventoryCategory() {
+  const name = window.prompt('Nome da nova categoria:');
+  if (!name?.trim()) return;
+  const { error } = await supabaseClient.from('inventory_categories').insert({ name: name.trim() });
+  if (error) {
+    setInventoryCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível criar a categoria.', true);
+    return;
+  }
+  await loadInventoryCategories();
+  await loadInventory();
+  setInventoryCategoryFeedback('Categoria criada.');
+}
+
+document.querySelectorAll('[data-new-inventory-category]').forEach((button) => button.addEventListener('click', createInventoryCategory));
+document.querySelectorAll('[data-close-inventory-categories]').forEach((button) => button.addEventListener('click', () => { fecharPainelDeApoio(inventoryCategoryPanel); }));
+
+inventoryCategoryList.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('[data-edit-inventory-category]');
+  const deleteButton = event.target.closest('[data-delete-inventory-category]');
+  if (editButton) {
+    const category = inventoryCategories.find((item) => item.id === editButton.dataset.editInventoryCategory);
+    const name = window.prompt('Nome da categoria:', category?.name || '');
+    if (!category || !name?.trim() || name.trim() === category.name) return;
+    const { error } = await supabaseClient.from('inventory_categories').update({ name: name.trim() }).eq('id', category.id);
+    if (error) {
+      setInventoryCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível editar a categoria.', true);
+      return;
+    }
+    await loadInventoryCategories();
+    await loadInventory();
+    setInventoryCategoryFeedback('Categoria atualizada.');
+    return;
+  }
+  if (deleteButton) {
+    const category = inventoryCategories.find((item) => item.id === deleteButton.dataset.deleteInventoryCategory);
+    if (!category || !window.confirm(`Excluir a categoria ${category.name}?`)) return;
+    const { error } = await supabaseClient.from('inventory_categories').delete().eq('id', category.id);
+    if (error) {
+      setInventoryCategoryFeedback('Não foi possível excluir a categoria.', true);
+      return;
+    }
+    await loadInventoryCategories();
+    await loadInventory();
+    setInventoryCategoryFeedback('Categoria excluída.');
+  }
+});
+document.querySelector('[data-close-categories]').addEventListener('click', () => { fecharPainelDeApoio(categoryPanel); });
+
+// Salvamento do cardápio, e a ordem importa: primeiro a linha em `menus`,
+// depois os vínculos de serviço, depois os de categoria e só no fim as imagens.
+// Cada etapa fala o que conseguiu fazer — "cardápio salvo, mas não foi possível
+// atualizar os serviços" — porque interromper no meio devolveria a pessoa ao
+// formulário com o cardápio já gravado e ela tentaria de novo, duplicando.
+menuForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = menuForm.querySelector('button[type="submit"]');
+  const menuId = document.querySelector('#menu-id').value;
+  const selectedServiceIds = [...menuServiceOptions.querySelectorAll('[data-menu-service]:checked')].map((input) => input.value);
+  const payload = { name: document.querySelector('#menu-name').value.trim(), description: document.querySelector('#menu-description').value.trim() || null, active: document.querySelector('#menu-active').checked };
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Salvando...';
+  const result = menuId
+    ? await supabaseClient.from('menus').update(payload).eq('id', menuId).select('id').single()
+    : await supabaseClient.from('menus').insert(payload).select('id').single();
+  if (result.error) {
+    menuFormFeedback.textContent = 'Não foi possível salvar o cardápio.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cardápio';
+    return;
+  }
+  const savedMenuId = result.data?.id;
+  if (!savedMenuId) {
+    menuFormFeedback.textContent = 'Não foi possível salvar o cardápio.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cardápio';
+    return;
+  }
+  // Vinculos N:N: apaga os anteriores e regrava os servios marcados.
+  const { error: clearServicesError } = await supabaseClient.from('menu_services').delete().eq('menu_id', savedMenuId);
+  if (clearServicesError) {
+    menuFormFeedback.textContent = 'Cardápio salvo, mas não foi possível atualizar os serviços vinculados.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cardápio';
+    return;
+  }
+  if (selectedServiceIds.length) {
+    const { error: linkError } = await supabaseClient.from('menu_services').insert(selectedServiceIds.map((serviceId, index) => ({ menu_id: savedMenuId, service_id: serviceId, sort_order: index })));
+    if (linkError) {
+      menuFormFeedback.textContent = 'Cardápio salvo, mas não foi possível vincular os serviços.';
+      saveButton.disabled = false;
+      saveButton.querySelector('span').textContent = 'Salvar cardápio';
+      return;
+    }
+  }
+  const selectedCategoryIds = [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value);
+  const { error: clearCategoriesError } = await supabaseClient.from('menu_category_links').delete().eq('menu_id', savedMenuId);
+  if (clearCategoriesError) {
+    menuFormFeedback.textContent = 'Cardápio salvo, mas não foi possível atualizar as categorias.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar cardápio';
+    return;
+  }
+  if (selectedCategoryIds.length) {
+    const { error: categoryError } = await supabaseClient.from('menu_category_links').insert(selectedCategoryIds.map((categoryId) => ({ menu_id: savedMenuId, category_id: categoryId })));
+    if (categoryError) {
+      menuFormFeedback.textContent = 'Cardápio salvo, mas não foi possível vincular as categorias.';
+      saveButton.disabled = false;
+      saveButton.querySelector('span').textContent = 'Salvar cardápio';
+      return;
+    }
+  }
+  // As imagens são o último passo de propósito: o cardápio e os dois vínculos já
+  // estão gravados, então uma falha de upload avisa sem deixar o cardápio sem
+  // existir. Remover imagem é apagar o arquivo no bucket e a linha em
+  // menu_images, nessa ordem — o storage vai primeiro porque arquivo sobrando
+  // sem linha apontando para ele é o tipo de pendência que ninguém vai perceber.
+  if (removedMenuImageIds.length) {
+    const removedImages = menuImages.filter((image) => removedMenuImageIds.includes(image.id));
+    await supabaseClient.storage.from('menu-images').remove(removedImages.map((image) => image.storage_path));
+    await supabaseClient.from('menu_images').delete().in('id', removedMenuImageIds);
+  }
+  if (pendingMenuImages.length) {
+    const uploadedImages = [];
+    for (const [index, file] of pendingMenuImages.entries()) {
+      const extension = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      // O nome do arquivo no storage é o id do cardápio + um UUID: o id mantém as
+      // imagens de um cardápio juntas dentro do bucket e o UUID garante que duas
+      // imagens com o mesmo nome de arquivo não se sobrescrevam.
+      const storagePath = `${savedMenuId}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabaseClient.storage.from('menu-images').upload(storagePath, file, { contentType: file.type, upsert: false });
+      // Uma imagem que falha não cancela as outras: o `continue` mantém o envio das
+      // restantes e o aviso no fim diz que uma não pôde ser enviada. O resto do
+      // cardápio já está salvo, então a pessoa pode reenviar só a que faltou.
+      if (uploadError) {
+        menuFormFeedback.textContent = 'Cardápio salvo, mas uma imagem não pôde ser enviada.';
+        continue;
+      }
+      const { data: publicData } = supabaseClient.storage.from('menu-images').getPublicUrl(storagePath);
+      uploadedImages.push({ menu_id: savedMenuId, storage_path: storagePath, public_url: publicData.publicUrl, sort_order: index });
+    }
+    if (uploadedImages.length) await supabaseClient.from('menu_images').insert(uploadedImages);
+  }
+  menuFormPanel.hidden = true;
+  await loadMenus();
+  await loadServices();
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Salvar cardápio';
+  showToast(menuId ? 'Cardápio atualizado' : 'Cardápio cadastrado');
+});
+
+menuList.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('[data-edit-menu]');
+  const deleteButton = event.target.closest('[data-delete-menu]');
+  if (editButton) {
+    openMenuForm(menus.find((menu) => menu.id === editButton.dataset.editMenu));
+    return;
+  }
+  if (deleteButton) {
+    const menu = menus.find((item) => item.id === deleteButton.dataset.deleteMenu);
+    if (!menu || !window.confirm(`Excluir o cardápio ${menu.name}?`)) return;
+    const { error } = await supabaseClient.from('menus').delete().eq('id', menu.id);
+    if (error) {
+      setMenuFeedback('Não foi possível excluir este cardápio.', true);
+      return;
+    }
+    await loadMenus();
+    await loadServices();
+    showToast('Cardápio excluído');
+  }
+});
+
+// As caixas de categoria dentro do formulário. Cada uma é um <label> ligado ao
+// próprio input, para que clicar no nome da categoria marque junto.
+function renderMenuCategoryOptions(selectedCategoryIds = []) {
+  if (!menuCategories.length) {
+    menuCategoryOptions.innerHTML = '<span class="field-hint">Adicione categorias para organizar este cardápio.</span>';
+    return;
+  }
+  menuCategoryOptions.innerHTML = menuCategories.map((category) => `<label class="category-option" for="menu-category-${category.id}"><input id="menu-category-${category.id}" type="checkbox" value="${category.id}" ${selectedCategoryIds.includes(category.id) ? 'checked' : ''} /><span>${escapeHTML(category.name)}</span></label>`).join('');
+}
+
+// A prévia mostra o que está no banco e o que está na fila lado a lado: quem
+// abre o formulário precisa ver o resultado final, não o que já foi salvo. As
+// imagens marcadas para remover somem da lista mas continuam no array até o
+// save — por isso o filtro de `removedMenuImageIds` acontece aqui e não no
+// carregamento.
+function renderMenuImagePreviews(menuId = null) {
+  const existingImages = menuImages.filter((image) => image.menu_id === menuId && !removedMenuImageIds.includes(image.id));
+  const existingMarkup = existingImages.map((image) => `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ampliar imagem"><img src="${escapeHTML(image.public_url)}" alt="Imagem do cardápio" /></button><button class="image-preview-remove" type="button" data-remove-existing-image="${image.id}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
+  const pendingMarkup = pendingMenuImages.map((file, index) => { const previewUrl = URL.createObjectURL(file); return `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${previewUrl}" aria-label="Ampliar imagem"><img src="${previewUrl}" alt="Prévia de ${escapeHTML(file.name)}" /></button><button class="image-preview-remove" type="button" data-remove-pending-image="${index}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`; }).join('');
+  menuImagePreviews.innerHTML = existingMarkup + pendingMarkup;
+  lucide.createIcons();
+}
+
+// Cada escolha soma ao que já estava na fila porque o input é limpo logo em
+// baixo: sem o acúmulo, escolher duas vezes seguidas a segunda substituiria a
+// primeira. Zerar o `value` é o que faz o evento de change disparar de novo
+// com o mesmo arquivo, e o filtro por `image/` descarta o que a pessoa tenha
+// arrastado junto por engano.
+menuImageInput.addEventListener('change', () => {
+  pendingMenuImages = [...pendingMenuImages, ...menuImageInput.files].filter((file) => file.type.startsWith('image/'));
+  menuImageInput.value = '';
+  renderMenuImagePreviews(document.querySelector('#menu-id').value || null);
+});
+
+// Remover imagem é só marcar: o X de uma imagem que já estava no banco entra em
+// removedMenuImageIds, e o de uma que ainda estava na fila sai do array. Nada é
+// apagado antes do submit, para que fechar o formulário sem salvar não destrua
+// nada.
+menuImagePreviews.addEventListener('click', (event) => {
+  const existingButton = event.target.closest('[data-remove-existing-image]');
+  const pendingButton = event.target.closest('[data-remove-pending-image]');
+  if (existingButton) {
+    removedMenuImageIds.push(existingButton.dataset.removeExistingImage);
+    renderMenuImagePreviews(document.querySelector('#menu-id').value || null);
+  }
+  if (pendingButton) {
+    pendingMenuImages.splice(Number(pendingButton.dataset.removePendingImage), 1);
+    renderMenuImagePreviews(document.querySelector('#menu-id').value || null);
+  }
+});
+
+/* ========================================================================== */
+/* CATEGORIAS DE CARDÁPIO                                                      */
+/* O mesmo botão de "Nova categoria" aparece no painel de categorias e dentro   */
+/* do formulário de cardápio. Por isso createCategory também redesenha as      */
+/* opções do formulário aberto: quem cria uma categoria no meio do cadastro de  */
+/* um cardápio precisa marcar a que acabou de criar sem sair da tela.           */
+/* ========================================================================== */
+// Abrir, renomear e excluir categoria usam prompt e confirm em vez de um
+// formulário: é uma palavra só, e uma tela inteira para isso só custaria um
+// passo a mais. Renomear sem mudar o texto é ignorado em vez de gravar de novo.
+//
+// Os códigos do Postgres viram texto que a pessoa entende: 42P01 é a tabela que
+// ainda não existe (a migração 003 não foi rodada no projeto) e 23505 é nome
+// repetido, que é o único jeito de errar aqui já que o campo é livre.
+async function createCategory() {
+  const name = window.prompt('Nome da nova categoria:');
+  if (!name?.trim()) return;
+  const selectedCategoryIds = [...menuCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value);
+  const { error } = await supabaseClient.from('menu_categories').insert({ name: name.trim() });
+  if (error) {
+    const message = error.code === '42P01'
+      ? 'A tabela de categorias não existe. Execute a migração 003 no Supabase.'
+      : error.code === '23505'
+        ? 'Essa categoria já existe.'
+        : 'Não foi possível criar a categoria. Verifique as permissões do Supabase.';
+    menuFormFeedback.textContent = message;
+    setCategoryFeedback(message, true);
+    return;
+  }
+  await loadMenus();
+  renderMenuCategoryOptions(selectedCategoryIds);
+  setCategoryFeedback('Categoria criada.');
+}
+
+document.querySelectorAll('[data-new-category]').forEach((button) => button.addEventListener('click', createCategory));
+
+categoryList.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('[data-edit-category]');
+  const deleteButton = event.target.closest('[data-delete-category]');
+  if (editButton) {
+    const category = menuCategories.find((item) => item.id === editButton.dataset.editCategory);
+    const name = window.prompt('Nome da categoria:', category?.name || '');
+    if (!category || !name?.trim() || name.trim() === category.name) return;
+    const { error } = await supabaseClient.from('menu_categories').update({ name: name.trim() }).eq('id', category.id);
+    if (error) {
+      setCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível editar a categoria.', true);
+      return;
+    }
+    await loadMenus();
+    setCategoryFeedback('Categoria atualizada.');
+    return;
+  }
+  if (deleteButton) {
+    const category = menuCategories.find((item) => item.id === deleteButton.dataset.deleteCategory);
+    if (!category || !window.confirm(`Excluir a categoria ${category.name}?`)) return;
+    const { error } = await supabaseClient.from('menu_categories').delete().eq('id', category.id);
+    if (error) {
+      setCategoryFeedback('Não foi possível excluir a categoria.', true);
+      return;
+    }
+    await loadMenus();
+    setCategoryFeedback('Categoria excluída.');
+  }
+});
+
+// O filtro de categoria redesenha a lista de cardápios, e não o formulário: o
+// formulário tem as próprias caixas de categoria, que não são o mesmo filtro.
+menuCategoryFilter.addEventListener('change', renderMenus);
+
+const toast = document.querySelector('.toast');
+let toastTimer;
+
+/* ========================================================================== */
+/* AVISOS E MENU LATERAL                                                       */
+/* ========================================================================== */
+// O toast de confirmação. Ele sempre acrescenta "em breve" ao texto: os botões
+// de ação que ainda não têm tela própria chamam showToast com o nome da ação
+// ("Agenda"), e é esse sufixo que transforma o nome solto num aviso. Só um por
+// vez — um novo aviso reinicia o tempo do anterior em vez de empilhar.
+function showToast(message) {
+  toast.textContent = `${message} em breve`;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+}
+
+// Botões de ação sem tela própria: mostram o aviso com o nome da ação. É o que
+// sobrou do menu inicial e precisa continuar funcionando, para uma ação que
+// ainda não foi ligada não quebrar a navegação inteira.
+document.querySelectorAll('[data-action]').forEach((button) => {
+  button.addEventListener('click', () => showToast(button.dataset.action));
+});
+
+// Os itens do menu lateral. Todos marcam o ativo; só Início e Menu abrem ou
+// fecham alguma coisa daqui. Quem abre uma tela de verdade é o módulo dono do
+// botão, escutando o mesmo elemento — o item do menu não pode abrir duas vezes.
+document.querySelectorAll('[data-nav]').forEach((button) => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
+    button.classList.add('active');
+    // "Menu" e a propria tela de ajustes; Inicio e o painel principal.
+    if (button.dataset.nav === 'Início') {
+      settingsPanel.hidden = true;
+      return;
+    }
+    if (button.dataset.nav === 'Menu') {
+      openSettings();
+      return;
+    }
+    // "Agenda" nao chega aqui: quem abre o painel de Eventos e o events.js, que
+    // escuta o mesmo botão. Antes ele caía no showToast e pintava "Agenda em
+    // breve" por cima da agenda que acabara de abrir.
+  });
+});
+
+function setInventoryFeedback(message, isError = false) {
+  inventoryFeedback.textContent = message;
+  inventoryFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+/* ========================================================================== */
+/* ESTOQUE                                                                    */
+/* O saldo do item é uma coluna em inventory_items, mas quem muda esse saldo é  */
+/* sempre a função record_inventory_movement no banco, que valida a saída       */
+/* contra o que existe e grava a linha de histórico na mesma transação. Nenhuma */
+/* tela escreve quantity direto.                                               */
+/* ========================================================================== */
+// Estoque baixo é "chegou no mínimo", e o mínimo zero significa que o item não
+// tem mínimo nenhum. Um item com minimum_quantity = 0 nunca entra na lista de
+// baixa, mesmo com saldo zerado — do contrário todo item sem controle passaria
+// a ser um aviso permanente no sino.
+function inventoryIsLow(item) {
+  return Number(item.minimum_quantity) > 0 && Number(item.quantity) <= Number(item.minimum_quantity);
+}
+
+// ========================================================================== */
+/* ALERTA DE ITEM ALUGADO                                                     */
+/* ========================================================================== */
+// Os dois status de evento em que o item ainda está preso. Os outros dois do
+// enum — completed (realizado) e cancelled — significam que o evento passou ou
+// foi desfeito, e nenhum dos dois segura item.
+const ACTIVE_EVENT_STATUSES = ['planned', 'in_progress'];
+
+// Um item está confirmado para um evento quando algum serviço que o utiliza
+// está em um orçamento confirmado. É a única pergunta que o alerta faz, e ela é
+// respondida em três passos, todos eles já existentes no app:
+//
+//   item -> serviços que o usam (service_materials)
+//        -> serviços contratados em cada orçamento (quote_items)
+//        -> orçamentos confirmados e o evento que eles criaram (quotes/events)
+//
+// Nada disso é gravado: um item que deixa de estar alugado (o serviço saiu do
+// orçamento, o orçamento foi cancelado) volta a aparecer como disponível sozinho,
+// sem nenhuma rotina de devolução.
+//
+// Só contam os eventos que ainda vão acontecer — planejado ou em andamento. O
+// app usa a palavra "realizado" (completed) para evento que já passou, e marca
+// sozinho os que ficaram para trás; um evento cancelado também não segura item
+// nenhum. Nos dois casos o orçamento pode continuar confirmado: o que define o
+// aluguel é o evento, e é ele que a pessoa opera na tela.
+//
+// Sem nenhum serviço usando o item não há o que consultar: a função sai antes de
+// qualquer query, e é por isso que ela depende de `serviceMaterials` estar
+// carregada.
+async function loadInventoryRentals() {
+  if (!serviceMaterials.length) await loadServiceMaterials();
+  inventoryRentals = new Map();
+  if (!serviceMaterials.length) return inventoryRentals;
+
+  const [eventsResult, quotesResult] = await Promise.all([
+    supabaseClient.from('events').select('id, name, event_date, quote_id').in('status', ACTIVE_EVENT_STATUSES),
+    supabaseClient.from('quotes').select('id, name, status').eq('status', 'confirmed')
+  ]);
+  // Um evento existe porque o orçamento foi confirmado, então o filtro de
+  // confirmed vem do orçamento: o status do evento é planned/in_progress/
+  // completed e não tem "confirmado" nele.
+  const confirmedQuoteIds = new Set((quotesResult.data || []).map((quote) => quote.id));
+  const eventsByQuote = new Map();
+  (eventsResult.data || []).forEach((event) => {
+    if (!confirmedQuoteIds.has(event.quote_id)) return;
+    eventsByQuote.set(event.quote_id, event);
+  });
+  if (!eventsByQuote.size) return inventoryRentals;
+
+  const { data: quoteItems } = await supabaseClient
+    .from('quote_items')
+    .select('quote_id, service_id')
+    .in('quote_id', [...eventsByQuote.keys()]);
+  if (!quoteItems || !quoteItems.length) return inventoryRentals;
+
+  // serviceId -> eventos e de aí o item: os materiais viram o caminho inverso, e
+  // é a lista completa de eventos em que o item está reservado.
+  const eventsByService = new Map();
+  quoteItems.forEach((item) => {
+    const event = eventsByQuote.get(item.quote_id);
+    if (!event || !item.service_id) return;
+    if (!eventsByService.has(item.service_id)) eventsByService.set(item.service_id, []);
+    eventsByService.get(item.service_id).push(event);
+  });
+
+  serviceMaterials.forEach((material) => {
+    const events = eventsByService.get(material.service_id) || [];
+    if (!events.length) return;
+    if (!inventoryRentals.has(material.inventory_item_id)) inventoryRentals.set(material.inventory_item_id, []);
+    const target = inventoryRentals.get(material.inventory_item_id);
+    events.forEach((event) => {
+      // O mesmo item pode chegar por dois serviços do mesmo orçamento (uma
+      // mesa posta e um buffet, por exemplo): o alerta cita o evento uma vez.
+      if (target.some((rental) => rental.eventId === event.id)) return;
+      target.push({
+        eventId: event.id,
+        eventName: event.name,
+        eventDate: event.event_date,
+        serviceId: material.service_id,
+        serviceName: services.find((service) => service.id === material.service_id)?.name || 'Serviço'
+      });
+    });
+  });
+  return inventoryRentals;
+}
+
+// Os eventos em que o item está reservado, do mais antigo para o mais novo: é a
+// ordem em que a ficha do item lista.
+function rentalsForItem(itemId) {
+  return (inventoryRentals.get(itemId) || []).slice().sort((a, b) => String(a.eventDate).localeCompare(String(b.eventDate)));
+}
+
+// O evento que o aviso do card cita: o primeiro que ainda vai acontecer. Se
+// todos os que ficaram na lista já passaram — um evento marcado como em
+// andamento e nunca encerrado, por exemplo — cita o mais recente, que ainda é o
+// último lugar onde o item foi usado.
+function nextRentalForItem(itemId) {
+  const rentals = rentalsForItem(itemId);
+  if (!rentals.length) return null;
+  const today = localToday();
+  return rentals.find((rental) => String(rental.eventDate) >= today) || rentals[rentals.length - 1];
+}
+
+// A linha de alerta do card. Fica logo abaixo do saldo, no mesmo lugar em que
+// o card de orçamento escreve local e data — e é uma <span> dentro do corpo do
+// card, não um cartão próprio, para o aviso não roubar o espaço da imagem.
+function inventoryRentalNotice(item) {
+  const rentals = rentalsForItem(item.id);
+  const next = nextRentalForItem(item.id);
+  if (!rentals.length || !next) return '';
+  const others = rentals.length - 1;
+  const extra = others ? ` · mais ${others}` : '';
+  return `<span class="inventory-rental-alert"><i data-lucide="calendar-check"></i><span>Confirmado para <strong>${escapeHTML(next.eventName)}</strong> · ${formatDateBR(next.eventDate)}${extra}</span></span>`;
+}
+
+// Os três filtros do estoque: busca, categoria e "só o que está baixo". A busca
+// varre todos os campos do item em vez de só o nome, porque quem procura por
+// "copo" pode estar procurando na descrição e não no título.
+function renderInventory() {
+  const searchTerm = inventorySearch.value.trim().toLowerCase();
+  const selectedCategoryId = inventoryCategoryFilter.value;
+  const visibleItems = inventoryItems.filter((item) => {
+    const searchableContent = Object.values(item).map((value) => String(value ?? '')).join(' ').toLowerCase();
+    const matchesSearch = searchableContent.includes(searchTerm);
+    const matchesCategory = !selectedCategoryId || item.categoryIds.includes(selectedCategoryId);
+    return matchesSearch && matchesCategory && (!inventoryLowOnly.checked || inventoryIsLow(item));
+  });
+
+  if (!visibleItems.length) {
+    inventoryList.innerHTML = `<div class="empty-clients">${searchTerm || inventoryLowOnly.checked ? 'Nenhum item encontrado para esse filtro.' : 'Ainda não há itens cadastrados.'}</div>`;
+    return;
+  }
+
+  inventoryList.innerHTML = visibleItems.map((item) => `
+    <article class="visual-card inventory-card detail-trigger" data-detail-type="inventory" data-detail-id="${item.id}">
+      ${item.imageUrls.length ? `<button class="visual-card-hero" type="button" data-view-image="${escapeHTML(item.imageUrls[0])}" aria-label="Ver imagem de ${escapeHTML(item.name)}"><img src="${escapeHTML(item.imageUrls[0])}" alt="${escapeHTML(item.name)}" /></button>` : '<div class="visual-card-hero visual-card-placeholder"><i data-lucide="box"></i><span>Sem imagem</span></div>'}
+      <div class="visual-card-body"><div class="visual-card-heading"><div><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(item.description || item.unit)}</span></div><span class="service-status${item.active ? '' : ' inactive'}">${item.active ? 'Disponível' : 'Inativo'}</span></div>
+        ${item.categoryNames.length ? `<span class="service-menus">${escapeHTML(item.categoryNames.join(' · '))}</span>` : ''}
+        <span class="inventory-balance ${inventoryIsLow(item) ? 'low' : ''}">${item.quantity} ${escapeHTML(item.unit)}${inventoryIsLow(item) ? ' · estoque baixo' : ''}</span>
+        ${inventoryRentalNotice(item)}
+        ${item.imageUrls.length > 1 ? `<div class="visual-card-thumbs">${item.imageUrls.slice(1, 4).map((url) => `<button type="button" data-view-image="${escapeHTML(url)}" aria-label="Ver imagem do item"><img src="${escapeHTML(url)}" alt="" /></button>`).join('')}</div>` : ''}
+      <div class="visual-card-actions">
+        <button class="client-action" type="button" data-move-inventory="${item.id}" aria-label="Movimentar ${escapeHTML(item.name)}" title="Movimentar"><i data-lucide="arrow-down-up"></i></button>
+        <button class="client-action" type="button" data-edit-inventory="${item.id}" aria-label="Editar ${escapeHTML(item.name)}" title="Editar"><i data-lucide="pencil"></i></button>
+        <button class="client-action" type="button" data-duplicate="inventory" data-duplicate-id="${item.id}" aria-label="Duplicar ${escapeHTML(item.name)}" title="Duplicar"><i data-lucide="copy"></i></button>
+        <button class="client-action" type="button" data-delete-inventory="${item.id}" aria-label="Excluir ${escapeHTML(item.name)}" title="Excluir"><i data-lucide="trash-2"></i></button>
+      </div></div>
+    </article>
+  `).join('');
+  lucide.createIcons();
+}
+
+// O item vem de uma tabela e as imagens e categorias de outras três. Tudo é
+// costurado aqui em categoryIds, categoryNames e imageUrls para que os
+// renderizadores não tenham que varrer as tabelas de imagem e de vínculo a cada
+// card — e para a ficha de detalhes ler o mesmo formato.
+//
+// Este é só o dado: não desenha a lista nem escreve na tela de estoque, para que
+// o formulário de serviço possa ler os mesmos itens sem depender de a tela de
+// estoque estar aberta. Devolve `true` quando a consulta passou; `false` quando
+// ela falhou, e a diferença importa — "não há itens" e "não deu para ler" são
+// mensagens muito diferentes para quem está preenchendo o formulário.
+async function loadInventoryItems() {
+  const [itemsResult, imagesResult, categoriesResult, linksResult] = await Promise.all([
+    supabaseClient.from('inventory_items').select('id, name, description, unit, quantity, minimum_quantity, active, created_at').order('name'),
+    supabaseClient.from('inventory_images').select('id, inventory_item_id, storage_path, public_url, sort_order').order('sort_order'),
+    supabaseClient.from('inventory_categories').select('id, name').order('name'),
+    supabaseClient.from('inventory_category_links').select('inventory_item_id, category_id')
+  ]);
+  if (itemsResult.error) {
+    inventoryItems = [];
+    return false;
+  }
+  inventoryImages = imagesResult.data || [];
+  inventoryCategories = categoriesResult.data || [];
+  inventoryCategoryLinks = linksResult.data || [];
+  inventoryItems = (itemsResult.data || []).map((item) => {
+    const links = inventoryCategoryLinks.filter((link) => link.inventory_item_id === item.id);
+    return {
+      ...item,
+      categoryIds: links.map((link) => link.category_id),
+      categoryNames: links.map((link) => inventoryCategories.find((category) => category.id === link.category_id)?.name).filter(Boolean),
+      imageUrls: inventoryImages.filter((image) => image.inventory_item_id === item.id).map((image) => image.public_url)
+    };
+  });
+  return true;
+}
+
+// A tela de estoque é o `loadInventoryItems` mais o que só ela precisa: o filtro
+// de categoria, os itens confirmados em evento e a lista desenhada. Os alugados
+// entram antes do render, para o aviso do card nascer junto com o resto do item e
+// não em um segundo render que piscaria a cada abertura da tela.
+async function loadInventory() {
+  setInventoryFeedback('Carregando estoque...');
+  if (!await loadInventoryItems()) {
+    setInventoryFeedback('Não foi possível carregar o estoque. Verifique a autenticação.', true);
+    inventoryList.innerHTML = '';
+    inventoryRentals = new Map();
+    return;
+  }
+  renderInventoryCategoryFilter();
+  await loadInventoryRentals();
+  const lowCount = inventoryItems.filter(inventoryIsLow).length;
+  const rentedCount = inventoryRentals.size;
+  setInventoryFeedback(`${inventoryItems.length} ${inventoryItems.length === 1 ? 'item cadastrado' : 'itens cadastrados'}${lowCount ? ` · ${lowCount} com estoque baixo` : ''}${rentedCount ? ` · ${rentedCount} ${rentedCount === 1 ? 'confirmado em evento' : 'confirmados em evento'}` : ''}`);
+  renderInventory();
+}
+
+// `lowOnly` é o que o aviso de estoque usa: quem clica nele quer ver os itens
+// abaixo do mínimo, e não a lista inteira com o filtro já marcado esperando
+// alguém notar que ele existe.
+function openInventory(options = {}) {
+  if (!permitir('estoque')) return;
+  inventoryPanel.hidden = false;
+  inventorySearch.value = '';
+  inventoryLowOnly.checked = Boolean(options.lowOnly);
+  loadInventory();
+}
+
+// Os itens saem por categoria assim como os cardápios saem por categoria, e
+// pelas mesmas duas regras: as categorias vêm do banco em ordem alfabética e o
+// grupo "Sem categoria" fecha a lista para nenhum item ficar de fora. Um item em
+// duas categorias aparece nas duas — que é o mesmo critério do filtro da tela
+// de estoque.
+const ITEM_UNGROUPED_LABEL = 'Sem categoria';
+
+function groupInventoryByCategory(list) {
+  const groups = inventoryCategories.map((category) => ({ id: category.id, name: category.name, items: [] }));
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const ungrouped = { id: '', name: ITEM_UNGROUPED_LABEL, items: [] };
+  list.forEach((item) => {
+    const targets = item.categoryIds
+      .map((categoryId) => byId.get(categoryId))
+      .filter(Boolean);
+    if (targets.length) targets.forEach((group) => group.items.push(item));
+    else ungrouped.items.push(item);
+  });
+  return groups.concat(ungrouped).filter((group) => group.items.length);
+}
+
+// Atalho do cabeçalho de Estoque para as categorias de itens. Mesmo caminho do
+// atalho de categorias dentro de Cardápios: o painel de baixo continua aberto e
+// o X volta para ele, em vez de fechar direto para a tela inicial.
+function openInventoryCategories() {
+  if (!permitir('estoque')) return;
+  inventoryCategoryPanel.hidden = false;
+  loadInventoryCategories();
+}
+
+function openInventoryForm(item = null) {
+  inventoryForm.reset();
+  pendingInventoryImages = [];
+  removedInventoryImageIds = [];
+  // A unidade é um <select> com opções fixas no HTML, mas nada impede o banco de
+  // ter guardado uma unidade que não está na lista — um item antigo, ou alguém
+  // que trocou o texto da opção. Sem acrescentar a opção aqui, o select cairia
+  // em "unidade" e salvar a edição apagaria o valor real do item.
+  const unitSelect = document.querySelector('#inventory-unit');
+  const knownUnit = [...unitSelect.options].some((option) => option.value === item?.unit);
+  if (item?.unit && !knownUnit) {
+    unitSelect.add(new Option(item.unit, item.unit));
+  }
+  document.querySelector('#inventory-id').value = item?.id || '';
+  document.querySelector('#inventory-name').value = item?.name || '';
+  document.querySelector('#inventory-unit').value = item?.unit || 'unidade';
+  document.querySelector('#inventory-quantity').value = item?.quantity ?? '';
+  document.querySelector('#inventory-minimum').value = item?.minimum_quantity ?? 0;
+  document.querySelector('#inventory-description').value = item?.description || '';
+  document.querySelector('#inventory-active').checked = item?.active ?? true;
+  inventoryFormTitle.textContent = item?.id ? 'Editar item' : 'Novo item';
+  inventoryFormFeedback.textContent = '';
+  inventoryFormPanel.hidden = false;
+  renderInventoryCategoryOptions(item?.id ? item.categoryIds : []);
+  renderInventoryImagePreviews(item?.id || null);
+}
+
+// A movimentação mostra o saldo atual no cabeçalho do formulário. O campo de
+// quantidade muda de sentido conforme o tipo escolhido (entrada, saída ou
+// ajuste), e quem vai mexer precisa saber de onde está partindo.
+function openMovementForm(item) {
+  if (!item) return;
+  movementForm.reset();
+  document.querySelector('#movement-item-id').value = item.id;
+  movementItemName.textContent = `${item.name} · saldo atual: ${item.quantity} ${item.unit}`;
+  movementFormFeedback.textContent = '';
+  movementFormPanel.hidden = false;
+}
+
+// O wrapper existe porque o listener passa o evento de clique para o
+// handler, e um MouseEvent lido como `options` transformaria qualquer coisa
+// nele em lowOnly.
+document.querySelector('[data-open-inventory]').addEventListener('click', () => openInventory());
+document.querySelector('[data-open-inventory-categories]').addEventListener('click', openInventoryCategories);
+document.querySelector('[data-close-inventory]').addEventListener('click', () => { inventoryPanel.hidden = true; });
+document.querySelector('[data-new-inventory]').addEventListener('click', () => openInventoryForm());
+document.querySelector('[data-close-inventory-form]').addEventListener('click', () => { inventoryFormPanel.hidden = true; });
+document.querySelector('[data-close-movement-form]').addEventListener('click', () => { movementFormPanel.hidden = true; });
+inventorySearch.addEventListener('input', renderInventory);
+inventoryLowOnly.addEventListener('change', renderInventory);
+inventoryCategoryFilter.addEventListener('change', renderInventory);
+
+// Filtro de categoria do estoque, com o mesmo cuidado de preservar a seleção do
+// filtro de cardápios: excluir uma categoria em outra aba não pode deixar a
+// grade vazia sem explicação.
+function renderInventoryCategoryFilter() {
+  const selectedValue = inventoryCategoryFilter.value;
+  inventoryCategoryFilter.innerHTML = '<option value="">Todas as categorias</option>' + inventoryCategories.map((category) => `<option value="${category.id}">${escapeHTML(category.name)}</option>`).join('');
+  inventoryCategoryFilter.value = inventoryCategories.some((category) => category.id === selectedValue) ? selectedValue : '';
+}
+
+// O mesmo contrato das categorias de cardápio, com a mesma mensagem de
+// fallback: a tabela vem da migração 005 e um projeto sem ela não pode deixar a
+// tela de item sem explicação nenhuma.
+function renderInventoryCategoryOptions(selectedCategoryIds = []) {
+  if (!inventoryCategories.length) {
+    inventoryCategoryOptions.innerHTML = '<span class="field-hint">Execute a migração 005 para carregar categorias.</span>';
+    return;
+  }
+  inventoryCategoryOptions.innerHTML = inventoryCategories.map((category) => `<label class="category-option" for="inventory-category-${category.id}"><input id="inventory-category-${category.id}" type="checkbox" value="${category.id}" ${selectedCategoryIds.includes(category.id) ? 'checked' : ''} /><span>${escapeHTML(category.name)}</span></label>`).join('');
+}
+
+// Espelha renderMenuImagePreviews, com as duas filas de imagem do estoque. As
+// prévias das que ainda não subiram vêm de URL.createObjectURL, que é um blob
+// temporário: some quando a aba fecha e por isso nunca pode ser gravada no banco.
+function renderInventoryImagePreviews(itemId = null) {
+  const existingImages = inventoryImages.filter((image) => image.inventory_item_id === itemId && !removedInventoryImageIds.includes(image.id));
+  const existingMarkup = existingImages.map((image) => `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${escapeHTML(image.public_url)}" aria-label="Ampliar imagem"><img src="${escapeHTML(image.public_url)}" alt="Imagem do item" /></button><button class="image-preview-remove" type="button" data-remove-existing-inventory-image="${image.id}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`).join('');
+  const pendingMarkup = pendingInventoryImages.map((file, index) => { const previewUrl = URL.createObjectURL(file); return `<div class="image-preview"><button class="image-preview-open" type="button" data-view-image="${previewUrl}" aria-label="Ampliar imagem"><img src="${previewUrl}" alt="Prévia de ${escapeHTML(file.name)}" /></button><button class="image-preview-remove" type="button" data-remove-pending-inventory-image="${index}" aria-label="Remover imagem"><i data-lucide="x"></i></button></div>`; }).join('');
+  inventoryImagePreviews.innerHTML = existingMarkup + pendingMarkup;
+  lucide.createIcons();
+}
+
+/* ========================================================================== */
+/* VISUALIZADOR DE IMAGEM E FICHA DE DETALHES                                  */
+/* ========================================================================== */
+// Abre por cima de qualquer tela, inclusive por cima da ficha de detalhes: o
+// botão de ampliar aparece em todo card que tem imagem, e a ficha também tem
+// imagem. O `src` é setado direto porque o clique já traz a URL pública pronta —
+// não há download nem transformação de imagem aqui.
+function openImageViewer(url) {
+  imageViewerImage.src = url;
+  imageViewer.hidden = false;
+}
+
+// Limpar o src ao fechar solta a imagem. Deixá-la ali manteria a foto baixada
+// na memória do celular mesmo com a tela escondida, e quem percorre uma lista
+// longa de itens acumularia todas elas.
+function closeImageViewer() {
+  imageViewer.hidden = true;
+  imageViewerImage.src = '';
+}
+
+// A linha rótulo/valor das fichas. O valor é escapado aqui dentro, e não em
+// cada chamada: quase toda a ficha é template string com dado do banco, e
+// escapar em cada uso seria um lugar fácil de esquecer — um único campo cru no
+// innerHTML já abre brecha de XSS.
+function detailRow(label, value) {
+  return `<div class="detail-row"><span>${label}</span><strong>${escapeHTML(value || 'Não informado')}</strong></div>`;
+}
+
+// A grade de imagens da ficha. Devolve string vazia quando não há nenhuma, e
+// quem chama já coloca isso na frente do resumo: sem aspas, apareceria o texto
+// "undefined" na tela.
+function renderDetailImages(images, title) {
+  if (!images.length) return '';
+  return `<div class="detail-images">${images.map((url) => `<button type="button" data-view-image="${escapeHTML(url)}" aria-label="Ampliar imagem de ${escapeHTML(title)}"><img src="${escapeHTML(url)}" alt="${escapeHTML(title)}" /></button>`).join('')}</div>`;
+}
+
+// Ficha de detalhes aberta por cima de outra: o cardápio dentro da ficha do
+// serviço ou do orçamento. A de baixo continua na tela, e o X volta para ela em
+// vez de fechar tudo. Guarda o par que sabe redesenhar a de baixo, e não o HTML
+// pronto, para que quem volta veja os dados do momento, não uma cópia.
+const detailStack = [];
+// A ficha que está na tela agora, para distinguir abrir uma ficha por cima de
+// outra de reabrir a mesma em outro estado.
+let detailTarget = null;
+
+// A ficha de detalhes abre camadas por cima de si mesma: o cardápio que aparece
+// dentro da ficha do serviço ou do orçamento. A navegação precisa saber disso, senão
+// o botão de voltar fecharia a tela inteira em vez de devolver para a ficha de
+// baixo. O primeiro callback fecha uma camada por vez e é o botão de voltar; o
+// segundo fecha a ficha inteira e é o botão de início.
+window.plenitudeNav?.setLayerCloser(detailView, closeDetailLayer, hideDetail);
+
+/* ========================================================================== */
+/* FONTE DE AVISOS: ORÇAMENTOS                                                 */
+/* O sinal em aberto vem da cobrança, e a cobrança já tem uma tela inteira com */
+/* o texto pronto. O aviso existe para apontar para lá, não para repetir a     */
+/* lista: quem lê o card e discorda do prazo vai para a tela de lembretes,      */
+/* onde dá para conferir o texto e enviar.                                     */
+/* ========================================================================== */
+// `permissions` diz quem enxerga o aviso; quem não tem a permissão de
+  // orçamentos não vê nem a contagem dele. O botão leva para a tela de
+  // lembretes e não para o orçamento específico, porque a cobrança é sempre um
+  // lote: o operador precisa ver todas as vencidas antes de decidir.
+window.plenitudeAlerts?.register({
+  id: 'sinais',
+  label: 'Sinais',
+  permissions: ['orcamentos'],
+  collect() {
+    const overdue = overdueQuoteReminders();
+    const upcoming = upcomingQuoteReminders();
+    const openReminders = { label: 'Cobrar sinal', run: openQuoteReminders };
+    const alerts = [];
+
+    // O vencido vem primeiro na central: é a cobrança mais velha e a única em
+    // que a data já foi perdida.
+    overdue.forEach((quote) => alerts.push({
+      id: `sinal:${quote.id}`,
+      severity: 'critical',
+      icon: 'hand-coins',
+      title: `Sinal em aberto · ${quote.clients?.name || 'Sem cliente'}`,
+      detail: `${quote.name} · ${quoteValidityNote(quote)}`,
+      action: openReminders
+    }));
+    upcoming.forEach((quote) => alerts.push({
+      id: `sinal:${quote.id}`,
+      severity: 'warn',
+      icon: 'clock',
+      title: `Sinal vence em breve · ${quote.clients?.name || 'Sem cliente'}`,
+      detail: `${quote.name} · ${quoteValidityNote(quote)}`,
+      action: openReminders
+    }));
+
+    return alerts;
+  }
+});
+
+// A ficha é uma tela só para os cinco tipos que têm detalhe, montada por tipo
+// em vez de cinco elementos no HTML: o conteúdo vem inteiro do banco e muda a
+// cada abertura, então um <section> por tipo só custaria markup morto.
+//
+// Quem chega aqui é o clique delegado no fim do arquivo, por causa do
+// `data-detail-type` que todas as linhas e cards recebem no render.
+async function openDetail(type, id) {
+  let title = 'Detalhes';
+  let eyebrow = 'DETALHES';
+  let content = '';
+  let actionQuoteId = '';
+  if (type === 'client') {
+    const client = clients.find((item) => item.id === id);
+    if (!client) return;
+    title = client.name;
+    eyebrow = 'CLIENTE';
+    content = `<div class="detail-summary"><span class="detail-initial">${escapeHTML(clientInitial(client.name))}</span><div><strong>${escapeHTML(client.name)}</strong><span>Cadastro de cliente</span></div></div>${detailRow('WhatsApp', client.whatsapp)}${detailRow('E-mail', client.email)}${detailRow('Observações', client.notes)}`;
+  } else if (type === 'service') {
+    const service = services.find((item) => item.id === id);
+    if (!service) return;
+    // Os itens usados pelo serviço moram em duas listas que a tela de serviços
+    // não carrega: os itens do estoque e os vínculos em service_materials. O
+    // mesmo tratamento que os cardápios recebem na ficha do orçamento.
+    if (!inventoryItems.length) await loadInventory();
+    if (!serviceMaterials.length) await loadServiceMaterials();
+    title = service.name;
+    eyebrow = 'SERVIÇO';
+    // Mesmo padrao do detalhe do orcamento: cartapios em etiquetas que abrem a
+    // ficha de cada um, aqui separadas por categoria.
+    const serviceMenus = menus.filter((menu) => service.menuIds.includes(menu.id));
+    const menusBox = serviceMenus.length
+      ? `<div class="detail-box"><strong class="detail-box-title">CARDÁPIOS DESTE SERVIÇO</strong>${groupMenusByCategory(serviceMenus).map((group) => `
+          <div class="detail-menu-group">
+            <span class="detail-menu-group-label">${escapeHTML(group.name)}</span>
+            <div class="detail-item-menus">${group.menus.map(menuChip).join('')}</div>
+          </div>`).join('')}</div>`
+      : '';
+    // Os itens de estoque entram como etiquetas que abrem a ficha do item, ao
+    // lado da quantidade que o serviço usa de cada um. É a resposta de "o que
+    // este serviço consome", e é o mesmo material que faz o estoque avisar que
+    // um item está confirmado em algum evento.
+    const usedMaterialChips = materialsForService(id).map((material) => {
+      const item = inventoryItems.find((entry) => entry.id === material.inventory_item_id);
+      if (!item) return '';
+      return `<span class="detail-material">${itemChip(item)}<span class="detail-material-quantity">${material.quantity} ${escapeHTML(item.unit)}</span></span>`;
+    }).filter(Boolean);
+    const materialsBox = usedMaterialChips.length
+      ? `<div class="detail-box"><strong class="detail-box-title">ITENS DE ESTOQUE DESTE SERVIÇO</strong><div class="detail-item-menus">${usedMaterialChips.join('')}</div></div>`
+      : '';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="sparkles"></i></span><div><strong>${escapeHTML(service.name)}</strong><span>${service.active ? 'Serviço ativo' : 'Serviço inativo'}</span></div></div>${detailRow('Categoria', service.category)}${detailRow('Preço padrão', formatCurrency(service.default_price))}${menusBox}${materialsBox}${detailRow('Descrição', service.description)}`;
+  } else if (type === 'menu') {
+    const menu = menus.find((item) => item.id === id);
+    if (!menu) return;
+    const images = menuImages.filter((image) => image.menu_id === id).map((image) => image.public_url);
+    const categories = menuCategoryLinks.filter((link) => link.menu_id === id).map((link) => menuCategories.find((category) => category.id === link.category_id)?.name).filter(Boolean);
+    title = menu.name;
+    eyebrow = 'CARDÁPIO';
+    content = renderDetailImages(images, menu.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="book-open"></i></span><div><strong>${escapeHTML(menu.name)}</strong><span>${menu.active ? 'Disponível' : 'Inativo'}</span></div></div>${detailRow('Serviços', menu.serviceNames.join(' · ') || 'Nenhum')}${detailRow('Categorias', categories.join(' · '))}${detailRow('Descrição', menu.description)}`;
+  } else if (type === 'inventory') {
+    const item = inventoryItems.find((entry) => entry.id === id);
+    if (!item) return;
+    title = item.name;
+    eyebrow = 'ITEM DE ESTOQUE';
+    // Os eventos em que o item está confirmado e os serviços que o levam até
+    // eles. Sem esta caixa a ficha mostraria o saldo de um item que já está
+    // reservado, que é exatamente o que o aviso do card impede.
+    const rentals = rentalsForItem(item.id);
+    const rentalsBox = rentals.length
+      ? `<div class="detail-box"><strong class="detail-box-title">CONFIRMADO EM EVENTOS</strong>${rentals.map((rental) => `
+          <div class="detail-service-row"><div class="detail-service-head"><span>${escapeHTML(rental.eventName)} <span class="detail-service-qty">${escapeHTML(rental.serviceName)}</span></span><span>${formatDateBR(rental.eventDate)}</span></div></div>`).join('')}</div>`
+      : '';
+    // Os serviços que usam o item, mesmo sem evento nenhum: é o cadastro que
+    // explica por que o item está na lista de materiais de algum serviço.
+    const usedBy = serviceIdsForItem(item.id).map((serviceId) => services.find((service) => service.id === serviceId)).filter(Boolean);
+    const usedByLine = detailRow('Usado em serviços', usedBy.map((service) => service.name).join(' · ') || 'Nenhum');
+    content = renderDetailImages(item.imageUrls, item.name) + `<div class="detail-summary"><span class="detail-icon"><i data-lucide="box"></i></span><div><strong>${escapeHTML(item.name)}</strong><span>${item.active ? 'Disponível para uso' : 'Item inativo'}</span></div></div>${detailRow('Quantidade atual', `${item.quantity} ${item.unit}`)}${detailRow('Estoque mínimo', `${item.minimum_quantity} ${item.unit}`)}${detailRow('Categorias', item.categoryNames.join(' · '))}${usedByLine}${rentalsBox}${detailRow('Descrição', item.description)}`;
+  } else if (type === 'category') {
+    const category = menuCategories.find((item) => item.id === id);
+    if (!category) return;
+    title = category.name;
+    eyebrow = 'CATEGORIA';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="tags"></i></span><div><strong>${escapeHTML(category.name)}</strong><span>Categoria de cardápios</span></div></div>${detailRow('Cardápios', `${menuCategoryLinks.filter((link) => link.category_id === id).length}`)}`;
+  } else if (type === 'quote') {
+    const quote = quotes.find((item) => item.id === id);
+    if (!quote) return;
+    actionQuoteId = quote.id;
+    title = quote.name;
+    eyebrow = 'ORÇAMENTO';
+    // As linhas do orçamento não vêm na lista (loadQuotes não traz quote_items) e os
+    // cardápios podem não estar carregados ainda, então isto busca na hora. O
+    // try/catch largo é deliberado: um erro aqui não pode derrubar a ficha
+    // inteira, e o resto do orçamento — cliente, data, local, total, sinal —
+    // continua legível mesmo sem a lista de serviços.
+    let servicesHtml = '';
+    try {
+      if (!menus.length) await loadMenus();
+      const { data: items } = await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order');
+      if (items && items.length > 0) {
+        // O cardápio não é escolhido no orçamento: cada serviço lista os seus,
+        // por categoria, igual à tela de detalhe do serviço e ao PDF.
+        const menusByService = groupMenusByService(menus, items.map((item) => item.service_id));
+        const rowsHtml = items.map((item) => {
+          const service = services.find((s) => s.id === item.service_id);
+          const name = service ? service.name : item.description || 'Serviço';
+          const total = item.quantity * item.unit_price;
+          const linked = menusByService.get(item.service_id) || [];
+          const menusCell = linked.length
+            ? groupMenusByCategory(linked).map((group) => `
+                <div class="detail-menu-group">
+                  <span class="detail-menu-group-label">${escapeHTML(group.name)}</span>
+                  <div class="detail-item-menus">${group.menus.map(menuChip).join('')}</div>
+                </div>`).join('')
+            : '';
+          return `<div class="detail-service-row"><div class="detail-service-head"><span>${escapeHTML(name)} <span class="detail-service-qty">×${item.quantity}</span></span><span class="detail-service-total">${formatCurrency(total)}</span></div>${menusCell}</div>`;
+        }).join('');
+        servicesHtml = `<div class="detail-box"><strong class="detail-box-title">SERVIÇOS SELECIONADOS</strong>${rowsHtml}<div class="detail-total-line"><span>TOTAL</span><span>${formatCurrency(quote.total)}</span></div></div>`;
+      }
+    } catch (e) { /* ignore */ }
+    // Validade e sinal entram no detalhe porque é dali que se decide o que fazer
+    // com a proposta: cobrar o sinal, estender o prazo ou encerrar.
+    const signalRow = Number(quote.deposit_amount) > 0
+      ? `${detailRow('Sinal exigido', `${formatCurrency(quote.deposit_amount)} (${formatNumber(quote.deposit_percent)}%)`)}${detailRow('Sinal recebido', formatCurrency(quote.deposited_amount || 0))}${detailRow('Validade', quoteValidityNote(quote))}`
+      : '';
+    content = `<div class="detail-summary"><span class="detail-icon"><i data-lucide="notebook-tabs"></i></span><div><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quoteStatusLabel(quote.status))}</span></div></div>${detailRow('Cliente', quote.clients?.name)}${detailRow('Data', quote.event_date)}${detailRow('Horário', quote.event_time)}${detailRow('Local', quote.venue)}${servicesHtml}${detailRow('Total', formatCurrency(quote.total))}${signalRow}${detailRow('Observações', quote.notes)}`;
+  }
+  detailViewTitle.textContent = title;
+  detailViewEyebrow.textContent = eyebrow;
+  // O botão de sinal acompanha o mesmo critério do painel pós-salvo: existe
+  // valor a cobrar e o orçamento não está cancelado.
+  const detailQuote = actionQuoteId ? quotes.find((item) => item.id === actionQuoteId) : null;
+  const depositButton = actionQuoteId && detailQuote && Number(detailQuote.deposit_amount) > 0 && detailQuote.status !== 'cancelled'
+    ? `<button class="client-action-button quote-deposit-action" type="button" data-quote-deposit-row="${actionQuoteId}"><i data-lucide="hand-coins"></i><span>Registrar sinal</span></button>`
+    : '';
+  // Quem envia por e-mail ou telefone não passa pelo botão do WhatsApp, mas a
+  // proposta saiu do mesmo jeito: o botão registra isso sem abrir o formulário.
+  const sentButton = actionQuoteId && detailQuote?.status === 'draft'
+    ? `<button class="client-action-button quote-deposit-action" type="button" data-quote-sent-row="${actionQuoteId}"><i data-lucide="send"></i><span>Marcar como enviado</span></button>`
+    : '';
+  // Com o prazo vencendo, vencido ou já cobrado, o lembrete entra na fila de
+  // ações do orçamento: o sinal em aberto é a única coisa que pode ser feita
+  // com a proposta nesse momento, e o botão some assim que o lembrete sai.
+  const reminderButton = actionQuoteId && quoteReminderEligible(detailQuote) && daysUntilLocalDate(detailQuote?.valid_until) !== null
+    ? `<button class="client-action-button quote-reminder-action" type="button" data-quote-reminder-detail="${actionQuoteId}"><i data-lucide="bell-ring"></i><span>Lembrete de sinal</span></button>`
+    : '';
+  detailViewContent.innerHTML = actionQuoteId
+    ? `${content}<div class="quote-saved-actions">${sentButton}${depositButton}${reminderButton}<button class="client-action-button" type="button" data-quote-pdf-row="${actionQuoteId}"><i data-lucide="file-text"></i><span>Ver PDF</span></button><button class="client-action-button" type="button" data-quote-share-row="${actionQuoteId}"><i data-lucide="share-2"></i><span>Compartilhar</span></button></div>`
+    : content;
+  // Ficha aberta por cima de outra: o cardápio dentro da ficha do serviço ou do
+  // orçamento. Quem fica embaixo continua na tela e o X volta para ele. Reabrir a
+  // mesma ficha, como depois de marcar o orçamento como enviado, troca no lugar
+  // e não empilha, senão o X voltaria para uma cópia dela mesma.
+  if (detailTarget && (detailTarget.type !== type || detailTarget.id !== id)) {
+    detailStack.push(detailTarget);
+    // Uma camada a mais na pilha de telas, para o X e o botão de voltar fecharem
+    // uma camada por vez em vez de a tela inteira.
+    window.plenitudeNav?.layer(detailView);
+  }
+  detailTarget = { type, id };
+  detailView.hidden = false;
+  lucide.createIcons();
+}
+
+// O X, o clique no fundo e o Esc. Tiram a camada da pilha de telas junto, porque
+// nenhum dos três passa pela navegação.
+function closeDetail() {
+  window.plenitudeNav?.unlayer(detailView);
+  closeDetailLayer();
+}
+
+// Fecha uma camada da ficha, seja pelo X, seja pelo botão de voltar. No segundo
+// caso a entrada da camada já saiu da pilha, porque foi o próprio botão de voltar
+// que tirou.
+function closeDetailLayer() {
+  const previous = detailStack.pop();
+  if (!previous) {
+    hideDetail();
+    return;
+  }
+  // A ficha de baixo é a que está na tela a partir de agora, e ela é redesenhada
+  // a partir do seu par, e não de uma cópia do HTML, para que quem volta leia os
+  // dados do momento e não o que estava na tela antes. O alvo é apontado para ela
+  // antes do desenho porque é ele que decide se abrir uma ficha empilha outra ou
+  // apenas troca o conteúdo, e aqui é a mesma ficha voltando.
+  detailTarget = previous;
+  openDetail(previous.type, previous.id);
+}
+
+// Fecha a ficha e tudo o que ela tinha por baixo. É o que as ações que abrem
+// outra tela usam: fechar só uma camada deixaria a ficha de baixo aparecendo por
+// baixo do painel que vem a seguir.
+function hideDetail() {
+  detailStack.length = 0;
+  detailTarget = null;
+  window.plenitudeNav?.unlayerAll(detailView);
+  detailView.hidden = true;
+  detailViewContent.innerHTML = '';
+}
+
+// Um listener no documento inteiro resolve quatro coisas que vivem em telas
+// diferentes: o clique no card (em qualquer lista), o clique na miniatura de
+// imagem (em qualquer card), a etiqueta de cardápio que aparece dentro da
+// ficha e do seletor de orçamento, e a etiqueta de item de estoque que aparece
+// na ficha do serviço e no formulário dele. Delegar evita ligar isso a cada
+// lista que é re-renderizada.
+document.addEventListener('click', (event) => {
+  // Chips de cardapio: abrem o detail do cardapio. Precisa de um handler
+  // proprio porque o guard abaixo ignora cliques em botoes.
+  const menuChip = event.target.closest('[data-open-menu-detail]');
+  if (menuChip) {
+    openDetail('menu', menuChip.dataset.openMenuDetail);
+    return;
+  }
+  // Mesma coisa para o item de estoque, que é a etiqueta que o formulário de
+  // serviço e a ficha dele usam para mostrar o que o serviço consome.
+  const itemChipButton = event.target.closest('[data-open-inventory-detail]');
+  if (itemChipButton) {
+    openDetail('inventory', itemChipButton.dataset.openInventoryDetail);
+    return;
+  }
+  const imageButton = event.target.closest('[data-view-image]');
+  if (imageButton) {
+    openImageViewer(imageButton.dataset.viewImage);
+    return;
+  }
+  // O guarda vem depois dos dois botões acima e antes do card: sem ele, clicar
+  // em qualquer botão dentro de um card abriria a ficha junto com a ação. É por
+  // isso que a etiqueta de cardápio — que também é um botão — precisou ser
+  // tratada antes dele.
+  if (event.target.closest('button, a, input, select, textarea')) return;
+  const detailTrigger = event.target.closest('[data-detail-type]');
+  if (detailTrigger) openDetail(detailTrigger.dataset.detailType, detailTrigger.dataset.detailId);
+});
+document.querySelector('[data-close-image-viewer]').addEventListener('click', closeImageViewer);
+imageViewer.addEventListener('click', (event) => { if (event.target === imageViewer) closeImageViewer(); });
+// O visualizador e a ficha fecham no Esc, e na ordem em que foram registrados:
+// o visualizador primeiro, porque ele é aberto por cima da ficha e é ele que
+// precisa ceder o lugar. Uma tela com botão de fechar não entra aqui — quem
+// fecha essas telas é o navigation.js, pelo X ou pelo botão de voltar.
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeImageViewer(); });
+document.querySelector('[data-close-detail]').addEventListener('click', closeDetail);
+// Clicar no fundo da ficha a fecha, como o X. Este listener e o de baixo
+// escutam o mesmo elemento de propósito: o de cima age no fundo (quando o
+// alvo É a section) e o de baixo age nos botões do orçamento. Separá-los deixa
+// cada um legível e o retorno do primeiro não engole o clique do segundo, que
+// acontece nos botões e nunca no fundo.
+detailView.addEventListener('click', (event) => { if (event.target === detailView) closeDetail(); });
+detailView.addEventListener('click', async (event) => {
+  const depositButton = event.target.closest('[data-quote-deposit-row]');
+  const sentButton = event.target.closest('[data-quote-sent-row]');
+  const pdfButton = event.target.closest('[data-quote-pdf-row]');
+  const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
+  const shareButton = event.target.closest('[data-quote-share-row]');
+  const reminderButton = event.target.closest('[data-quote-reminder-detail]');
+  // A tela é reaberta porque o status mudou e o botão some: quem marcou como
+  // enviado precisa ver o orçamento no novo estado, não a tela antiga.
+  if (sentButton) { await markQuoteAsSent(sentButton.dataset.quoteSentRow); await openDetail('quote', sentButton.dataset.quoteSentRow); return; }
+  if (reminderButton) { await sendQuoteExpiryReminder(reminderButton.dataset.quoteReminderDetail); await openDetail('quote', reminderButton.dataset.quoteReminderDetail); return; }
+  // A ficha sai inteira, e não uma camada: o painel do sinal é outra tela, e a
+  // ficha de baixo ficaria aparecendo por baixo dele.
+  if (depositButton) { hideDetail(); await openQuoteDepositPanel(depositButton.dataset.quoteDepositRow); return; }
+  if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
+  if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
+  if (shareButton) { await shareQuote(shareButton.dataset.quoteShareRow); }
+});
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeDetail(); });
+
+function setQuoteFeedback(message, isError = false) {
+  quoteFeedback.textContent = message;
+  quoteFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+/* ========================================================================== */
+/* ORÇAMENTOS — REGRAS DE NEGÓCIO                                             */
+/* O status vive em inglês no banco porque é o que as funções e a trigger       */
+/* esperam; a tela fala português. O total nunca é calculado aqui para gravar:   */
+/* quem recalcula é a trigger recalculate_quote_totals, a cada linha de          */
+/* quote_items alterada.                                                      */
+/* ========================================================================== */
+// Rótulo do status. O banco guarda em inglês porque é o que as funções e a
+// trigger esperam; a tela fala português.
+function quoteStatusLabel(status) {
+  return { draft: 'Rascunho', sent: 'Enviado', confirmed: 'Confirmado', cancelled: 'Cancelado', expired: 'Expirado' }[status] || status;
+}
+
+// Prazo padrão de uma proposta: 20 dias contados da emissão.
+const QUOTE_VALIDITY_DAYS = 20;
+// Sinal padrão de proposta nova: 30% é a condição que a empresa usa por padrão,
+// vir preenchido evita que o orçamento nasce sem nenhuma cobrança definida.
+const QUOTE_DEFAULT_DEPOSIT_PERCENT = 30;
+
+// Hoje no fuso de quem está usando, e não no do servidor. `toISOString()` cortaria
+// o dia: quem abre o app no Brasil de manhã veria a data de ontem.
+function localToday() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+// Toda data que vem do Postgres é uma string 'YYYY-MM-DD', e o JavaScript lê
+// esse formato como UTC: `new Date('2026-05-01')` é meia-noite UTC e, no
+// Brasil, o dia anterior. O T12:00:00 joga a data para o meio-dia local, longe
+// de qualquer lado da linha do dia, e é por isso que ele aparece em todo o
+// cálculo de prazo deste arquivo.
+function addDaysToLocalDate(value, days) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+// Quantos dias faltam até a data, com o mesmo T12:00:00 acima. O `slice(0, 10)`
+// descarta o resto porque a coluna também pode vir como timestamptz completo e
+// o Math.round protege a divisão dos milissegundos exatos do meio-dia contra
+// diferença de meio segundo. Devolve null — e não -1 — quando não há data, que
+// é o estado em que o orçamento simplesmente não expira.
+function daysUntilLocalDate(value) {
+  if (!value) return null;
+  const target = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date(`${localToday()}T12:00:00`);
+  return Math.round((target - today) / 86400000);
+}
+
+// Um orçamento só expira quando foi enviado e ainda não recebeu o sinal inteiro.
+// Rascunho é material de trabalho interno; confirmado e cancelado não vencem.
+// O nome diz "exige sinal" e a resposta é se existe valor a cobrar. Os outros
+// dois lados da regra moram em quoteAwaitingClient e nos status que o banco
+// considera; aqui a pergunta é só se há dinheiro em jogo.
+function quoteRequiresSignal(quote) {
+  return Number(quote?.deposit_amount || 0) > 0;
+}
+
+// A tolerância de um centavo é para o ponto flutuante: o dinheiro vem do
+// Postgres como numeric em string e o JS soma em float, então 300,00 pode
+// chegar como 299,9999999. Sem a margem, um sinal pago por inteiro ficaria
+// "faltando R$ 0,01", a etiqueta nunca ficaria verde e o orçamento não se
+// confirmaria sozinho.
+function quoteSignalComplete(quote) {
+  return quoteRequiresSignal(quote) && Number(quote?.deposited_amount || 0) + 0.01 >= Number(quote.deposit_amount);
+}
+
+// Enviado é o estado em que a proposta está na mão do cliente esperando resposta.
+// É o único estado em que o prazo e o sinal viram cobrança de verdade, e é
+// nele que o banco também age: quotes_expiring_idx, refresh_quote_expiry e
+// expire_overdue_quotes (migration 020) só olham o que está 'sent'. Enquanto o
+// orçamento é rascunho ninguém recebeu nada, então não há o que cobrar.
+function quoteAwaitingClient(quote) {
+  return quote?.status === 'sent' || quote?.status === 'expired';
+}
+
+// Frase curta que resume a situação do sinal, usada na lista, no detalhe, no PDF
+// e na mensagem: um texto só evita cada tela inventar sua própria redação.
+function quoteValidityNote(quote) {
+  if (!quote) return '';
+  if (quote.status === 'confirmed') {
+    return quoteSignalComplete(quote)
+      ? `Sinal de ${formatCurrency(quote.deposited_amount)} recebido`
+      : 'Confirmado';
+  }
+  // Rascunho não tem prazo correndo: mostrar "falta o sinal" nele seria cobrar
+  // algo que o cliente nem sabe que existe.
+  if (quote.status === 'draft') return 'Não enviado';
+  if (!quoteRequiresSignal(quote)) return 'Sem sinal';
+  const remaining = Math.max(0, Number(quote.deposit_amount) - Number(quote.deposited_amount || 0));
+  const days = daysUntilLocalDate(quote.valid_until);
+  const deadline = quote.valid_until ? ` até ${formatDateBR(quote.valid_until)}` : '';
+  if (days !== null && days < 0) return `Vencido${deadline} · falta ${formatCurrency(remaining)}`;
+  if (days === 0) return `Vence hoje${deadline} · falta ${formatCurrency(remaining)}`;
+  if (days !== null && days <= 5) return `Vence em ${days} ${days === 1 ? 'dia' : 'dias'}${deadline} · falta ${formatCurrency(remaining)}`;
+  return `Sinal de ${formatCurrency(quote.deposit_amount)}${deadline} · falta ${formatCurrency(remaining)}`;
+}
+
+// A cor da etiqueta de validade. Confirmado é sempre "feito", mesmo com sinal
+// parcial: o que fechou o contrato foi a reserva da data, não o valor integral.
+function quoteValidityTone(quote) {
+  if (!quote || quote.status === 'confirmed') return 'done';
+  // Nem urgente nem atrasado: ninguém foi cobrado de nada ainda.
+  if (quote.status === 'draft' || !quoteRequiresSignal(quote)) return 'none';
+  if (quote.status === 'expired' || quote.status === 'cancelled') return 'late';
+  const days = daysUntilLocalDate(quote.valid_until);
+  if (days !== null && days < 0) return 'late';
+  if (days !== null && days <= 5) return 'soon';
+  return 'pending';
+}
+
+// A lista é agrupada por cliente em vez de vir solta do banco: orçamento é
+// sempre de alguém, e quem abre a tela para cobrar quer ver as propostas da
+// mesma pessoa juntas. A ordem dentro do grupo é a ordem do banco (mais
+// recentes primeiro), porque o `grouped` vai guardando na ordem em que chegam.
+function renderQuotes() {
+  const term = quoteSearch.value.trim().toLowerCase();
+  const status = quoteStatusFilter.value;
+  const visibleQuotes = quotes.filter((quote) => {
+    const content = Object.values(quote).map((value) => String(value ?? '')).join(' ').toLowerCase();
+    return content.includes(term) && (!status || quote.status === status);
+  });
+  if (!visibleQuotes.length) {
+    quoteList.innerHTML = `<div class="empty-clients">${term || status ? 'Nenhum orçamento encontrado.' : 'Ainda não há orçamentos cadastrados.'}</div>`;
+    return;
+  }
+  const grouped = {};
+  visibleQuotes.forEach((q) => {
+    const clientName = q.clients?.name || 'Sem cliente';
+    if (!grouped[clientName]) grouped[clientName] = [];
+    grouped[clientName].push(q);
+  });
+  let html = '';
+  for (const [clientName, groupQuotes] of Object.entries(grouped)) {
+    html += `<div style="margin-bottom:6px;padding:0 4px;"><strong style="font-size:9px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">${escapeHTML(clientName)}</strong></div>`;
+    for (const quote of groupQuotes) {
+      // A linha de validade só aparece quando há algo que a etiqueta de status não
+      // diz sozinha: o sinal recebido, o prazo correndo ou o sinal configurado de
+      // um rascunho que ainda não saiu. Rascunho sem sinal é só "Rascunho".
+      const hasValidityNote = quoteRequiresSignal(quote) || quoteAwaitingClient(quote) || quote.status === 'confirmed';
+      const tone = quoteValidityTone(quote);
+      const validity = hasValidityNote ? `<span class="quote-validity-tag ${tone}"><i data-lucide="${tone === 'done' ? 'circle-check' : tone === 'late' ? 'triangle-alert' : 'clock'}"></i>${escapeHTML(quoteValidityNote(quote))}</span>` : '';
+      // O botão do lembrete aparece só quando a cobrança serve a algo: sinal em
+      // aberto, prazo vencido ou a vencer, e ninguém cobrou ainda. Fora disso
+      // ele seria um botão sem ação útil, só um sino a mais na linha.
+      const reminderButton = quoteReminderEligible(quote) && daysUntilLocalDate(quote.valid_until) !== null
+        ? `<button class="client-action quote-reminder-action" type="button" data-quote-reminder-row="${quote.id}" aria-label="Enviar lembrete de sinal de ${escapeHTML(quote.name)}" title="Lembrete de sinal"><i data-lucide="bell-ring"></i></button>`
+        : '';
+      // O total ao lado do nome vem do banco, já recalculado pela trigger
+      // recalculate_quote_totals a cada linha de quote_items. Somar as linhas
+      // aqui mostraria um número diferente do do PDF e do Financeiro, e é a
+      // diferença entre duas telas do mesmo dinheiro que gera dúvida na hora
+      // de fechar a proposta.
+      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button>${reminderButton}<button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="quote" data-duplicate-id="${quote.id}" aria-label="Duplicar ${escapeHTML(quote.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+    }
+  }
+  quoteList.innerHTML = html;
+  refreshQuoteDepositButtons();
+  renderQuoteReminders();
+  renderQuoteAlerts();
+  lucide.createIcons();
+}
+
+// Colunas usadas pelas telas de orçamento, listas uma vez para o select não
+// divergir entre a lista, o detalhe, o PDF e a mensagem.
+const QUOTE_COLUMNS = 'id, quote_number, name, client_id, venue, event_date, event_time, status, notes, subtotal, discount, additional_fee, total, valid_until, deposit_percent, deposit_amount, deposited_amount, confirmed_by_deposit, expiry_reminder_sent_at, reminder_message';
+
+// Recarrega a lista de orçamentos. Roda em três lugares diferentes — o login,
+// a abertura da tela e o evento do realtime — porque o sino do topo e o card do
+// módulo precisam do número mesmo com a tela fechada.
+async function loadQuotes() {
+  setQuoteFeedback('Carregando orçamentos...');
+  // A expiração é derivada da data de corte, então é resolvida aqui em vez de
+  // depender de um job no servidor: quem abrir a lista já vê o estado real.
+  await supabaseClient.rpc('expire_overdue_quotes');
+  // O WhatsApp entra na lista porque o lembrete de sinal é decidido aqui, na
+  // tela de orçamentos: sem o contato no mesmo lugar que mostra quem está
+  // vencendo amanhã, a cobrança dependeria de abrir o orçamento um por um.
+  const { data, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name, whatsapp)`).order('created_at', { ascending: false });
+  if (error) {
+    setQuoteFeedback(`Não foi possível carregar os orçamentos: ${error.message}`, true);
+    quoteList.innerHTML = '';
+    // Sem lista confiável o aviso também some: mostrar "vence em breve" a partir
+    // de um dado que não veio do banco é pior do que não mostrar nada.
+    quotes = [];
+    renderQuotes();
+    return;
+  }
+  quotes = data || [];
+  await loadQuoteMessageTemplates();
+  setQuoteFeedback(`${quotes.length} ${quotes.length === 1 ? 'orçamento cadastrado' : 'orçamentos cadastrados'}`);
+  renderQuotes();
+}
+
+/* ========================================================================== */
+/* ORÇAMENTO EM PDF E ENVIO                                                  */
+/* O PDF nasce da impressão do navegador: usa as fontes e as cores reais do   */
+/* app e o texto continua selecionável. Tudo é montado na hora a partir do     */
+/* banco, então o documento nunca sai desatualizado em relação ao orçamento.   */
+/* ========================================================================== */
+const quotePrint = document.querySelector('#quote-print');
+const quoteSavedPanel = document.querySelector('#quote-saved-panel');
+const quoteSavedFeedback = document.querySelector('#quote-saved-feedback');
+const quoteSavedTitle = document.querySelector('#quote-saved-title');
+let quoteSavedId = '';
+
+// Erro de PDF, sinal e compartilhamento acontece com o painel pós-salvo na frente
+// da tela, então a mensagem vai para o painel que o usuário está vendo. Sem isso o
+// texto cai no feedback da lista, que fica atrás do overlay, e o clique parece não
+// ter feito nada.
+function setQuoteOutputFeedback(message, isError = false) {
+  if (!quoteSavedPanel.hidden) {
+    quoteSavedFeedback.textContent = message;
+    quoteSavedFeedback.style.color = isError ? '#a0483d' : '';
+    return;
+  }
+  setQuoteFeedback(message, isError);
+}
+
+// Data no formato brasileiro, com o mesmo T12:00:00 dos cálculos de prazo:
+// 'YYYY-MM-DD' sozinho é interpretado como UTC e viraria o dia anterior.
+function formatDateBR(value) {
+  if (!value) return '';
+  const date = new Date(`${String(value).slice(0, 10)}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('pt-BR');
+}
+
+// Busca o orcamento e seus itens direto do banco, para o PDF e a mensagem
+// refletirem o estado mais recente e nao a copia guardada em memoria.
+async function loadQuoteForOutput(quoteId) {
+  const { data: quote, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name, whatsapp, email)`).eq('id', quoteId).single();
+  if (error) throw new Error(error.message);
+  const { data: items, error: itemsError } = await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quoteId).order('sort_order');
+  if (itemsError) throw new Error(itemsError.message);
+  if (!menus.length) await loadMenus();
+  // Cardapios ficam agrupados pelos servicos que participam deles, em vez de
+  // uma lista solta: no PDF e na mensagem cada servico mostra os seus.
+  const menusByService = groupMenusByService(menus, (items || []).map((item) => item.service_id));
+  return { quote, items: items || [], menusByService };
+}
+
+function renderQuotePrint({ quote, items, menusByService }) {
+  const eventLine = [formatDateBR(quote.event_date), quote.event_time ? String(quote.event_time).slice(0, 5) : ''].filter(Boolean).join(' · ');
+  const rows = items.map((item) => {
+    const linked = menusByService.get(item.service_id) || [];
+    // O cabeçalho diz de quem são os cardápios e a lista fica recuada em relação
+    // ao nome do serviço: no PDF não há detalhe para abrir, então a associação
+    // entre o serviço e o que o acompanha precisa ficar evidente na leitura.
+    // Dentro do bloco, as categorias separam o que compõe o cardápio do serviço.
+    const menusCell = linked.length
+      ? `<span class="pd-item-menus"><span class="pd-item-menus-title">Cardápios deste serviço</span>${groupMenusByCategory(linked).map((group) => `
+          <span class="pd-item-menu-group">
+            <span class="pd-item-menu-group-label">${escapeHTML(group.name)}</span>
+            ${group.menus.map((menu) => `<span class="pd-item-menu">${escapeHTML(menu.name)}</span>`).join('')}
+          </span>`).join('')}</span>`
+      : '';
+    return `<tr><td><span class="pd-item-name">${escapeHTML(item.description || 'Serviço')}</span>${menusCell}</td><td class="pd-num">${formatNumber(item.quantity)}</td><td class="pd-num">${formatCurrency(item.unit_price)}</td><td class="pd-num">${formatCurrency(Number(item.quantity) * Number(item.unit_price))}</td></tr>`;
+  }).join('');
+  // O sinal aparece uma vez só, na condição de validade no fim do documento. No
+  // cabeçalho ele competia com local e data, e na conta ele se confundia com
+  // mais uma parcela do total.
+  //
+  // O total em destaque vem do que o banco recalculou, e não da soma da coluna:
+  // é o mesmo número que a tela de Financeiro mostra do mesmo orçamento.
+  quotePrint.innerHTML = `
+    <header class="pd-head">
+      <div class="pd-brand"><span class="pd-brand-mark">PR</span><span><span class="pd-brand-name">Plenitude</span><span class="pd-brand-sub">Realizações</span></span></div>
+      <div class="pd-meta"><span class="pd-number-label">Orçamento</span><span class="pd-number">#${String(quote.quote_number ?? 0).padStart(4, '0')}</span><span class="pd-status ${escapeHTML(quote.status)}">${quoteStatusLabel(quote.status)}</span></div>
+    </header>
+    <h1 class="pd-title">${escapeHTML(quote.name)}</h1>
+    <div class="pd-blocks">
+      <div class="pd-block"><span class="pd-block-label">Cliente</span><span class="pd-block-value">${escapeHTML(quote.clients?.name || 'Sem cliente')}</span>${quote.clients?.whatsapp ? `<span class="pd-block-line">${escapeHTML(quote.clients.whatsapp)}</span>` : ''}${quote.clients?.email ? `<span class="pd-block-line">${escapeHTML(quote.clients.email)}</span>` : ''}</div>
+      <div class="pd-block"><span class="pd-block-label">Data do evento</span><span class="pd-block-value">${escapeHTML(eventLine || 'A definir')}</span>${quote.event_time ? '' : ''}</div>
+      <div class="pd-block"><span class="pd-block-label">Local</span><span class="pd-block-value">${escapeHTML(quote.venue || 'A definir')}</span></div>
+    </div>
+    <table class="pd-items"><thead><tr><th>Serviço</th><th class="pd-num">Qtd.</th><th class="pd-num">Valor unit.</th><th class="pd-num">Total</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="pd-totals"><div class="pd-totals-box">
+      <div class="pd-total-line"><span>Subtotal</span><strong>${formatCurrency(quote.subtotal)}</strong></div>
+      ${Number(quote.discount) > 0 ? `<div class="pd-total-line"><span>Desconto</span><strong>- ${formatCurrency(quote.discount)}</strong></div>` : ''}
+      ${Number(quote.additional_fee) > 0 ? `<div class="pd-total-line"><span>Taxa adicional</span><strong>+ ${formatCurrency(quote.additional_fee)}</strong></div>` : ''}
+      <div class="pd-total-line pd-grand"><span>Total</span><strong>${formatCurrency(quote.total)}</strong></div>
+    </div></div>
+    ${Number(quote.deposit_amount) > 0 && quote.status !== 'confirmed' ? `<div class="pd-signal-note"><span class="pd-notes-label">Condição de validade</span><span class="pd-notes-text">Esta proposta é válida até <strong>${escapeHTML(formatDateBR(quote.valid_until) || 'data a definir')}</strong>. O serviço fica reservado mediante o pagamento de ${formatCurrency(quote.deposit_amount)} (${formatNumber(quote.deposit_percent)}% do total). Sem o pagamento do sinal até essa data, a proposta perde a validade e a data do evento é liberada para outros clientes.</span></div>` : ''}
+    ${quote.notes ? `<div class="pd-notes"><span class="pd-notes-label">Observações</span><span class="pd-notes-text">${escapeHTML(quote.notes)}</span></div>` : ''}
+    <footer class="pd-foot"><span>Plenitude Realizações</span><span>Emitido em ${formatDateBR(new Date().toISOString())}</span></footer>`;
+}
+
+// Quantidades, percentuais e valores de money fora do formato de moeda: separado
+// de formatCurrency porque "R$ 1" no meio de uma quantidade vira ruído tanto na
+// linha do PDF quanto na mensagem do WhatsApp.
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+async function printQuotePdf(quoteId) {
+  try {
+    const payload = await loadQuoteForOutput(quoteId);
+    renderQuotePrint(payload);
+    // As fontes do Google chegam por rede: sem esta espera o PDF sairia no fallback.
+    if (document.fonts?.ready) await document.fonts.ready;
+    window.print();
+  } catch (error) {
+    setQuoteFeedback(`Não foi possível gerar o PDF: ${error.message}`, true);
+  }
+}
+
+// O texto do orçamento é montado aqui e usado no compartilhamento nativo e na
+// área de transferência. O botão do WhatsApp abre a conversa sem texto: quem
+// envia digita no próprio aparelho. O teto é o de URL do navegador, e é a razão
+// de os cardápios entrarem aqui só como nome, separados por vírgula.
+function quoteWhatsappText({ quote, items, menusByService }) {
+  const lines = [`*ORÇAMENTO #${String(quote.quote_number ?? 0).padStart(4, '0')}*`, `*${quote.name}*`, ''];
+  lines.push(`Olá, ${quote.clients?.name || 'tudo bem'}!`.trim());
+  lines.push('Segue a proposta da Plenitude Realizações:');
+  lines.push('');
+  // Mesmo agrupamento do PDF: cada servico lista os cardapios que o acompanham.
+  items.forEach((item) => {
+    lines.push(`• ${item.description || 'Serviço'} — ${formatNumber(item.quantity)} × ${formatCurrency(item.unit_price)} = ${formatCurrency(Number(item.quantity) * Number(item.unit_price))}`);
+    const linked = menusByService.get(item.service_id) || [];
+    if (linked.length) lines.push(`   _Cardápio: ${linked.map((menu) => menu.name).join(', ')}_`);
+  });
+  lines.push('');
+  lines.push(`*Total: ${formatCurrency(quote.total)}*`);
+  const details = [formatDateBR(quote.event_date), quote.venue].filter(Boolean);
+  if (details.length) lines.push(`Evento: ${details.join(' · ')}`);
+  // A validade e o sinal vão na mensagem porque e a condicao que faz a proposta
+  // valer: e dela que sai a confirmacao do contrato.
+  if (Number(quote.deposit_amount) > 0) {
+    lines.push('');
+    if (quote.status === 'confirmed') {
+      lines.push(`✅ *Sinal recebido:* ${formatCurrency(quote.deposited_amount)} de ${formatCurrency(quote.deposit_amount)} (${formatNumber(quote.deposit_percent)}%)`);
+    } else {
+      lines.push(`*Para reservar a data:* sinal de ${formatCurrency(quote.deposit_amount)} (${formatNumber(quote.deposit_percent)}% do total)`);
+      if (quote.valid_until) lines.push(`*Proposta válida até ${formatDateBR(quote.valid_until)}.*`);
+    }
+  }
+  if (quote.notes) lines.push('', `Observações: ${quote.notes}`);
+  lines.push('', 'Enviado por Plenitude Realizações');
+  return lines.join('\n');
+}
+
+// Marcar como enviado é registrar que a proposta saiu daqui. Sem isso ninguém
+// precisa lembrar de abrir o formulário depois de mandar: o envio é o momento em
+// que o prazo começa a valer, e é o estado que o banco usa para expirar o que
+// ficou sem resposta. Confirmed, cancelled e sent não mudam por causa de um
+// reenvio, e expired fica de fora de propósito: voltar dele é estender o prazo,
+// não reenviar.
+async function markQuoteAsSent(quoteId) {
+  const quote = quotes.find((item) => item.id === quoteId);
+  if (!quote || quote.status !== 'draft') return;
+  // O formulário exige data de validade para enviar, mas um rascunho pode ter
+  // sido salvo com sinal e sem prazo. Aplicar o prazo padrão é o mesmo que a
+  // migration 020 fez no backfill dos orçamentos enviados sem validade.
+  const patch = { status: 'sent' };
+  if (!quote.valid_until && quoteRequiresSignal(quote)) {
+    patch.valid_until = addDaysToLocalDate(localToday(), QUOTE_VALIDITY_DAYS);
+  }
+  const { error } = await supabaseClient.from('quotes').update(patch).eq('id', quoteId);
+  if (error) {
+    setQuoteOutputFeedback(`Proposta enviada, mas não foi possível marcar como enviada: ${error.message}`, true);
+    return false;
+  }
+  await loadQuotes();
+  showToast('Orçamento marcado como enviado');
+  return true;
+}
+
+async function sendQuoteOnWhatsapp(quoteId) {
+  try {
+    const payload = await loadQuoteForOutput(quoteId);
+    const number = whatsappNumber(payload.quote.clients?.whatsapp);
+    if (!number) {
+      setQuoteOutputFeedback('Cadastre o WhatsApp do cliente para enviar.', true);
+      return;
+    }
+    window.open(`https://wa.me/${number}`, '_blank', 'noopener,noreferrer');
+    await markQuoteAsSent(quoteId);
+  } catch (error) {
+    setQuoteOutputFeedback(`Não foi possível preparar o envio: ${error.message}`, true);
+  }
+}
+
+// Compartilhar usa a API nativa do celular e, onde ela não existe (computador
+// antigo, navegador sem Web Share), cai para a área de transferência. Nos dois
+// casos o orçamento é marcado como enviado: a proposta saiu daqui, e é isso que
+// faz o prazo começar a valer.
+async function shareQuote(quoteId) {
+  try {
+    const payload = await loadQuoteForOutput(quoteId);
+    const shareData = { title: `Orçamento #${String(payload.quote.quote_number ?? 0).padStart(4, '0')} — ${payload.quote.name}`, text: quoteWhatsappText(payload) };
+    if (navigator.share) {
+      await navigator.share(shareData);
+    } else {
+      await navigator.clipboard.writeText(shareData.text);
+      setQuoteOutputFeedback('Orçamento copiado. Cole no WhatsApp do cliente.');
+    }
+    await markQuoteAsSent(quoteId);
+  } catch (error) {
+    if (error?.name === 'AbortError') return;
+    setQuoteOutputFeedback('Não foi possível compartilhar o orçamento.', true);
+  }
+}
+
+// O painel pós-salvo mostra o que dá para fazer com a proposta que acabou de
+// sair. Ele guarda o id em `quoteSavedId` em vez de receber por argumento em
+// cada botão, porque os botões vivem no HTML e são lidos por atributo.
+function openQuoteSavedPanel(quoteId, message) {
+  quoteSavedId = quoteId;
+  quoteSavedFeedback.textContent = '';
+  quoteSavedTitle.textContent = message;
+  quoteSavedPanel.hidden = false;
+  refreshQuoteDepositButtons();
+}
+
+document.querySelectorAll('[data-close-quote-saved]').forEach((button) => button.addEventListener('click', () => { quoteSavedPanel.hidden = true; quoteSavedId = ''; }));
+// Um listener para os quatro botões do painel. Todos leem o mesmo quoteSavedId,
+// porque o painel só existe para um orçamento por vez.
+quoteSavedPanel.addEventListener('click', (event) => {
+  if (event.target === quoteSavedPanel) { quoteSavedPanel.hidden = true; quoteSavedId = ''; }
+  if (event.target.closest('[data-quote-pdf]')) printQuotePdf(quoteSavedId);
+  if (event.target.closest('[data-quote-whatsapp]')) sendQuoteOnWhatsapp(quoteSavedId);
+  if (event.target.closest('[data-quote-share]')) shareQuote(quoteSavedId);
+  if (event.target.closest('[data-quote-deposit]')) openQuoteDepositPanel(quoteSavedId);
+});
+
+// O botão de sinal só aparece onde faz sentido: quando existe valor a cobrar e
+// o orçamento ainda não foi confirmado pelo pagamento.
+// O botão de sinal está no markup das telas e o que decide se ele serve muda
+// fora delas: registrar um sinal, estornar, cancelar o orçamento ou excluir a
+// linha mudam `quotes` sem redesenhar o botão. Por isso a visibilidade é
+// recalculada aqui e o botão nunca decide sozinho.
+function refreshQuoteDepositButtons() {
+  document.querySelectorAll('[data-quote-deposit]').forEach((button) => {
+    const quote = quotes.find((item) => item.id === (button.dataset.quoteDepositId || quoteSavedId));
+    const visible = Boolean(quote) && Number(quote.deposit_amount) > 0 && quote.status !== 'cancelled';
+    button.hidden = !visible;
+  });
+}
+
+// Painel do sinal: mostra o que era, o que já entrou e o que falta, para o
+// registro ser uma conferência e não um cálculo no olho.
+const quoteDepositPanel = document.querySelector('#quote-deposit-panel');
+const quoteDepositForm = document.querySelector('#quote-deposit-form');
+const quoteDepositHistory = document.querySelector('#quote-deposit-history');
+const quoteDepositFeedback = document.querySelector('#quote-deposit-feedback');
+
+/* ========================================================================== */
+/* SINAL DO ORÇAMENTO                                                          */
+/* Registrar sinal não é um insert: é a função register_quote_deposit, que      */
+/* grava a linha, recalcula quanto falta e confirma o orçamento quando o sinal   */
+/* fecha. É a mesma função que cria o recebimento espelhado na tela de          */
+/* Financeiro — por isso um recebimento vindo do sinal é bloqueado lá, para o   */
+/* mesmo dinheiro não entrar duas vezes.                                        */
+/* ========================================================================== */
+// O painel do sinal lê do banco, e não da lista em memória: o total pago é a
+// soma das linhas não estornadas, e é essa soma que o Financeiro também faz.
+// `voided_at` é o que separa um sinal válido de um estornado — a linha continua
+// no histórico em vez de sumir.
+async function loadQuoteDeposit(quoteId) {
+  const { data: quote, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name)`).eq('id', quoteId).single();
+  if (error) throw new Error(error.message);
+  const { data: deposits } = await supabaseClient.from('quote_deposits').select('id, amount, paid_on, payment_method, notes, voided_at, posted_at').eq('quote_id', quoteId).order('paid_on', { ascending: false });
+  return { quote, deposits: deposits || [] };
+}
+
+// O histórico do sinal. Um sinal estornado continua na lista, marcado, porque
+// o registro do que foi recebido e devolvido faz parte da conferência: apagar a
+// linha esconderia que houve um estorno.
+function renderQuoteDepositHistory(deposits) {
+  if (!deposits.length) {
+    quoteDepositHistory.innerHTML = '<p class="quote-deposit-history-empty">Nenhum sinal registrado ainda.</p>';
+    return;
+  }
+  quoteDepositHistory.innerHTML = `<span class="quote-deposit-history-title">Sinais registrados</span>${deposits.map((deposit) => `<div class="quote-deposit-row ${deposit.voided_at ? 'voided' : ''}">
+    <div><strong>${formatCurrency(deposit.amount)}</strong><span>${formatDateBR(deposit.paid_on)}${deposit.notes ? ` · ${escapeHTML(deposit.notes)}` : ''}</span></div>
+    ${deposit.voided_at ? '<span class="quote-deposit-void-tag">Estornado</span>' : `<button class="client-action" type="button" data-void-quote-deposit="${deposit.id}" aria-label="Estornar sinal de ${formatCurrency(deposit.amount)}" title="Estornar"><i data-lucide="rotate-ccw"></i></button>`}
+  </div>`).join('')}`;
+  window.lucide?.createIcons();
+}
+
+// Abre o painel já com o valor restante preenchido. Quem entra aqui para pagar
+// não quer fazer conta, e o campo de valor é o único que precisa de atenção —
+// data e forma de pagamento já vêm com o padrão do dia.
+async function openQuoteDepositPanel(quoteId) {
+  if (!quoteId || !quoteDepositPanel) return;
+  try {
+    const { quote, deposits } = await loadQuoteDeposit(quoteId);
+    const paid = deposits.filter((deposit) => !deposit.voided_at).reduce((sum, deposit) => sum + Number(deposit.amount), 0);
+    const required = Number(quote.deposit_amount || 0);
+    const remaining = Math.max(0, required - paid);
+    document.querySelector('#quote-deposit-quote-id').value = quote.id;
+    document.querySelector('#quote-deposit-context').textContent = `${quote.name} · ${quote.clients?.name || 'Sem cliente'} · total ${formatCurrency(quote.total)}`;
+    document.querySelector('#quote-deposit-required').textContent = formatCurrency(required);
+    document.querySelector('#quote-deposit-paid').textContent = formatCurrency(paid);
+    document.querySelector('#quote-deposit-remaining').textContent = remaining > 0 ? formatCurrency(remaining) : 'Quitado';
+    document.querySelector('#quote-deposit-amount').value = remaining > 0 ? remaining : '';
+    document.querySelector('#quote-deposit-date').value = localToday();
+    document.querySelector('#quote-deposit-notes').value = '';
+    quoteDepositFeedback.textContent = '';
+    renderQuoteDepositHistory(deposits);
+    quoteDepositPanel.hidden = false;
+  } catch (error) {
+    // O painel não abriu, então o aviso vai para quem chamou o botão e um toast
+    // fecha o recado: sem os dois, o clique não deixa marca nenhuma na tela.
+    setQuoteOutputFeedback(`Não foi possível abrir o sinal: ${error.message}`, true);
+    showToast('Não foi possível abrir o sinal');
+  }
+}
+
+// Os três lados do painel do sinal são ligados com ?. de propósito: o painel é
+// a única parte opcional do módulo e, se ele faltar no markup, o que cai fora é
+// só o registro de sinal — não a lista, nem o formulário, nem o PDF.
+document.querySelector('[data-close-quote-deposit]')?.addEventListener('click', () => { quoteDepositPanel.hidden = true; });
+
+quoteDepositForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const submitButton = quoteDepositForm.querySelector('button[type="submit"]');
+  const quoteId = document.querySelector('#quote-deposit-quote-id').value;
+  const amount = Number(document.querySelector('#quote-deposit-amount').value);
+  const label = submitButton.querySelector('span');
+  if (!Number.isFinite(amount) || amount <= 0) { quoteDepositFeedback.textContent = 'Informe um valor maior que zero.'; return; }
+  submitButton.disabled = true;
+  label.textContent = 'Registrando...';
+  // Registrar o sinal é uma função do banco e não um insert, pelas razões do
+  // cabeçalho desta seção: é ela que mantém quotes, quote_deposits e o
+  // recebimento do Financeiro coerentes dentro da mesma transação.
+  const { error } = await supabaseClient.rpc('register_quote_deposit', {
+    target_quote_id: quoteId,
+    target_amount: amount,
+    target_paid_on: document.querySelector('#quote-deposit-date').value,
+    target_payment_method: document.querySelector('#quote-deposit-method').value,
+    target_notes: document.querySelector('#quote-deposit-notes').value
+  });
+  submitButton.disabled = false;
+  label.textContent = 'Registrar sinal';
+  if (error) {
+    quoteDepositFeedback.textContent = error.message || 'Não foi possível registrar o sinal.';
+    return;
+  }
+  await loadQuotes();
+  const { quote, deposits } = await loadQuoteDeposit(quoteId);
+  const paid = deposits.filter((deposit) => !deposit.voided_at).reduce((sum, deposit) => sum + Number(deposit.amount), 0);
+  const remaining = Math.max(0, Number(quote.deposit_amount || 0) - paid);
+  document.querySelector('#quote-deposit-paid').textContent = formatCurrency(paid);
+  document.querySelector('#quote-deposit-remaining').textContent = remaining > 0 ? formatCurrency(remaining) : 'Quitado';
+  document.querySelector('#quote-deposit-amount').value = remaining > 0 ? remaining : '';
+  renderQuoteDepositHistory(deposits);
+  refreshQuoteDepositButtons();
+  showToast(quote.status === 'confirmed' ? 'Sinal recebido. Orçamento confirmado.' : 'Sinal registrado');
+});
+
+// Estornar também é função do banco, pelas mesmas razões: o recebimento
+  // espelhado no Financeiro é estornado junto, e é por isso que a confirmação
+  // avisa sobre ele — quem clica precisa saber que a tela de Financeiro também
+  // vai mudar.
+quoteDepositHistory?.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-void-quote-deposit]');
+  if (!button) return;
+  const depositId = button.dataset.voidQuoteDeposit;
+  if (!window.confirm('Estornar este sinal? O recebimento correspondente no Financeiro também será estornado.')) return;
+  button.disabled = true;
+  const { error } = await supabaseClient.rpc('void_quote_deposit', { target_deposit_id: depositId });
+  button.disabled = false;
+  if (error) { quoteDepositFeedback.textContent = error.message || 'Não foi possível estornar o sinal.'; return; }
+  await loadQuotes();
+  await openQuoteDepositPanel(document.querySelector('#quote-deposit-quote-id').value);
+  showToast('Sinal estornado');
+});
+
+/* ========================================================================== */
+/* LEMBRETE DE SINAL                                                          */
+/* A cobrança é derivada da data, como a expiração: não há job no servidor e   */
+/* nada é agendado. O app descobre quem está com o sinal em aberto toda vez    */
+/* que a lista de orçamentos carrega — e, desde o login, mesmo que ninguém      */
+/* abra a tela de Orçamentos.                                                  */
+/*                                                                           */
+/* O envio é um passo humano: o WhatsApp abre com o texto pronto e quem opera */
+/* confirma o envio. Um PWA sem servidor e sem credencial de disparo           */
+/* automático não tem como mandar mensagem sozinho — mandar sem ninguém olhando */
+/* é o que transforma um orçamento vencido em cliente perdido.                 */
+/*                                                                           */
+/* A janela é "vence hoje ou nos próximos dias" mais "o que já venceu", e não  */
+/* só a véspera: comparar o dia restante com um valor fixo fazia o orçamento   */
+/* desaparecer da lista assim que o dia passava, e o cliente sumia junto.     */
+/* ========================================================================== */
+const QUOTE_REMINDER_LEAD_DAYS = 1;
+const QUOTE_REMINDER_TEMPLATE_KEY = 'expiry_reminder';
+const quoteReminderPanel = document.querySelector('#quote-reminder-panel');
+const quoteReminderList = document.querySelector('#quote-reminder-list');
+const quoteReminderFeedback = document.querySelector('#quote-reminder-feedback');
+const quoteReminderCount = document.querySelector('#quote-reminder-count');
+const quoteReminderButtons = document.querySelectorAll('[data-open-quote-reminders]');
+const quoteReminderToolbarButtons = document.querySelectorAll('.quote-reminder-button');
+const quoteTemplateEditor = document.querySelector('#quote-template-editor');
+const quoteTemplateToggle = document.querySelector('[data-toggle-quote-template]');
+const quoteTemplateBody = document.querySelector('#quote-template-body');
+const quoteTemplateTokens = document.querySelector('#quote-template-tokens');
+const quoteTemplatePreview = document.querySelector('#quote-template-preview');
+const quoteTemplateFeedback = document.querySelector('#quote-template-feedback');
+let quoteMessageTemplates = [];
+
+// Já saiu para o cliente, exige sinal, não recebeu o sinal inteiro e ninguém
+// cobrou ainda. O mesmo recorte de quoteValidityNote: rascunho não entra
+// porque ninguém recebeu a proposta, e confirmado não entra porque já está
+// reservado.
+function quoteReminderEligible(quote) {
+  if (!quote || !quoteAwaitingClient(quote)) return false;
+  if (!quoteRequiresSignal(quote) || quoteSignalComplete(quote)) return false;
+  return !quote.expiry_reminder_sent_at;
+}
+
+// Vencimento mais antigo primeiro: quando dois vencem juntos, o que está há
+// mais tempo sem resposta é o que precisa de atenção primeiro.
+function byQuoteDeadline(a, b) {
+  return String(a.valid_until).localeCompare(String(b.valid_until));
+}
+
+// Ainda dá para cobrar dentro do prazo.
+function upcomingQuoteReminders() {
+  return quotes.filter((quote) => {
+    if (!quoteReminderEligible(quote)) return false;
+    const days = daysUntilLocalDate(quote.valid_until);
+    return days !== null && days >= 0 && days <= QUOTE_REMINDER_LEAD_DAYS;
+  }).sort(byQuoteDeadline);
+}
+
+// O prazo passou e o sinal continua em aberto. Entra na cobrança mesmo assim: a
+// data já foi liberada para outro cliente, mas a proposta não foi recusada por
+// ninguém, e é o silêncio depois de cobrar que transforma atraso em cliente
+// perdido. Fica numa lista à parte porque não é a mesma cobrança do que está
+// por vencer — é o que impede o texto de dizer "vence amanhã" para algo que já
+// venceu.
+function overdueQuoteReminders() {
+  return quotes.filter((quote) => {
+    if (!quoteReminderEligible(quote)) return false;
+    const days = daysUntilLocalDate(quote.valid_until);
+    return days !== null && days < 0;
+  }).sort(byQuoteDeadline);
+}
+
+/* ========================================================================== */
+/* TEXTO DA MENSAGEM                                                          */
+/* O texto padrão mora no app e não no banco: quando ninguém editou nada, ele  */
+/* é o que sai. Quando alguém edita, o banco vence. Guardar o padrão no banco   */
+/* obrigaria a duplicar a redação em dois lugares que divergiriam na primeira  */
+/* edição, e transformaria "voltar ao padrão" em uma operação que apaga dado.  */
+/*                                                                           */
+/* A variável {prazo} devolve uma frase, não um advérbio, porque entra no meio */
+/* de uma frase que a pessoa escreveu: só assim o mesmo texto continua         */
+/* correto para o orçamento que vence amanhã e para o que já venceu.           */
+/* ========================================================================== */
+
+const QUOTE_REMINDER_DEFAULT_BODY = `*ORÇAMENTO #{numero}*
+*{orcamento}*
+
+Olá, {cliente}!
+
+Esperamos que esteja tudo bem. Escrevemos para lembrar sobre a proposta enviada, cujo prazo de validade {prazo}.
+
+O evento está previsto para *{evento}*.
+
+Para reservar a data, o sinal de *{sinal}*{sinal_detalhe} precisa ser pago até *{vencimento}*.
+
+Informamos que *sem o pagamento do sinal não será possível confirmar o evento*. Depois de {vencimento} a proposta perde a validade e a data fica disponível para outros clientes.
+
+{observacoes}
+
+Se quiser garantir a reserva, basta fazer o Pix e nos confirmar por aqui. Caso precise ajustar o orçamento ou a data, estamos à disposição para conversar.
+
+Agradecemos a atenção.
+
+Equipe Plenitude Realizações`;
+
+// As variáveis disponíveis, na ordem em que aparecem no texto padrão.
+const QUOTE_REMINDER_TOKENS = [
+  ['{cliente}', 'Nome do cliente'],
+  ['{orcamento}', 'Nome do orçamento'],
+  ['{numero}', 'Número do orçamento'],
+  ['{evento}', 'Data e local do evento'],
+  ['{sinal}', 'Valor que ainda falta'],
+  ['{sinal_total}', 'Valor total do sinal'],
+  ['{sinal_detalhe}', 'Detalhe do sinal (parcial ou percentual)'],
+  ['{percentual}', 'Percentual do sinal'],
+  ['{valor_total}', 'Valor total do orçamento'],
+  ['{prazo}', 'Prazo por extenso, já com o verbo'],
+  ['{vencimento}', 'Data do prazo'],
+  ['{observacoes}', 'Observações do orçamento']
+];
+
+// A frase inteira, e não só o quanto falta. Um "termina {prazo}" com
+// {prazo} = "está vencido" sairia errado justamente na cobrança que mais
+// importa, e nenhuma redação única resolveria os dois casos.
+function quoteDeadlinePhrase(quote) {
+  const days = daysUntilLocalDate(quote.valid_until);
+  if (days === null) return 'ainda está em aberto';
+  if (days === 0) return 'vence hoje';
+  if (days === 1) return 'vence amanhã';
+  if (days > 1) return `vence em ${days} dias`;
+  if (days === -1) return 'venceu ontem';
+  return `venceu há ${Math.abs(days)} dias`;
+}
+
+function quoteReminderVariables(quote) {
+  const remaining = Math.max(0, Number(quote.deposit_amount || 0) - Number(quote.deposited_amount || 0));
+  const partial = Number(quote.deposited_amount || 0) > 0;
+  const event = [quote.event_date ? formatDateBR(quote.event_date) : '', quote.venue].filter(Boolean).join(', em ');
+  return {
+    cliente: (quote.clients?.name || '').trim(),
+    orcamento: quote.name || '',
+    numero: String(quote.quote_number ?? 0).padStart(4, '0'),
+    evento: event,
+    sinal: formatCurrency(remaining),
+    sinal_total: formatCurrency(quote.deposit_amount),
+    // O parêntese e o espaço vêm junto para a variável caber em qualquer frase
+    // sem que a pessoa precise condicionalmente colocar ou tirar um parêntese.
+    sinal_detalhe: partial
+      ? ` (parte que falta de ${formatCurrency(quote.deposit_amount)})`
+      : ` (${formatNumber(quote.deposit_percent)}% do total de ${formatCurrency(quote.total)})`,
+    percentual: formatNumber(quote.deposit_percent),
+    valor_total: formatCurrency(quote.total),
+    prazo: quoteDeadlinePhrase(quote),
+    vencimento: quote.valid_until ? formatDateBR(quote.valid_until) : '',
+    // O rótulo vem junto: o texto padrão usa a variável numa linha inteira, e
+    // sem o rótulo ela viraria um "Observações:" sem nada depois.
+    observacoes: quote.notes ? `Observações da proposta: ${quote.notes}` : ''
+  };
+}
+
+// Substitui só as variáveis conhecidas. Uma variável escrita errado fica como
+// está em vez de sumir: uma mensagem que perde um pedaço no meio é muito pior
+// de diagnosticar do que uma que mostra o próprio erro.
+function renderQuoteTemplate(body, quote) {
+  const variables = quoteReminderVariables(quote);
+  return String(body || '')
+    .replace(/\{(\w+)\}/g, (match, key) => (Object.hasOwn(variables, key) ? variables[key] : match))
+    // Uma linha que virou nada deixa três quebras seguidas. Acontece com o
+    // texto padrão ({observacoes} vazia) e com qualquer texto que a pessoa
+    // escreva, então é corrigido aqui em vez de pedir cuidado a quem escreve.
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// O que a pessoa salvou no painel, se salvou.
+function quoteExpiryReminderTemplate() {
+  const saved = quoteMessageTemplates.find((template) => template.template_key === QUOTE_REMINDER_TEMPLATE_KEY)?.body;
+  return String(saved || '').trim();
+}
+
+// O que sai para o cliente: a mensagem escrita para este orçamento se houver,
+// o texto salvo no painel se houver, o padrão do app se não houver nada.
+function quoteExpiryReminderText(quote) {
+  const own = String(quote.reminder_message || '').trim();
+  return renderQuoteTemplate(own || quoteExpiryReminderTemplate() || QUOTE_REMINDER_DEFAULT_BODY, quote);
+}
+
+// Só o orçamento e o contato: o lembrete não lista serviços nem cardápios, então
+// não passa por loadQuoteForOutput e não carrega menus à toa.
+async function loadQuoteForReminder(quoteId) {
+  const { data: quote, error } = await supabaseClient.from('quotes').select(`${QUOTE_COLUMNS}, clients(id, name, whatsapp)`).eq('id', quoteId).single();
+  if (error) throw new Error(error.message);
+  return quote;
+}
+
+// O texto salvo vem junto com a lista porque o painel de lembretes mostra a
+// mensagem antes de qualquer envio. Sem isso a prévia apareceria com a redação
+// antiga logo depois de a pessoa salvar outra.
+async function loadQuoteMessageTemplates() {
+  const { data, error } = await supabaseClient.from('quote_message_templates').select('template_key, body');
+  if (error) {
+    // Migration 022 não aplicada: o app segue com o texto padrão do código, que
+    // é o que a pessoa já usava. Não vale quebrar a tela de orçamentos por causa
+    // de uma mensagem.
+    console.warn('[Lembretes] Não foi possível carregar a mensagem salva, usando o padrão do app:', error.message);
+    quoteMessageTemplates = [];
+    return;
+  }
+  quoteMessageTemplates = data || [];
+}
+
+function setQuoteReminderFeedback(message, isError = false) {
+  if (quoteReminderPanel && !quoteReminderPanel.hidden) {
+    quoteReminderFeedback.textContent = message;
+    quoteReminderFeedback.style.color = isError ? '#a0483d' : '';
+    return;
+  }
+  setQuoteOutputFeedback(message, isError);
+}
+
+// Um cartão por orçamento, com o texto já montado para conferência: quem opera
+// lê antes de mandar. O botão do WhatsApp abre a conversa vazia, então a
+// mensagem precisa ser copiada ou reescrita por quem está com o celular na mão.
+function quoteReminderCard(quote, group) {
+  const hasWhatsapp = Boolean(whatsappNumber(quote.clients?.whatsapp));
+  const custom = String(quote.reminder_message || '').trim();
+  return `<article class="quote-reminder-card ${group === 'overdue' ? 'is-overdue' : ''}">
+      <div class="quote-reminder-head">
+        <span class="client-initial"><i data-lucide="bell-ring"></i></span>
+        <div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.clients?.name || 'Sem cliente')}</span><span class="quote-validity-tag ${group === 'overdue' ? 'late' : 'soon'}"><i data-lucide="${group === 'overdue' ? 'triangle-alert' : 'clock'}"></i>${escapeHTML(quoteValidityNote(quote))}</span>${custom ? '<span class="quote-reminder-custom-tag"><i data-lucide="pencil"></i>Mensagem personalizada</span>' : ''}</div>
+      </div>
+      <pre class="quote-reminder-preview">${escapeHTML(quoteExpiryReminderText(quote))}</pre>
+      <div class="quote-reminder-actions">
+        <button class="client-action-button quote-reminder-action" type="button" data-quote-reminder-copy="${quote.id}"><i data-lucide="copy"></i><span>Copiar texto</span></button>
+        <button class="whatsapp-action-button" type="button" data-quote-reminder-whatsapp="${quote.id}"><i data-lucide="message-circle"></i><span>Enviar no WhatsApp</span></button>
+        <button class="client-action-button" type="button" data-quote-reminder-custom="${quote.id}"><i data-lucide="text-cursor-input"></i><span>${custom ? 'Editar esta mensagem' : 'Personalizar esta mensagem'}</span></button>
+      </div>
+      <div class="quote-reminder-custom-editor" data-quote-reminder-custom-editor="${quote.id}" hidden>
+        <label for="quote-reminder-message-${quote.id}">Mensagem para ${escapeHTML(quote.clients?.name || 'este cliente')}</label>
+        <p class="field-hint">Vale só para este orçamento. Deixe vazio para usar a mensagem padrão do painel. As mesmas variáveis de lá funcionam aqui.</p>
+        <textarea id="quote-reminder-message-${quote.id}" rows="9" data-quote-reminder-message="${quote.id}" placeholder="Usar a mensagem padrão">${escapeHTML(custom)}</textarea>
+        <div class="quote-reminder-custom-actions">
+          <button class="client-action-button" type="button" data-quote-reminder-save="${quote.id}"><i data-lucide="check"></i><span>Salvar</span></button>
+          <button class="client-action-button" type="button" data-quote-reminder-restore="${quote.id}"><i data-lucide="undo-2"></i><span>Usar a padrão</span></button>
+          <button class="icon-button" type="button" data-quote-reminder-cancel="${quote.id}" aria-label="Fechar edição da mensagem"><i data-lucide="x"></i></button>
+        </div>
+      </div>
+      ${hasWhatsapp ? '' : '<p class="quote-reminder-warning"><i data-lucide="triangle-alert"></i><span>Este cliente não tem WhatsApp cadastrado. Copie o texto e envie pelo canal que preferir.</span></p>'}
+    </article>`;
+}
+
+function renderQuoteReminders() {
+  const upcoming = upcomingQuoteReminders();
+  const overdue = overdueQuoteReminders();
+  // Com o painel fechado só as contagens importam. A lista só é reconstruída
+  // na hora em que alguém está olhando para ela.
+  if (quoteReminderPanel?.hidden || !quoteReminderList) return;
+  if (!upcoming.length && !overdue.length) {
+    quoteReminderList.innerHTML = '<div class="empty-clients">Nenhum orçamento com sinal em aberto vencendo.</div>';
+    return;
+  }
+  let html = '';
+  // O vencido vem primeiro na tela: é a cobrança mais velha e a única em que a
+  // data já foi perdida.
+  if (overdue.length) {
+    html += `<h3 class="quote-reminder-group"><i data-lucide="triangle-alert"></i>${overdue.length} ${overdue.length === 1 ? 'proposta venceu' : 'propostas venceram'} com o sinal em aberto</h3>`;
+    html += overdue.map((quote) => quoteReminderCard(quote, 'overdue')).join('');
+  }
+  if (upcoming.length) {
+    html += `<h3 class="quote-reminder-group"><i data-lucide="clock"></i>${upcoming.length} ${upcoming.length === 1 ? 'proposta vence' : 'propostas vencem'} em breve</h3>`;
+    html += upcoming.map((quote) => quoteReminderCard(quote, 'upcoming')).join('');
+  }
+  quoteReminderList.innerHTML = html;
+  lucide.createIcons();
+}
+
+/* ========================================================================== */
+/* O AVISO FORA DA TELA DE ORÇAMENTOS                                         */
+/* Dois pontos de entrada para a mesma lista — card do módulo e faixa do       */
+/* início — e não duas listas: cada uma com sua própria contagem seria duas    */
+/* chances de o número estar errado. O sino do topo ficou com a central de     */
+/* avisos, que conta mais coisa que sinal e por isso tem o próprio número.    */
+/* ========================================================================== */
+const quoteAlertBanner = document.querySelector('#quote-alert-banner');
+const quoteAlertItems = document.querySelector('#quote-alert-items');
+const quoteModuleCount = document.querySelector('#quote-module-count');
+
+function renderQuoteAlerts() {
+  const upcoming = upcomingQuoteReminders();
+  const overdue = overdueQuoteReminders();
+  const count = upcoming.length + overdue.length;
+  // Quem não tem a permissão de orçamentos não vê nem a contagem: os dois
+  // lugares que sobram são o cabeçalho da lista e o card do módulo, ambos
+  // dentro do próprio Orçamentos. O sino do topo é comum a todos e por isso
+  // ele é do alerts.js, que também cuida da permissão de cada fonte.
+  const visible = count > 0 && permitir('orcamentos');
+
+  [quoteReminderCount, quoteModuleCount].forEach((badge) => {
+    if (!badge) return;
+    badge.textContent = String(count);
+    badge.hidden = !visible;
+  });
+  quoteReminderToolbarButtons.forEach((button) => button.classList.toggle('has-pending', visible));
+  // A contagem do sino saiu daqui porque ele deixou de contar só sinal: ele
+  // passou a contar o que a central inteira tem pendente.
+  window.plenitudeAlerts?.refresh();
+  // O permissions.js esconde a faixa sozinha quando a permissão some e nunca
+  // mostra uma que estava escondida, então quem decide se ela reaparece é este
+  // render e não ele.
+  if (!quoteAlertBanner) return;
+  quoteAlertBanner.hidden = !visible;
+  if (!visible || !quoteAlertItems) return;
+  const summary = [
+    upcoming.length ? `${upcoming.length} ${upcoming.length === 1 ? 'vence' : 'vencem'} em breve` : '',
+    overdue.length ? `${overdue.length} ${overdue.length === 1 ? 'já venceu' : 'já venceram'} sem sinal` : ''
+  ].filter(Boolean).join(' · ');
+  // Três nomes cabem na faixa sem empurrar o resto do início para baixo. O
+  // resto continua a um clique de distância, na tela de lembretes.
+  const shown = [...overdue, ...upcoming].slice(0, 3);
+  const extra = count - shown.length;
+  quoteAlertItems.innerHTML = `<p class="quote-alert-summary">${escapeHTML(summary)}</p><ul class="quote-alert-names">${shown.map((quote) => `<li>${escapeHTML(quote.clients?.name || 'Sem cliente')} · ${escapeHTML(quote.name)}</li>`).join('')}${extra > 0 ? `<li class="quote-alert-more">e mais ${extra} ${extra === 1 ? 'orçamento' : 'orçamentos'}</li>` : ''}</ul>`;
+}
+
+// Tudo que decide o que está vencendo é derivado da data local, mas o app só
+// recalcula quando busca alguma coisa. Quem deixa o app aberto de sexta para
+// sábado continua vendo "vence amanhã" no sábado — exatamente o dia em que a
+// cobrança é mais cara de errar.
+let quoteDeadlineWatchDay = null;
+let quoteDeadlineWatchStarted = false;
+
+function watchQuoteDeadline() {
+  quoteDeadlineWatchDay = localToday();
+  if (quoteDeadlineWatchStarted) return;
+  quoteDeadlineWatchStarted = true;
+  // A cada minuto o trabalho é comparar duas strings. O trabalho de verdade
+  // acontece uma vez, na virada do dia.
+  setInterval(checkQuoteDeadlineRollover, 60000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkQuoteDeadlineRollover();
+  });
+}
+
+function checkQuoteDeadlineRollover() {
+  const today = localToday();
+  if (today === quoteDeadlineWatchDay) return;
+  quoteDeadlineWatchDay = today;
+  // Recarrega em vez de só redesenhar: quem ficou aberto de um dia para o outro
+  // pode ter recebido sinal de outro usuário, e o carimbo do lembrete enviado
+  // também muda o que está na lista.
+  loadQuotes();
+  // "Vence hoje" vira "venceu" sozinho na virada do dia, e um evento que estava
+  // a uma semana vira o evento de hoje. O sino não depende de ninguém abrir uma
+  // tela para aprender disso, então ele é avisado à parte.
+  window.plenitudeAlerts?.refresh({ force: true });
+}
+
+// Os dois botões que abrem a lista de lembretes — o da faixa e o card do módulo
+// — levam para a mesma tela completa, em vez de cada um montar a sua lista. Uma
+// lista por lugar daria duas chances de o número estar errado.
+function openQuoteReminders() {
+  if (!permitir('orcamentos') || !quoteReminderPanel) return;
+  quoteReminderFeedback.textContent = '';
+  quoteReminderFeedback.style.color = '';
+  quoteReminderPanel.hidden = false;
+  renderQuoteReminders();
+}
+
+async function sendQuoteExpiryReminder(quoteId) {
+  try {
+    const quote = await loadQuoteForReminder(quoteId);
+    const number = whatsappNumber(quote.clients?.whatsapp);
+    if (!number) {
+      setQuoteReminderFeedback('Cadastre o WhatsApp do cliente para enviar o lembrete.');
+      return;
+    }
+    window.open(`https://wa.me/${number}`, '_blank', 'noopener,noreferrer');
+    // O carimbo vem depois de abrir o WhatsApp, nunca antes: se a gravação
+    // falhar, o lembrete continua na lista e é possível tentar de novo, o que é
+    // melhor do que perdê-lo sem que ele tenha saído.
+    const { error } = await supabaseClient.from('quotes').update({ expiry_reminder_sent_at: new Date().toISOString() }).eq('id', quoteId);
+    if (error) {
+      setQuoteReminderFeedback(`O lembreite foi aberto, mas não foi possível registrar o envio: ${error.message}`, true);
+      return;
+    }
+    await loadQuotes();
+    setQuoteReminderFeedback('Lembrete enviado. Ele não volta para esta lista até a validade mudar.');
+  } catch (error) {
+    setQuoteReminderFeedback(`Não foi possível preparar o lembrete: ${error.message}`, true);
+  }
+}
+
+// Copiar é o caminho para quem não tem WhatsApp cadastrado: o cartão avisa que o
+// cliente não tem número e o texto sai pronto para outro canal. Não registra o
+// envio, porque ninguém sabe se a mensagem chegou — é a diferença entre enviar e
+// cobrar de novo depois.
+async function copyQuoteExpiryReminder(quoteId) {
+  const quote = quotes.find((item) => item.id === quoteId);
+  if (!quote) return;
+  try {
+    await navigator.clipboard.writeText(quoteExpiryReminderText(quote));
+    setQuoteReminderFeedback('Texto do lembrete copiado.');
+  } catch {
+    setQuoteReminderFeedback('Não foi possível copiar. Abra o orçamento para ver a mensagem completa.', true);
+  }
+}
+
+/* ========================================================================== */
+/* EDIÇÃO DA MENSAGEM                                                         */
+/* ========================================================================== */
+function setQuoteTemplateFeedback(message, isError = false) {
+  if (!quoteTemplateFeedback) return;
+  quoteTemplateFeedback.textContent = message;
+  quoteTemplateFeedback.style.color = isError ? '#a0483d' : '';
+}
+
+// A prévia usa um orçamento de verdade, não um exemplo genérico: o que a pessoa
+// precisa ver é se "R$ 3.000,00" e "vence amanhã" caíram no lugar certo do
+// texto dela, e um exemplo com números inventados não mostra nada disso.
+function quoteTemplatePreviewQuote() {
+  return quotes.find(quoteReminderEligible) || quotes[0] || null;
+}
+
+function renderQuoteTemplatePreview() {
+  if (!quoteTemplatePreview || !quoteTemplateBody) return;
+  const quote = quoteTemplatePreviewQuote();
+  if (!quote) {
+    quoteTemplatePreview.textContent = 'Cadastre um orçamento para ver a prévia com os dados reais.';
+    return;
+  }
+  quoteTemplatePreview.textContent = renderQuoteTemplate(quoteTemplateBody.value.trim() || quoteExpiryReminderTemplate() || QUOTE_REMINDER_DEFAULT_BODY, quote);
+}
+
+function renderQuoteTemplateTokens() {
+  if (!quoteTemplateTokens) return;
+  quoteTemplateTokens.innerHTML = QUOTE_REMINDER_TOKENS.map(([token, label]) => `<button class="quote-template-token" type="button" data-insert-token="${token}" title="${escapeHTML(token)}">${escapeHTML(label)}</button>`).join('');
+}
+
+// A variável entra onde o cursor está. Um botão que jogasse a variável no fim
+// do texto obrigaria quem escreve a reorganizar a frase na mão.
+function insertQuoteTemplateToken(token) {
+  if (!quoteTemplateBody) return;
+  const start = quoteTemplateBody.selectionStart ?? quoteTemplateBody.value.length;
+  const end = quoteTemplateBody.selectionEnd ?? start;
+  quoteTemplateBody.value = `${quoteTemplateBody.value.slice(0, start)}${token}${quoteTemplateBody.value.slice(end)}`;
+  quoteTemplateBody.focus();
+  quoteTemplateBody.setSelectionRange(start + token.length, start + token.length);
+  renderQuoteTemplatePreview();
+}
+
+function openQuoteTemplateEditor() {
+  if (!permitir('orcamentos') || !quoteTemplateEditor || !quoteTemplateBody) return;
+  // O campo mostra sempre o texto que vai sair, e não o vazio do banco: quem
+  // chega para editar precisa ver o que está valendo agora.
+  quoteTemplateBody.value = quoteExpiryReminderTemplate() || QUOTE_REMINDER_DEFAULT_BODY;
+  setQuoteTemplateFeedback('');
+  quoteTemplateEditor.hidden = false;
+  renderQuoteTemplateTokens();
+  renderQuoteTemplatePreview();
+  quoteTemplateBody.focus();
+}
+
+async function saveQuoteTemplate() {
+  if (!quoteTemplateBody) return;
+  const body = quoteTemplateBody.value.trim() || null;
+  const { error } = await supabaseClient.from('quote_message_templates')
+    .upsert({ template_key: QUOTE_REMINDER_TEMPLATE_KEY, name: 'Lembrete de sinal', body }, { onConflict: 'template_key' });
+  if (error) {
+    setQuoteTemplateFeedback(`Não foi possível salvar a mensagem: ${error.message}`, true);
+    return;
+  }
+  await loadQuotes();
+  setQuoteTemplateFeedback('Mensagem salva. Ela vale para todos os lembretes que não tiverem texto próprio.');
+  renderQuoteTemplatePreview();
+}
+
+// Voltar ao padrão é apagar o texto salvo, não gravar uma cópia do padrão: o
+// padrão continua sendo o do app, e assim as duas coisas não podem divergir.
+async function restoreQuoteTemplate() {
+  const { error } = await supabaseClient.from('quote_message_templates')
+    .upsert({ template_key: QUOTE_REMINDER_TEMPLATE_KEY, name: 'Lembrete de sinal', body: null }, { onConflict: 'template_key' });
+  if (error) {
+    setQuoteTemplateFeedback(`Não foi possível restaurar a mensagem padrão: ${error.message}`, true);
+    return;
+  }
+  quoteTemplateBody.value = QUOTE_REMINDER_DEFAULT_BODY;
+  await loadQuotes();
+  setQuoteTemplateFeedback('Mensagem restaurada para o padrão do app.');
+  renderQuoteTemplatePreview();
+}
+
+async function saveQuoteCustomMessage(quoteId, value) {
+  const { error } = await supabaseClient.from('quotes').update({ reminder_message: value || null }).eq('id', quoteId);
+  if (error) {
+    setQuoteReminderFeedback(`Não foi possível salvar a mensagem: ${error.message}`, true);
+    return false;
+  }
+  await loadQuotes();
+  return true;
+}
+
+quoteReminderButtons.forEach((button) => button.addEventListener('click', openQuoteReminders));
+// O clique do sino é do alerts.js: ele abre a central, que junta sinal,
+// estoque e convidados. A lista de lembretes continua sendo o destino do aviso
+// de sinal, alcançável pelo próprio aviso.
+// Os dois botões do painel fecham a tela: o X do cabeçalho e o "Voltar" do rodapé.
+document.querySelectorAll('[data-close-quote-reminders]').forEach((button) => button.addEventListener('click', () => { quoteReminderPanel.hidden = true; }));
+
+quoteTemplateToggle?.addEventListener('click', () => {
+  if (quoteTemplateEditor.hidden) openQuoteTemplateEditor();
+  else quoteTemplateEditor.hidden = true;
+});
+quoteTemplateBody?.addEventListener('input', renderQuoteTemplatePreview);
+document.querySelectorAll('[data-save-quote-template]').forEach((button) => button.addEventListener('click', saveQuoteTemplate));
+document.querySelectorAll('[data-restore-quote-template]').forEach((button) => button.addEventListener('click', restoreQuoteTemplate));
+quoteTemplateTokens?.addEventListener('click', (event) => {
+  const token = event.target.closest('[data-insert-token]');
+  if (token) insertQuoteTemplateToken(token.dataset.insertToken);
+});
+
+quoteReminderList?.addEventListener('click', async (event) => {
+  const target = event.target;
+  const whatsappButton = target.closest('[data-quote-reminder-whatsapp]');
+  const copyButton = target.closest('[data-quote-reminder-copy]');
+  const customButton = target.closest('[data-quote-reminder-custom]');
+  const saveButton = target.closest('[data-quote-reminder-save]');
+  const restoreButton = target.closest('[data-quote-reminder-restore]');
+  const cancelButton = target.closest('[data-quote-reminder-cancel]');
+  if (whatsappButton) { await sendQuoteExpiryReminder(whatsappButton.dataset.quoteReminderWhatsapp); return; }
+  if (copyButton) { await copyQuoteExpiryReminder(copyButton.dataset.quoteReminderCopy); return; }
+  if (customButton) {
+    const editor = quoteReminderList.querySelector(`[data-quote-reminder-custom-editor="${customButton.dataset.quoteReminderCustom}"]`);
+    if (!editor) return;
+    editor.hidden = !editor.hidden;
+    if (!editor.hidden) editor.querySelector('textarea')?.focus();
+    return;
+  }
+  if (saveButton) {
+    const field = quoteReminderList.querySelector(`[data-quote-reminder-message="${saveButton.dataset.quoteReminderSave}"]`);
+    if (!field) return;
+    setQuoteReminderFeedback('Salvando a mensagem...');
+    if (await saveQuoteCustomMessage(saveButton.dataset.quoteReminderSave, field.value.trim())) {
+      setQuoteReminderFeedback('Mensagem deste orçamento salva.');
+    }
+    return;
+  }
+  if (restoreButton) {
+    const field = quoteReminderList.querySelector(`[data-quote-reminder-message="${restoreButton.dataset.quoteReminderRestore}"]`);
+    if (field) field.value = '';
+    if (await saveQuoteCustomMessage(restoreButton.dataset.quoteReminderRestore, '')) {
+      setQuoteReminderFeedback('Este orçamento voltou a usar a mensagem padrão.');
+    }
+    return;
+  }
+  if (cancelButton) {
+    const editor = quoteReminderList.querySelector(`[data-quote-reminder-custom-editor="${cancelButton.dataset.quoteReminderCancel}"]`);
+    // Descartar também reconstrói a lista: o editor local pode estar com um texto
+    // que ninguém salvou, e só a lista montada de novo tem o texto certo.
+    if (editor) editor.hidden = true;
+    await loadQuotes();
+  }
+});
+
+/* ========================================================================== */
+/* FORMULÁRIO DE ORÇAMENTO                                                    */
+/* ========================================================================== */
+// Os três conjuntos que o formulário consulta: o seletor de cliente, a lista de
+// serviços com os cardápios que cada um traz e o filtro. Os loaders são
+// compartilhados com as outras telas, então abrir o formulário também atualiza
+// as listas delas.
+async function loadQuoteReferences() {
+  await Promise.all([loadClients(), loadServices(), loadMenus()]);
+  quoteClientSelect.innerHTML = '<option value="">Selecione um cliente</option>' + clients.map((client) => `<option value="${client.id}">${escapeHTML(client.name)}</option>`).join('');
+}
+
+function renderQuoteServices(selectedItems = []) {
+  const selectedByService = new Map(selectedItems.map((item) => [item.service_id, item]));
+  const available = services.filter((service) => service.active);
+  if (!available.length) {
+    quoteServicePicker.innerHTML = '<span class="field-hint">Cadastre serviços ativos para adicioná-los ao orçamento.</span>';
+    updateQuotePreview();
+    return;
+  }
+  quoteServicePicker.innerHTML = available.map((service) => {
+    const selected = selectedByService.get(service.id);
+    // O cardapio nunca e escolhido: ele acompanha o servico marcado.
+    const linkedMenus = menus.filter((menu) => menu.serviceIds.includes(service.id));
+    const menusHtml = linkedMenus.length
+      ? `<span class="quote-service-menus"><span class="quote-service-menus-label">Cardápios</span>${linkedMenus.map((menu) => `
+          <button class="linked-menu-chip" type="button" data-open-menu-detail="${menu.id}" aria-label="Abrir cardápio ${escapeHTML(menu.name)}">
+            <i data-lucide="book-open"></i>
+            <span>${escapeHTML(menu.name)}</span>
+          </button>
+        `).join('')}</span>`
+      : '';
+    // A linha tem três faixas com largura previsível — marcação, identificação
+    // e campos — em vez de seis colunas de tamanho automático: assim quantidade
+    // e preço unitário ficam alinhados de um serviço para o outro e o nome
+    // recebe o espaço que sobra. O preço padrão é só referência e mora na linha
+    // de apoio, ao lado da categoria, para não competir com o campo editável.
+    return `<div class="quote-service-option"><label class="quote-service-check" for="quote-service-${service.id}"><input id="quote-service-${service.id}" type="checkbox" data-quote-service="${service.id}" ${selected ? 'checked' : ''} /></label><span class="quote-service-copy"><span class="quote-service-head"><label class="quote-service-name" for="quote-service-${service.id}"><strong>${escapeHTML(service.name)}</strong></label><span class="quote-service-choice">Selecionado</span></span><small>${escapeHTML(service.category || 'Serviço')} · <span class="quote-service-price">${formatCurrency(service.default_price)}</span></small></span><span class="quote-service-fields"><span class="quote-service-field"><label for="qty-${service.id}" class="quote-qty-label">Quant.</label><input type="number" min="0.01" step="0.01" id="qty-${service.id}" value="${selected?.quantity || 1}" data-quote-quantity="${service.id}" /></span><span class="quote-service-field"><label for="price-${service.id}" class="quote-price-label">Preço unit.</label><input type="number" min="0" step="0.01" id="price-${service.id}" value="${selected?.unit_price ?? service.default_price}" data-quote-price="${service.id}" /></span></span>${menusHtml}</div>`;
+  }).join('');
+  lucide.createIcons();
+  updateQuoteServiceStates();
+  updateQuotePreview();
+}
+
+function updateQuoteServiceStates() {
+  quoteServicePicker.querySelectorAll('.quote-service-option').forEach((option) => {
+    option.classList.toggle('selected', option.querySelector('[data-quote-service]').checked);
+  });
+}
+
+// O que vai para quote_items. A descrição é o nome do serviço no momento da
+// gravação, e é ela que o PDF e a mensagem imprimem: é a cópia que sobrevive se
+// o serviço for renomeado ou apagado depois, e é por isso que uma edição de
+// serviço não reescreve o histórico de orçamentos antigos.
+function getQuoteItemsFromForm() {
+  return [...quoteServicePicker.querySelectorAll('[data-quote-service]:checked')].map((checkbox) => ({ service_id: checkbox.dataset.quoteService, quantity: Number(quoteServicePicker.querySelector(`[data-quote-quantity="${checkbox.dataset.quoteService}"]`).value), unit_price: Number(quoteServicePicker.querySelector(`[data-quote-price="${checkbox.dataset.quoteService}"]`).value), description: services.find((service) => service.id === checkbox.dataset.quoteService)?.name || 'Serviço' }));
+}
+
+// A prévia do total enquanto a pessoa digita. É só conferência visual: o valor
+// que vale é o que a trigger recalculate_quote_totals grava em quotes depois do
+// save, e é dele que saem o PDF, a mensagem e o Financeiro. O Math.max evita
+// que desconto maior que a soma mostre um total negativo na tela.
+function updateQuotePreview() {
+  const subtotal = getQuoteItemsFromForm().reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  const discount = Number(document.querySelector('#quote-discount').value || 0);
+  const fee = Number(document.querySelector('#quote-fee').value || 0);
+  const total = Math.max(0, subtotal - discount + fee);
+  quoteSubtotalPreview.textContent = formatCurrency(subtotal);
+  quoteTotalPreview.textContent = formatCurrency(total);
+  updateQuoteValidityPreview(total);
+}
+
+// Traduz os dois campos de validade no que o usuário precisa decidir: quanto é
+// o sinal, até quando e o que a data de corte significa.
+function updateQuoteValidityPreview(total = null) {
+  const percentInput = quoteDepositPercentInput;
+  const validUntilInput = quoteValidUntilInput;
+  const preview = quoteDepositPreview;
+  if (!percentInput || !validUntilInput || !preview) return;
+  const percent = Math.min(100, Math.max(0, Number(percentInput.value) || 0));
+  const resolvedTotal = total === null ? Math.max(0, getQuoteItemsFromForm().reduce((sum, item) => sum + item.quantity * item.unit_price, 0) - Number(document.querySelector('#quote-discount').value || 0) + Number(document.querySelector('#quote-fee').value || 0)) : total;
+  const deposit = Math.round(resolvedTotal * percent / 100 * 100) / 100;
+  const validUntil = validUntilInput.value;
+  const days = daysUntilLocalDate(validUntil);
+  if (percent <= 0) {
+    preview.innerHTML = '<i data-lucide="info"></i><span>Sem sinal, o orçamento não expira. Confirme manualmente quando o cliente aceitar.</span>';
+  } else if (!validUntil) {
+    preview.innerHTML = `<i data-lucide="triangle-alert"></i><span>Sinal de <strong>${formatCurrency(deposit)}</strong> (${formatNumber(percent)}%), mas sem data de corte: a proposta não expira. Defina a validade.</span>`;
+  } else if (days !== null && days < 0) {
+    preview.innerHTML = `<i data-lucide="triangle-alert"></i><span>A validade venceu em ${formatDateBR(validUntil)}. O orçamento expira ao salvar.</span>`;
+  } else {
+    const when = days === 0 ? 'hoje' : days === 1 ? 'amanhã' : `em ${days} dias`;
+    preview.innerHTML = `<i data-lucide="clock"></i><span>Para reservar a data, o cliente paga <strong>${formatCurrency(deposit)}</strong> (${formatNumber(percent)}%) até <strong>${formatDateBR(validUntil)}</strong> — ${when}. O sinal confirma o orçamento e entra como recebimento no Financeiro.</span>`;
+  }
+  lucide.createIcons();
+}
+
+async function openQuotes() {
+  if (!permitir('orcamentos')) return;
+  quotePanel.hidden = false;
+  quoteSearch.value = '';
+  quoteStatusFilter.value = '';
+  await loadQuotes();
+}
+
+async function openQuoteForm(quote = null) {
+  quoteForm.reset();
+  document.querySelector('#quote-id').value = quote?.id || '';
+  document.querySelector('#quote-name').value = quote?.name || '';
+  const selectedClientId = quote?.client_id || '';
+  document.querySelector('#quote-date').value = quote?.event_date || '';
+  document.querySelector('#quote-time').value = quote?.event_time || '';
+  document.querySelector('#quote-venue').value = quote?.venue || '';
+  document.querySelector('#quote-discount').value = quote?.discount || 0;
+  document.querySelector('#quote-fee').value = quote?.additional_fee || 0;
+  // Uma cópia nasce como rascunho: um orçamento 'confirmed' dispararia a trigger
+  // que cria evento no banco, e a duplicação viraria um evento sem querer.
+  document.querySelector('#quote-status').value = quote?.id ? (quote.status || 'draft') : 'draft';
+  document.querySelector('#quote-notes').value = quote?.notes || '';
+  // Orçamento novo já nasce com o prazo padrão de 20 dias, para a validade nunca
+  // depender de o usuário lembrar de preencher. Os dois campos são opcionais no
+  // markup: sem eles a proposta só não expira, o formulário continua abrindo.
+  if (quoteValidUntilInput) quoteValidUntilInput.value = quote?.valid_until || addDaysToLocalDate(localToday(), QUOTE_VALIDITY_DAYS);
+  if (quoteDepositPercentInput) quoteDepositPercentInput.value = quote?.deposit_percent ?? QUOTE_DEFAULT_DEPOSIT_PERCENT;
+  quoteFormTitle.textContent = quote?.id ? 'Editar orçamento' : 'Novo orçamento';
+  quoteFormFeedback.textContent = '';
+  quoteFormPanel.hidden = false;
+  await loadQuoteReferences();
+  quoteClientSelect.value = selectedClientId;
+  const { data: items } = quote?.id ? await supabaseClient.from('quote_items').select('service_id, quantity, unit_price, description').eq('quote_id', quote.id).order('sort_order') : { data: [] };
+  renderQuoteServices(items || []);
+}
+
+document.querySelectorAll('[data-open-quotes]').forEach((button) => button.addEventListener('click', openQuotes));
+document.querySelectorAll('[data-new-quote]').forEach((button) => button.addEventListener('click', () => openQuoteForm()));
+document.querySelector('[data-close-quotes]').addEventListener('click', () => { quotePanel.hidden = true; });
+document.querySelector('[data-close-quote-form]').addEventListener('click', () => { quoteFormPanel.hidden = true; });
+quoteSearch.addEventListener('input', renderQuotes);
+quoteStatusFilter.addEventListener('change', renderQuotes);
+quoteServicePicker.addEventListener('input', updateQuotePreview);
+quoteServicePicker.addEventListener('change', () => { updateQuoteServiceStates(); updateQuotePreview(); });
+document.querySelector('#quote-discount').addEventListener('input', updateQuotePreview);
+document.querySelector('#quote-fee').addEventListener('input', updateQuotePreview);
+quoteDepositPercentInput?.addEventListener('input', () => updateQuoteValidityPreview());
+quoteValidUntilInput?.addEventListener('input', () => updateQuoteValidityPreview());
+quoteValidUntilInput?.addEventListener('change', () => updateQuoteValidityPreview());
+
+quoteForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = quoteForm.querySelector('button[type="submit"]');
+  const quoteId = document.querySelector('#quote-id').value;
+  const depositPercent = Math.min(100, Math.max(0, Number(quoteDepositPercentInput?.value || 0)));
+  // `valid_until` só é gravado quando há sinal. Orçamento sem sinal não expira
+  // no banco — é a função expire_overdue_quotes que só olha o que tem sinal — e
+  // gravar a data de qualquer jeito faria a tela mostrar um prazo que ninguém
+  // está cumprindo.
+  const payload = { name: document.querySelector('#quote-name').value.trim(), client_id: quoteClientSelect.value, venue: document.querySelector('#quote-venue').value.trim() || null, event_date: document.querySelector('#quote-date').value || null, event_time: document.querySelector('#quote-time').value || null, status: document.querySelector('#quote-status').value, notes: document.querySelector('#quote-notes').value.trim() || null, discount: Number(document.querySelector('#quote-discount').value || 0), additional_fee: Number(document.querySelector('#quote-fee').value || 0), valid_until: depositPercent > 0 ? (quoteValidUntilInput?.value || null) : null, deposit_percent: depositPercent };
+  const items = getQuoteItemsFromForm();
+  if (!items.length) { quoteFormFeedback.textContent = 'Selecione pelo menos um serviço.'; return; }
+  if (depositPercent > 0 && payload.status === 'sent' && !payload.valid_until) { quoteFormFeedback.textContent = 'Defina a data de validade do orçamento ou use 0% de sinal.'; return; }
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Salvando...';
+  const result = quoteId ? await supabaseClient.from('quotes').update(payload).eq('id', quoteId).select('id').single() : await supabaseClient.from('quotes').insert(payload).select('id').single();
+  if (result.error) { quoteFormFeedback.textContent = result.error.message.includes('confirmed_quote') ? 'Orçamentos confirmados precisam ter uma data.' : 'Não foi possível salvar o orçamento.'; saveButton.disabled = false; saveButton.querySelector('span').textContent = 'Salvar orçamento'; return; }
+  const savedId = result.data.id;
+  // Os itens são apagados e regravados, e não atualizados um a um: a lista do
+  // formulário é a fonte da verdade e a trigger recalcula o total de qualquer
+  // jeito. Cada gravação dispara um UPDATE em quotes, e é por isso que o
+  // realtime.js debounceia em vez de recarregar a cada evento.
+  const { error: deleteItemsError } = await supabaseClient.from('quote_items').delete().eq('quote_id', savedId);
+  if (deleteItemsError) {
+    quoteFormFeedback.textContent = 'Orçamento salvo, mas não foi possível substituir os serviços anteriores.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar orçamento';
+    return;
+  }
+  const { error: itemError } = await supabaseClient.from('quote_items').insert(items.map((item, index) => ({ quote_id: savedId, ...item, sort_order: index })));
+  if (itemError) { quoteFormFeedback.textContent = 'Orçamento salvo, mas não foi possível salvar os serviços.'; saveButton.disabled = false; saveButton.querySelector('span').textContent = 'Salvar orçamento'; return; }
+  quoteFormPanel.hidden = true;
+  await loadQuotes();
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Salvar orçamento';
+  showToast(quoteId ? 'Orçamento atualizado' : 'Orçamento cadastrado');
+  // O PDF e a mensagem sao montados sob demanda, entao o documento sempre
+  // corresponde ao estado atual do orcamento, antigo ou novo.
+  openQuoteSavedPanel(savedId, quoteId ? 'Orçamento atualizado' : 'Orçamento cadastrado');
+});
+
+// Um listener para a lista inteira, que é re-renderizada a cada
+// loadQuotes(). Os botões de PDF, WhatsApp e lembrete vêm antes dos de editar e
+// excluir porque têm prefixo próprio e não poderiam ser confundidos com o
+// `detail-trigger` da linha.
+quoteList.addEventListener('click', async (event) => {
+  const pdfButton = event.target.closest('[data-quote-pdf-row]');
+  const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
+  const reminderButton = event.target.closest('[data-quote-reminder-row]');
+  if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
+  if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
+  if (reminderButton) { await sendQuoteExpiryReminder(reminderButton.dataset.quoteReminderRow); return; }
+  const editButton = event.target.closest('[data-edit-quote]');
+  const deleteButton = event.target.closest('[data-delete-quote]');
+  if (editButton) { openQuoteForm(quotes.find((quote) => quote.id === editButton.dataset.editQuote)); return; }
+  if (deleteButton) {
+    const quote = quotes.find((item) => item.id === deleteButton.dataset.deleteQuote);
+    if (!quote || !window.confirm(`Excluir o orçamento ${quote.name}?`)) return;
+    const { error } = await supabaseClient.from('quotes').delete().eq('id', quote.id);
+    if (error) { setQuoteFeedback('Não foi possível excluir este orçamento.', true); return; }
+    await loadQuotes();
+    showToast('Orçamento excluído');
+  }
+});
+
+/* ========================================================================== */
+/* FORMULÁRIO DE ITEM E MOVIMENTAÇÃO DE ESTOQUE                                */
+/* ========================================================================== */
+// Mesma mecânica das imagens de cardápio: o input acumula na fila e é zerado
+// para o change disparar de novo com o mesmo arquivo.
+inventoryImageInput.addEventListener('change', () => {
+  pendingInventoryImages = [...pendingInventoryImages, ...inventoryImageInput.files].filter((file) => file.type.startsWith('image/'));
+  inventoryImageInput.value = '';
+  renderInventoryImagePreviews(document.querySelector('#inventory-id').value || null);
+});
+
+inventoryImagePreviews.addEventListener('click', (event) => {
+  const existingButton = event.target.closest('[data-remove-existing-inventory-image]');
+  const pendingButton = event.target.closest('[data-remove-pending-inventory-image]');
+  if (existingButton) {
+    removedInventoryImageIds.push(existingButton.dataset.removeExistingInventoryImage);
+    renderInventoryImagePreviews(document.querySelector('#inventory-id').value || null);
+  }
+  if (pendingButton) {
+    pendingInventoryImages.splice(Number(pendingButton.dataset.removePendingInventoryImage), 1);
+    renderInventoryImagePreviews(document.querySelector('#inventory-id').value || null);
+  }
+});
+
+// A mesma ordem do cardápio: item, depois categorias, depois imagens apagadas,
+// depois imagens novas. Cada etapa avisa o que conseguiu fazer, porque
+// interromper no meio faria a pessoa salvar de novo e duplicar o item.
+inventoryForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = inventoryForm.querySelector('button[type="submit"]');
+  const itemId = document.querySelector('#inventory-id').value;
+  const payload = {
+    name: document.querySelector('#inventory-name').value.trim(),
+    unit: document.querySelector('#inventory-unit').value.trim(),
+    quantity: Number(document.querySelector('#inventory-quantity').value),
+    minimum_quantity: Number(document.querySelector('#inventory-minimum').value),
+    description: document.querySelector('#inventory-description').value.trim() || null,
+    active: document.querySelector('#inventory-active').checked
+  };
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Salvando...';
+  inventoryFormFeedback.textContent = '';
+  const result = itemId
+    ? await supabaseClient.from('inventory_items').update(payload).eq('id', itemId)
+    : await supabaseClient.from('inventory_items').insert(payload).select('id').single();
+  if (result.error) {
+    inventoryFormFeedback.textContent = 'Não foi possível salvar o item. Confira os dados.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar item';
+    return;
+  }
+  const selectedCategoryIds = [...inventoryCategoryOptions.querySelectorAll('input:checked')].map((input) => input.value);
+  // O update não pede o id de volta — só o insert usa `.select('id').single()` —,
+  // então quem sabe o id gravado é o do formulário quando é edição e o retorno
+  // do banco quando o item é novo.
+  const savedItemId = itemId || result.data?.id;
+  const { error: clearCategoriesError } = await supabaseClient.from('inventory_category_links').delete().eq('inventory_item_id', savedItemId);
+  if (clearCategoriesError || !savedItemId) {
+    inventoryFormFeedback.textContent = 'Item salvo, mas não foi possível atualizar suas categorias.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Salvar item';
+    return;
+  }
+  if (selectedCategoryIds.length) await supabaseClient.from('inventory_category_links').insert(selectedCategoryIds.map((categoryId) => ({ inventory_item_id: savedItemId, category_id: categoryId })));
+  if (removedInventoryImageIds.length) {
+    const removedImages = inventoryImages.filter((image) => removedInventoryImageIds.includes(image.id));
+    await supabaseClient.storage.from('inventory-images').remove(removedImages.map((image) => image.storage_path));
+    await supabaseClient.from('inventory_images').delete().in('id', removedInventoryImageIds);
+  }
+  if (pendingInventoryImages.length) {
+    const uploadedImages = [];
+    for (const [index, file] of pendingInventoryImages.entries()) {
+      const extension = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const storagePath = `${savedItemId}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabaseClient.storage.from('inventory-images').upload(storagePath, file, { contentType: file.type, upsert: false });
+      if (uploadError) continue;
+      const { data: publicData } = supabaseClient.storage.from('inventory-images').getPublicUrl(storagePath);
+      uploadedImages.push({ inventory_item_id: savedItemId, storage_path: storagePath, public_url: publicData.publicUrl, sort_order: index });
+    }
+    if (uploadedImages.length) await supabaseClient.from('inventory_images').insert(uploadedImages);
+  }
+  inventoryFormPanel.hidden = true;
+  await loadInventory();
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Salvar item';
+  showToast(itemId ? 'Item atualizado' : 'Item cadastrado');
+});
+
+// "Ajuste" não é entrada nem saída: é a nova quantidade total. O rótulo do
+// campo muda para não deixar ninguém digitar "30" achando que vai somar trinta.
+movementType.addEventListener('change', () => {
+  movementQuantityLabel.textContent = movementType.value === 'adjustment' ? 'Nova quantidade total' : 'Quantidade';
+});
+
+// A movimentação é uma função do banco porque precisa validar a saída contra o
+// saldo e repor a quantidade dentro da mesma transação. Escrever direto em
+// inventory_items deixaria a quantidade e a linha de histórico divergirem se a
+// segunda etapa falhasse, e o estoque baixo do sino passaria a mentir.
+movementForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const saveButton = movementForm.querySelector('button[type="submit"]');
+  saveButton.disabled = true;
+  saveButton.querySelector('span').textContent = 'Registrando...';
+  movementFormFeedback.textContent = '';
+  const { error } = await supabaseClient.rpc('record_inventory_movement', {
+    target_item_id: document.querySelector('#movement-item-id').value,
+    movement_kind: movementType.value,
+    movement_quantity: Number(document.querySelector('#movement-quantity').value),
+    movement_notes: document.querySelector('#movement-notes').value.trim() || null
+  });
+  if (error) {
+    movementFormFeedback.textContent = error.message.includes('negativo') ? 'A saída não pode ser maior que o estoque atual.' : 'Não foi possível registrar a movimentação. Execute a migração 004 no Supabase.';
+    saveButton.disabled = false;
+    saveButton.querySelector('span').textContent = 'Registrar movimentação';
+    return;
+  }
+  movementFormPanel.hidden = true;
+  await loadInventory();
+  saveButton.disabled = false;
+  saveButton.querySelector('span').textContent = 'Registrar movimentação';
+  showToast('Movimentação registrada');
+});
+
+// Um listener para os três botões do card. O id sai do mesmo jeito para os
+// três, por isso ele é resolvido em uma linha só antes de procurar o item.
+inventoryList.addEventListener('click', async (event) => {
+  const moveButton = event.target.closest('[data-move-inventory]');
+  const editButton = event.target.closest('[data-edit-inventory]');
+  const deleteButton = event.target.closest('[data-delete-inventory]');
+  const itemId = moveButton?.dataset.moveInventory || editButton?.dataset.editInventory || deleteButton?.dataset.deleteInventory;
+  const item = inventoryItems.find((entry) => entry.id === itemId);
+  if (moveButton) return openMovementForm(item);
+  if (editButton) return openInventoryForm(item);
+  if (deleteButton) {
+    if (!item || !window.confirm(`Excluir o item ${item.name}?`)) return;
+    const { error } = await supabaseClient.from('inventory_items').delete().eq('id', item.id);
+    if (error) {
+      setInventoryFeedback('Não foi possível excluir este item. Ele pode estar ligado a um serviço.', true);
+      return;
+    }
+    await loadInventory();
+    showToast('Item excluído');
+  }
+});
+
+/* ========================================================================== */
+/* API Pública                                                                */
+/* ========================================================================== */
+/* Exposta para realtime.js, que chama estes loaders quando outro usuário      */
+/* altera uma tabela. Também é o que events.js usava em window.plenitudeApp   */
+/* sem que esse objeto existisse.                                             */
+window.plenitudeApp = {
+    loadClients,
+    loadServices,
+    loadMenus,
+    loadServiceMaterials,
+    // O realtime precisa redesenhar a lista de itens marcados quando outro
+    // usuário mexe nos vínculos, e essa lista é desenhada por aqui.
+    renderServiceMaterialOptions,
+    // O mesmo para o formulário de serviço, que lê os itens sem abrir a tela de
+    // estoque.
+    loadInventoryItems,
+    loadInventory,
+    loadInventoryCategories,
+    loadQuotes,
+    loadQuoteReferences,
+    // A central de avisos precisa abrir a tela que o aviso resolve, e ela não
+    // conhece o formulário de movimentação nem o filtro de estoque baixo.
+    openInventory,
+    openQuotes,
+    openQuoteReminders,
+  // O módulo de Cerimonial precisa saber quais serviços estão marcados como
+  // "serviço de cerimonial" para filtrar o seletor de evento ativo. A lista
+  // só é buscada se o app já tiver carregado os serviços; caso contrário o
+  // cerimonial cai no fallback e mostra todos os eventos.
+  getCeremonialServiceIds: () => services.filter((service) => service.is_ceremonial).map((service) => service.id)
+};
+
+/* ========================================================================== */
+/* DUPLICAÇÃO                                                                 */
+/* ========================================================================== */
+/* Cada handler acha o item no estado do módulo e chama o abridor de formulário */
+/* com uma CÓPIA SEM `id` (window.plenitudeDuplicate.copy). Como os abridores    */
+/* decidem entre criar e editar pelo id, a cópia cai no modo de criação já       */
+/* preenchido. Imagens, vínculos de cardápio/serviço e categorias não são        */
+/* copiados de propósito: são relações, e o novo registro começa sem elas.       */
+window.plenitudeDuplicate?.register('client', (id) => {
+  const item = clients.find((client) => client.id === id);
+  if (item) openClientForm(window.plenitudeDuplicate.copy(item));
+});
+window.plenitudeDuplicate?.register('service', (id) => {
+  const item = services.find((service) => service.id === id);
+  if (item) openServiceForm(window.plenitudeDuplicate.copy(item));
+});
+window.plenitudeDuplicate?.register('menu', (id) => {
+  const item = menus.find((menu) => menu.id === id);
+  if (item) openMenuForm(window.plenitudeDuplicate.copy(item));
+});
+window.plenitudeDuplicate?.register('inventory', (id) => {
+  const item = inventoryItems.find((entry) => entry.id === id);
+  if (item) openInventoryForm(window.plenitudeDuplicate.copy(item));
+});
+window.plenitudeDuplicate?.register('quote', (id) => {
+  const item = quotes.find((quote) => quote.id === id);
+  if (item) openQuoteForm(window.plenitudeDuplicate.copy(item));
+});
+
+// As categorias não têm formulário: criar e editar são um prompt de nome. A
+// duplicação reaproveita o prompt, já com o sufixo "(cópia)" para não colidir
+// com a chave única do nome. Como não há modal, é o mais próximo de duplicar.
+window.plenitudeDuplicate?.register('menu-category', (id) => {
+  const category = menuCategories.find((entry) => entry.id === id);
+  if (!category) return;
+  const name = window.prompt('Nome da nova categoria:', `${category.name} (cópia)`);
+  if (!name?.trim()) return;
+  supabaseClient.from('menu_categories').insert({ name: name.trim() }).then(({ error }) => {
+    if (error) {
+      setCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível duplicar a categoria.', true);
+      return;
+    }
+    loadMenus();
+    showToast('Categoria duplicada');
+  });
+});
+window.plenitudeDuplicate?.register('inventory-category', (id) => {
+  const category = inventoryCategories.find((entry) => entry.id === id);
+  if (!category) return;
+  const name = window.prompt('Nome da nova categoria:', `${category.name} (cópia)`);
+  if (!name?.trim()) return;
+  supabaseClient.from('inventory_categories').insert({ name: name.trim() }).then(({ error }) => {
+    if (error) {
+      setInventoryCategoryFeedback(error.code === '23505' ? 'Essa categoria já existe.' : 'Não foi possível duplicar a categoria.', true);
+      return;
+    }
+    loadInventory();
+    showToast('Categoria duplicada');
+  });
+});

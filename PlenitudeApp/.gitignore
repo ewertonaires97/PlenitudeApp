@@ -1,0 +1,6 @@
+# Segredos do Supabase Vault (chave do Resend). Este arquivo é colado no SQL
+# Editor e nunca deve ser versionado: ele carrega a chave de envio em texto
+# claro, e chave no histórico do Git vaza para qualquer pessoa que leia o
+# repositório. A migration que grava os segredos é a 024_email.sql, que não tem
+# segredo nenhum e é o que entra no Git.
+supabase/instalar-email.sql

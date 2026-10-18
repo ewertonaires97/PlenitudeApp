@@ -1,0 +1,1175 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#31483b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Plenitude" />
+    <title>Plenitude Realizações | Backoffice</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title">
+      <div class="auth-card">
+        <div class="auth-brand" aria-hidden="true"><span class="brand-mark">PR</span></div>
+        <p class="eyebrow">BACKOFFICE</p>
+        <h1 id="auth-title">Bem-vinda de volta<span>.</span></h1>
+        <p class="auth-intro">Entre para cuidar de cada detalhe da sua realização.</p>
+        <button class="google-button" id="google-login-button" type="button">
+          <svg class="google-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+          </svg>
+          <span>Entrar com Google</span>
+        </button>
+        <p class="auth-divider"><span>ou entre com e-mail e senha</span></p>
+        <form id="login-form" class="login-form">
+          <label for="login-email">E-mail</label>
+          <input id="login-email" name="email" type="email" autocomplete="email" placeholder="seu@email.com" required />
+          <label for="login-password">Senha</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Sua senha" required />
+          <button class="login-button" type="submit"><span>Entrar no backoffice</span><i data-lucide="arrow-right"></i></button>
+          <p class="login-feedback" id="login-feedback" role="alert"></p>
+        </form>
+      </div>
+    </section>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#inicio" aria-label="Plenitude Realizações, início">
+          <span class="brand-mark">PR</span>
+          <span class="brand-name">Plenitude <strong>Realizações</strong></span>
+        </a>
+        <div class="topbar-actions">
+          <button class="icon-button notice-bell" id="notice-bell" type="button" data-permission="dashboard" aria-label="Avisos" title="Avisos">
+            <i data-lucide="bell"></i>
+            <span class="notification-dot" id="notice-dot" hidden></span>
+            <span class="notice-count" id="notice-count" hidden>0</span>
+          </button>
+          <button class="avatar" id="profile-avatar" type="button" aria-label="Perfil" data-action="Perfil">PR</button>
+          <button class="icon-button" id="logout-button" type="button" aria-label="Sair" title="Sair">
+            <i data-lucide="log-out"></i>
+          </button>
+        </div>
+      </header>
+
+      <section class="welcome-panel" id="inicio" data-permission="dashboard">
+        <div class="welcome-copy">
+          <p class="eyebrow">TERÇA-FEIRA, 22 DE SETEMBRO</p>
+          <h1 id="welcome-greeting">Bom dia<span>.</span></h1>
+          <p>O essencial para realizar cada detalhe com presença.</p>
+        </div>
+        <div class="welcome-art" aria-hidden="true">
+          <span class="sun-line"></span>
+          <span class="leaf leaf-one"></span>
+          <span class="leaf leaf-two"></span>
+          <span class="leaf leaf-three"></span>
+        </div>
+      </section>
+
+        <!-- Só aparece quando a migration de acesso ainda não foi aplicada no
+             banco. Sem ele, o app esconderia todos os módulos sem explicar por
+             quê, e o administrator não teria como sair do beco. -->
+        <p class="access-warning" id="access-warning" role="alert" hidden></p>
+
+        <!-- Aviso de orçamento vencendo. Fica no início e não dentro de um
+             módulo porque orçamento vencendo é o único problema do app que não
+             pode esperar alguém se lembrar de abrir uma tela. A faixa aponta
+             para a lista de lembretes, onde o texto é conferido antes de sair. -->
+        <button class="quote-alert-banner" id="quote-alert-banner" type="button" data-open-quote-reminders hidden>
+          <span class="quote-alert-icon"><i data-lucide="bell-ring"></i></span>
+          <span class="quote-alert-body">
+            <strong>Sinal em aberto</strong>
+            <span id="quote-alert-items"></span>
+            <span class="quote-alert-cta">Conferir e enviar <i data-lucide="arrow-right"></i></span>
+          </span>
+        </button>
+
+      <section class="today-row" aria-label="Resumo do dia" data-permission="dashboard">
+        <div>
+          <span class="today-label">AGENDA DE HOJE</span>
+          <strong>2 compromissos</strong>
+        </div>
+        <button class="text-button" type="button" data-action="Agenda de hoje">Ver agenda <i data-lucide="arrow-up-right"></i></button>
+      </section>
+
+      <section class="quick-actions" aria-label="Ações rápidas" data-permission="dashboard">
+        <button class="quick-action primary" type="button" data-open-quotes data-new-quote data-permission="orcamentos">
+          <span class="quick-icon"><i data-lucide="file-plus-2"></i></span>
+          <span>Novo orçamento</span>
+        </button>
+        <button class="quick-action" type="button" data-open-clients data-new-client data-permission="clientes">
+          <span class="quick-icon"><i data-lucide="user-plus"></i></span>
+          <span>Novo cliente</span>
+        </button>
+        <button class="quick-action" type="button" data-new-service data-permission="servicos">
+          <span class="quick-icon"><i data-lucide="sparkles"></i></span>
+          <span>Novo serviço</span>
+        </button>
+      </section>
+
+      <section class="modules-section" aria-labelledby="modules-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">GESTÃO</p>
+            <h2 id="modules-title">Acesse seus módulos</h2>
+          </div>
+          <button class="more-button" type="button" aria-label="Mais opções" data-action="Mais opções"><i data-lucide="more-horizontal"></i></button>
+        </div>
+
+        <div class="module-grid">
+          <button class="module-card card-clientes" type="button" data-permission="clientes" data-open-clients>
+            <span class="module-icon"><i data-lucide="users-round"></i></span>
+            <span class="module-text"><strong>Clientes</strong><small>Contatos e histórico</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-orcamentos" type="button" data-permission="orcamentos" data-open-quotes>
+            <span class="module-icon"><i data-lucide="notebook-tabs"></i></span>
+            <span class="module-text"><strong>Orçamentos</strong><small>Propostas e valores</small></span>
+            <span class="quote-module-count" id="quote-module-count" hidden>0</span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-servicos" type="button" data-permission="servicos" data-open-services>
+            <span class="module-icon"><i data-lucide="sparkles"></i></span>
+            <span class="module-text"><strong>Serviços</strong><small>Seu catálogo</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-estoque" type="button" data-permission="estoque" data-open-inventory>
+            <span class="module-icon"><i data-lucide="boxes"></i></span>
+            <span class="module-text"><strong>Estoque</strong><small>Itens e disponibilidade</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-config" type="button" data-permission="configuracoes" data-open-settings>
+            <span class="module-icon"><i data-lucide="settings"></i></span>
+            <span class="module-text"><strong>Configurações</strong><small>Cardápios e categorias</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-cerimonial" type="button" data-permission="cerimonial" data-open-ceremonial data-action="Cerimonial">
+            <span class="module-icon"><i data-lucide="clipboard-check"></i></span>
+            <span class="module-text"><strong>Cerimonial</strong><small>Operação do evento</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-financeiro" type="button" data-permission="financeiro" data-open-finance>
+            <span class="module-icon"><i data-lucide="landmark"></i></span>
+            <span class="module-text"><strong>Financeiro</strong><small>Recebimentos e divisão</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+          <button class="module-card card-usuarios" type="button" data-permission="usuarios" data-open-users>
+            <span class="module-icon"><i data-lucide="shield-check"></i></span>
+            <span class="module-text"><strong>Usuários</strong><small>Acesso e permissões</small></span>
+            <i class="module-arrow" data-lucide="arrow-up-right"></i>
+          </button>
+        </div>
+
+        <!-- Fica visível quando o usuário não tem nenhum módulo liberado. Sem
+             isso a grade de módulos apareceria vazia, sem explicação. -->
+        <p class="access-empty-note" id="access-empty-note" role="status" hidden>
+          Você ainda não tem nenhuma tela liberada. Peça a um administrador para abrir o seu acesso na tela de Usuários.
+        </p>
+      </section>
+
+      <nav class="bottom-nav" aria-label="Navegação principal">
+        <button class="nav-item active" type="button" data-permission="dashboard" data-nav="Início"><i data-lucide="house"></i><span>Início</span></button>
+        <button class="nav-item" type="button" data-permission="eventos" data-nav="Agenda"><i data-lucide="calendar-clock"></i><span>Agenda</span></button>
+        <button class="nav-item" type="button" data-permission="configuracoes" data-nav="Menu"><i data-lucide="layout-grid"></i><span>Menu</span></button>
+      </nav>
+    </main>
+    <section class="client-panel" id="client-panel" hidden aria-labelledby="clients-title">
+      <div class="client-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">GESTÃO</p>
+            <h2 id="clients-title">Clientes</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-clients aria-label="Fechar clientes"><i data-lucide="x"></i></button>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="client-search">
+            <i data-lucide="search"></i>
+            <input id="client-search" type="search" placeholder="Buscar por nome ou WhatsApp" />
+          </label>
+          <button class="add-client-button" type="button" data-new-client><i data-lucide="user-plus"></i><span>Novo cliente</span></button>
+        </div>
+        <p class="client-feedback" id="client-feedback" role="status"></p>
+        <div class="client-list" id="client-list"></div>
+      </div>
+    </section>
+    <section class="service-panel" id="inventory-panel" hidden aria-labelledby="inventory-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CONTROLE</p>
+            <h2 id="inventory-title">Estoque</h2>
+          </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-open-inventory-categories aria-label="Gerenciar categorias" title="Categorias"><i data-lucide="tags"></i></button>
+            <button class="icon-button" type="button" data-close-inventory aria-label="Fechar estoque"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="inventory-search">
+            <i data-lucide="search"></i>
+            <input id="inventory-search" type="search" placeholder="Buscar qualquer informação" />
+          </label>
+          <button class="add-client-button" type="button" data-new-inventory><i data-lucide="plus"></i><span>Novo item</span></button>
+        </div>
+        <div class="inventory-filter-row">
+          <select class="catalog-filter" id="inventory-category-filter" aria-label="Filtrar por categoria">
+            <option value="">Todas as categorias</option>
+          </select>
+          <label class="inventory-low-filter"><input id="inventory-low-only" type="checkbox" /> Mostrar estoque baixo</label>
+        </div>
+        <p class="client-feedback" id="inventory-feedback" role="status"></p>
+        <div class="client-list" id="inventory-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="inventory-form-panel" hidden aria-labelledby="inventory-form-title">
+      <form class="client-form-card" id="inventory-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CONTROLE</p>
+            <h2 id="inventory-form-title">Novo item</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-inventory-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="inventory-id" type="hidden" />
+        <label for="inventory-name">Nome do item</label>
+        <input id="inventory-name" type="text" placeholder="Ex.: Prato raso branco" required />
+        <label for="inventory-unit">Unidade de medida</label>
+        <select id="inventory-unit" class="movement-select" required>
+          <option value="unidade">Unidade</option>
+          <option value="caixa">Caixa</option>
+          <option value="kit">Kit</option>
+          <option value="par">Par</option>
+          <option value="pacote">Pacote</option>
+          <option value="fardo">Fardo</option>
+          <option value="metro">Metro</option>
+          <option value="litro">Litro</option>
+          <option value="quilo">Quilo</option>
+          <option value="grama">Grama</option>
+          <option value="unidade_m2">Metro quadrado</option>
+        </select>
+        <fieldset class="menu-checkboxes category-checkboxes">
+          <legend>Categorias do item</legend>
+          <div id="inventory-category-options"><span class="field-hint">Carregando categorias...</span></div>
+        </fieldset>
+        <label for="inventory-quantity">Quantidade atual</label>
+        <input id="inventory-quantity" type="number" min="0" step="0.01" placeholder="0" required />
+        <label for="inventory-minimum">Estoque mínimo</label>
+        <input id="inventory-minimum" type="number" min="0" step="0.01" placeholder="0" required />
+        <span class="field-hint inventory-minimum-hint">Limite de alerta: quando o saldo chegar neste número ou ficar abaixo, o item será marcado como estoque baixo. Use 0 para não gerar alerta.</span>
+        <label for="inventory-description">Descrição</label>
+        <textarea id="inventory-description" rows="3" placeholder="Detalhes, cor, tamanho ou localização"></textarea>
+        <label for="inventory-images">Imagens do item</label>
+        <input id="inventory-images" type="file" accept="image/*" multiple />
+        <span class="field-hint">Você pode selecionar várias imagens do item.</span>
+        <div class="image-preview-grid" id="inventory-image-previews"></div>
+        <label class="service-active-field" for="inventory-active"><input id="inventory-active" type="checkbox" checked /> Disponível para uso</label>
+        <p class="client-form-feedback" id="inventory-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar item</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="client-form-panel" id="movement-form-panel" hidden aria-labelledby="movement-form-title">
+      <form class="client-form-card" id="movement-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ESTOQUE</p>
+            <h2 id="movement-form-title">Movimentar item</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-movement-form aria-label="Fechar movimentação"><i data-lucide="x"></i></button>
+        </header>
+        <input id="movement-item-id" type="hidden" />
+        <p class="movement-item-name" id="movement-item-name"></p>
+        <label for="movement-type">Tipo de movimentação</label>
+        <select id="movement-type" class="movement-select">
+          <option value="in">Entrada</option>
+          <option value="out">Saída</option>
+          <option value="adjustment">Ajuste para quantidade</option>
+        </select>
+        <label for="movement-quantity" id="movement-quantity-label">Quantidade</label>
+        <input id="movement-quantity" type="number" min="0.01" step="0.01" placeholder="0" required />
+        <label for="movement-notes">Observação</label>
+        <textarea id="movement-notes" rows="2" placeholder="Ex.: reposição ou uso em evento"></textarea>
+        <p class="client-form-feedback" id="movement-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Registrar movimentação</span><i data-lucide="arrow-down-up"></i></button>
+      </form>
+    </section>
+    <section class="client-form-panel" id="client-form-panel" hidden aria-labelledby="client-form-title">
+      <form class="client-form-card" id="client-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CADASTRO</p>
+            <h2 id="client-form-title">Novo cliente</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-client-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="client-id" type="hidden" />
+        <label for="client-name">Nome completo</label>
+        <input id="client-name" name="name" type="text" placeholder="Ex.: Mariana Oliveira" required />
+        <label for="client-whatsapp">WhatsApp</label>
+        <input id="client-whatsapp" name="whatsapp" type="tel" placeholder="(00) 00000-0000" />
+        <label for="client-email">E-mail</label>
+        <input id="client-email" name="email" type="email" placeholder="cliente@email.com" />
+        <label for="client-notes">Observações</label>
+        <textarea id="client-notes" name="notes" rows="3" placeholder="Informações importantes sobre o cliente"></textarea>
+        <p class="client-form-feedback" id="client-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar cliente</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="service-panel" id="service-panel" hidden aria-labelledby="services-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="services-title">Serviços</h2>
+          </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-open-menus aria-label="Gerenciar cardápios" title="Cardápios"><i data-lucide="book-open"></i></button>
+            <button class="icon-button" type="button" data-close-services aria-label="Fechar serviços"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="service-search">
+            <i data-lucide="search"></i>
+            <input id="service-search" type="search" placeholder="Buscar serviço ou categoria" />
+          </label>
+          <select class="catalog-filter" id="service-menu-filter" aria-label="Filtrar por cardápio">
+            <option value="">Todos os cardápios</option>
+          </select>
+          <button class="add-client-button" type="button" data-new-service><i data-lucide="plus"></i><span>Novo serviço</span></button>
+        </div>
+        <p class="client-feedback" id="service-feedback" role="status"></p>
+        <div class="client-list" id="service-list"></div>
+      </div>
+    </section>
+    <section class="service-panel" id="menu-panel" hidden aria-labelledby="menus-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="menus-title">Cardápios</h2>
+          </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-open-categories aria-label="Gerenciar categorias" title="Categorias"><i data-lucide="tags"></i></button>
+            <button class="icon-button" type="button" data-close-menus aria-label="Fechar cardápios"><i data-lucide="x"></i></button>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-menu><i data-lucide="plus"></i><span>Novo</span></button>
+          </div>
+        </header>
+        <div class="menu-filter-row">
+          <select class="catalog-filter" id="menu-category-filter" aria-label="Filtrar por categoria">
+            <option value="">Todas as categorias</option>
+          </select>
+        </div>
+        <p class="client-feedback" id="menu-feedback" role="status"></p>
+        <div class="client-list" id="menu-list"></div>
+      </div>
+    </section>
+    <section class="service-panel" id="settings-panel" hidden aria-labelledby="settings-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">AJUSTES</p>
+            <h2 id="settings-title">Configurações</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-settings aria-label="Fechar configurações"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">Telas de apoio do catálogo, do estoque e do acesso. Tudo aqui também pode ser aberto direto pelo módulo correspondente.</p>
+        <div class="client-list settings-list">
+          <button class="client-row settings-item" type="button" data-permission="cardapios" data-settings-goto="menus">
+            <span class="client-initial"><i data-lucide="book-open"></i></span>
+            <span class="client-details"><strong>Cardápios</strong><span>Catálogo de cardápios e serviços que os usam</span></span>
+            <i data-lucide="chevron-right" class="settings-chevron"></i>
+          </button>
+          <button class="client-row settings-item" type="button" data-permission="cardapios" data-settings-goto="menu-categories">
+            <span class="client-initial"><i data-lucide="tags"></i></span>
+            <span class="client-details"><strong>Categorias de cardápio</strong><span>Agrupam cardápios em Doces, Bebidas, Sobremesas…</span></span>
+            <i data-lucide="chevron-right" class="settings-chevron"></i>
+          </button>
+          <button class="client-row settings-item" type="button" data-permission="estoque" data-settings-goto="inventory-categories">
+            <span class="client-initial"><i data-lucide="boxes"></i></span>
+            <span class="client-details"><strong>Categorias de itens</strong><span>Agrupam os itens do estoque, como Louças, Taças e Toalhas</span></span>
+            <i data-lucide="chevron-right" class="settings-chevron"></i>
+          </button>
+          <button class="client-row settings-item" type="button" data-permission="usuarios" data-open-users>
+            <span class="client-initial"><i data-lucide="shield-check"></i></span>
+            <span class="client-details"><strong>Usuários e acessos</strong><span>Quem entra no app e quais telas cada pessoa abre</span></span>
+            <i data-lucide="chevron-right" class="settings-chevron"></i>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="service-panel" id="users-panel" hidden aria-labelledby="users-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ACESSO</p>
+            <h2 id="users-title">Usuários</h2>
+          </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-users aria-label="Fechar usuários"><i data-lucide="x"></i></button>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-user><i data-lucide="user-plus"></i><span>Novo</span></button>
+          </div>
+        </header>
+        <div class="client-toolbar">
+          <label class="search-field" for="users-search">
+            <i data-lucide="search"></i>
+            <input id="users-search" type="search" placeholder="Buscar por nome, e-mail ou WhatsApp" />
+          </label>
+        </div>
+        <p class="field-hint">A conta de cada pessoa é criada em <strong>Authentication &gt; Users</strong> no painel do Supabase. Depois que a conta existir, cadastre aqui o nome, o WhatsApp, o nível e as telas.</p>
+        <p class="client-feedback" id="users-feedback" role="status"></p>
+        <div class="client-list" id="users-list"></div>
+        <section class="role-defaults" aria-labelledby="role-defaults-title">
+          <h3 id="role-defaults-title" class="role-defaults-title">Padrão de cada nível</h3>
+          <p class="field-hint">As telas que quem entra com aquele nível abre por padrão. Um usuário pode ter telas marcadas no cadastro dele, e aí este padrão é ignorado.</p>
+          <div id="role-defaults"></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="client-form-panel" id="user-form-panel" hidden aria-labelledby="user-form-title">
+      <form class="client-form-card" id="user-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ACESSO</p>
+            <h2 id="user-form-title">Novo usuário</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-user-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="user-id" type="hidden" />
+
+        <label for="user-email">E-mail da conta</label>
+        <input id="user-email" name="email" type="email" autocomplete="off" placeholder="pessoa@plenitude.com" required />
+        <span class="field-hint" id="user-email-hint"></span>
+
+        <label for="user-name">Nome</label>
+        <input id="user-name" name="name" type="text" placeholder="Como essa pessoa deve aparecer no app" required />
+
+        <label for="user-whatsapp">WhatsApp</label>
+        <input id="user-whatsapp" name="whatsapp" type="tel" autocomplete="off" placeholder="11 98888 7777" />
+
+        <label for="user-role">Nível de acesso</label>
+        <select id="user-role" name="role"></select>
+        <span class="field-hint" id="user-role-description"></span>
+
+        <fieldset class="menu-checkboxes permission-legend">
+          <legend>Telas liberadas</legend>
+          <label class="menu-option permission-inherit">
+            <input id="user-inherit-role" type="checkbox" checked />
+            <span class="permission-option-copy">
+              <strong>Usar o padrão do nível</strong>
+              <small>Desmarque para escolher as telas uma a uma só para esta pessoa.</small>
+            </span>
+          </label>
+          <div id="user-permission-options"></div>
+        </fieldset>
+
+        <label class="service-active-field" id="user-active-field" for="user-active">
+          <input id="user-active" name="active" type="checkbox" checked /> Conta ativa
+        </label>
+        <span class="field-hint" id="user-active-hint">Desmarque para deixar a pessoa cadastrada, mas sem conseguir entrar. Ela vera a tela avisando que esta desativada, e voce liga aqui a qualquer momento.</span>
+
+        <p class="client-form-feedback" id="user-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar acesso</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
+    <section class="service-panel" id="inventory-category-panel" hidden aria-labelledby="inventory-categories-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CONTROLE</p>
+            <h2 id="inventory-categories-title">Categorias de itens</h2>
+          </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-inventory-categories aria-label="Fechar categorias de itens"><i data-lucide="x"></i></button>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-inventory-category><i data-lucide="plus"></i><span>Nova</span></button>
+          </div>
+        </header>
+        <p class="client-feedback" id="inventory-category-feedback" role="status"></p>
+        <div class="client-list" id="inventory-category-list"></div>
+      </div>
+    </section>
+
+    <section class="service-panel" id="category-panel" hidden aria-labelledby="categories-title">
+      <div class="service-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="categories-title">Categorias</h2>
+          </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-categories aria-label="Fechar categorias"><i data-lucide="x"></i></button>
+          </div>
+          <div class="panel-header-actions">
+            <button class="add-client-button" type="button" data-new-category><i data-lucide="plus"></i><span>Nova</span></button>
+          </div>
+        </header>
+        <p class="client-feedback" id="category-feedback" role="status"></p>
+        <div class="client-list" id="category-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="menu-form-panel" hidden aria-labelledby="menu-form-title">
+      <form class="client-form-card" id="menu-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="menu-form-title">Novo cardápio</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-menu-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="menu-id" type="hidden" />
+        <fieldset class="menu-checkboxes">
+          <legend>Serviços que incluem este cardápio</legend>
+          <span class="field-hint">O mesmo cardápio pode participar de vários serviços. Nos orçamentos, ele aparece junto de cada serviço escolhido.</span>
+          <div id="menu-service-options"><span class="field-hint">Carregando serviços...</span></div>
+        </fieldset>
+        <label for="menu-name">Nome do cardápio</label>
+        <input id="menu-name" name="name" type="text" placeholder="Ex.: Mesa posta" required />
+        <label for="menu-description">Descrição</label>
+        <textarea id="menu-description" name="description" rows="3" placeholder="Apresente este cardápio para a equipe"></textarea>
+        <label for="menu-images">Imagens do cardápio</label>
+        <input id="menu-images" name="images" type="file" accept="image/*" multiple />
+        <span class="field-hint">Você pode selecionar várias imagens. JPG, PNG ou WEBP.</span>
+        <div class="image-preview-grid" id="menu-image-previews"></div>
+        <fieldset class="menu-checkboxes category-checkboxes">
+          <legend>Categorias</legend>
+          <div id="menu-category-options"><span class="field-hint">Carregando categorias...</span></div>
+          <button class="inline-create-button" type="button" data-new-category><i data-lucide="plus"></i><span>Adicionar categoria</span></button>
+        </fieldset>
+        <label class="service-active-field" for="menu-active"><input id="menu-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
+        <p class="client-form-feedback" id="menu-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar cardápio</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="client-form-panel" id="service-form-panel" hidden aria-labelledby="service-form-title">
+      <form class="client-form-card" id="service-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CATÁLOGO</p>
+            <h2 id="service-form-title">Novo serviço</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-service-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="service-id" type="hidden" />
+        <label for="service-name">Nome do serviço</label>
+        <input id="service-name" name="name" type="text" placeholder="Ex.: Mesa posta para 20 pessoas" required />
+        <label for="service-category">Categoria</label>
+        <input id="service-category" name="category" type="text" placeholder="Ex.: Mesa posta, alimentação ou cerimonial" />
+        <label for="service-price">Preço padrão</label>
+        <input id="service-price" name="default_price" type="number" min="0" step="0.01" placeholder="0,00" required />
+        <label for="service-description">Descrição</label>
+        <textarea id="service-description" name="description" rows="3" placeholder="O que está incluído neste serviço"></textarea>
+        <fieldset class="menu-checkboxes">
+          <legend>Itens de estoque deste serviço</legend>
+          <p class="field-hint">Marque os itens que este serviço utiliza. Quando um evento for confirmado com este serviço, o estoque avisa que o item está reservado. Toque no nome para abrir a ficha do item.</p>
+          <div id="service-material-options"><span class="field-hint">Nenhum item cadastrado ainda.</span></div>
+        </fieldset>
+        <fieldset class="menu-checkboxes">
+          <legend>Cardápios deste serviço</legend>
+          <p class="field-hint">Marque os cardápios que participam deste serviço. Um mesmo cardápio pode estar em vários serviços. Toque no nome para abrir a ficha do cardápio.</p>
+          <div id="service-menu-options"><span class="field-hint">Nenhum cardápio cadastrado ainda.</span></div>
+          <button class="inline-create-button" type="button" data-new-menu-from-service><i data-lucide="plus"></i><span>Criar cardápio para este serviço</span></button>
+        </fieldset>
+        <label class="service-active-field" for="service-active"><input id="service-active" name="active" type="checkbox" checked /> Disponível para novos orçamentos</label>
+        <label class="service-active-field" for="service-is-ceremonial"><input id="service-is-ceremonial" name="is_ceremonial" type="checkbox" /> Serviço de Cerimonial</label>
+        <p class="field-hint" style="margin-top: -6px;">Marque aqui os serviços que o módulo de Cerimonial atende. Só os eventos com pelo menos um destes serviços aparecem no seletor do cerimonial.</p>
+        <p class="client-form-feedback" id="service-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar serviço</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="service-panel" id="quote-panel" hidden aria-labelledby="quotes-title">
+      <div class="service-panel-card quote-panel-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow">NEGÓCIOS</p><h2 id="quotes-title">Orçamentos</h2></div>
+          <div class="panel-header-tools"><button class="icon-button" type="button" data-close-quotes aria-label="Fechar orçamentos"><i data-lucide="x"></i></button></div>
+          <div class="panel-header-actions"><button class="add-client-button quote-reminder-button" type="button" data-open-quote-reminders><i data-lucide="bell-ring"></i><span>Lembretes</span><span class="quote-reminder-count" id="quote-reminder-count" hidden>0</span></button><button class="add-client-button" type="button" data-new-quote><i data-lucide="plus"></i><span>Novo</span></button></div>
+        </header>
+        <div class="client-toolbar"><label class="search-field" for="quote-search"><i data-lucide="search"></i><input id="quote-search" type="search" placeholder="Buscar orçamento, cliente ou local" /></label><select class="catalog-filter" id="quote-status-filter" aria-label="Filtrar status"><option value="">Todos</option><option value="draft">Rascunhos</option><option value="sent">Enviados</option><option value="confirmed">Confirmados</option><option value="expired">Expirados</option><option value="cancelled">Cancelados</option></select></div>
+        <p class="client-feedback" id="quote-feedback" role="status"></p><div class="client-list" id="quote-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="quote-form-panel" hidden aria-labelledby="quote-form-title">
+      <form class="client-form-card quote-form-card" id="quote-form">
+        <header class="client-panel-header"><div><p class="eyebrow">PROPOSTA</p><h2 id="quote-form-title">Novo orçamento</h2></div><button class="icon-button" type="button" data-close-quote-form aria-label="Fechar formulário"><i data-lucide="x"></i></button></header>
+        <input id="quote-id" type="hidden" />
+        <label for="quote-name">Nome do orçamento</label><input id="quote-name" type="text" placeholder="Ex.: Casamento Mariana e João" required />
+        <label for="quote-client">Cliente</label><select id="quote-client" class="movement-select" required><option value="">Selecione um cliente</option></select>
+        <div class="quote-event-fields"><div><label for="quote-date">Data do evento</label><input id="quote-date" type="date" /></div><div><label for="quote-time">Horário</label><input id="quote-time" type="time" /></div></div>
+        <label for="quote-venue">Local</label><input id="quote-venue" type="text" placeholder="Ex.: Espaço Jardim" />
+        <label>Serviços oferecidos</label><span class="field-hint">Ao marcar um serviço, os cardápios vinculados a ele aparecem aqui para consulta.</span><div class="quote-service-picker" id="quote-service-picker"></div>
+        <div class="quote-totals"><span>Subtotal</span><strong id="quote-subtotal-preview">R$ 0,00</strong><label for="quote-discount">Desconto</label><input id="quote-discount" type="number" min="0" step="0.01" value="0" /><label for="quote-fee">Taxa adicional</label><input id="quote-fee" type="number" min="0" step="0.01" value="0" /><span>Total</span><strong id="quote-total-preview">R$ 0,00</strong></div>
+        <div class="quote-event-fields"><div><label for="quote-deposit-percent">Sinal exigido (%)</label><input id="quote-deposit-percent" type="number" min="0" max="100" step="1" value="30" /></div><div><label for="quote-valid-until">Válido até</label><input id="quote-valid-until" type="date" /></div></div>
+        <p class="field-hint">O sinal é a parte do total que o cliente paga para reservar a data. Zerando o percentual, a proposta não expira e a confirmação fica manual.</p>
+        <div class="quote-deposit-preview" id="quote-deposit-preview" role="status"><i data-lucide="info"></i><span>Informe o percentual do sinal e a data de corte para a proposta aparecer como válida na lista.</span></div>
+        <label for="quote-status">Status</label><select id="quote-status" class="movement-select"><option value="draft">Rascunho</option><option value="sent">Enviado</option><option value="confirmed">Confirmado</option><option value="cancelled">Cancelado</option></select>
+        <label for="quote-notes">Observações</label><textarea id="quote-notes" rows="3" placeholder="Condições, prazo de validade ou observações"></textarea>
+        <p class="client-form-feedback" id="quote-form-feedback" role="alert"></p><button class="login-button" type="submit"><span>Salvar orçamento</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="client-form-panel" id="quote-deposit-panel" hidden aria-labelledby="quote-deposit-title">
+      <form class="client-form-card" id="quote-deposit-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">PAGAMENTO</p>
+            <h2 id="quote-deposit-title">Registrar sinal</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-quote-deposit aria-label="Fechar sinal"><i data-lucide="x"></i></button>
+        </header>
+        <input id="quote-deposit-quote-id" type="hidden" />
+        <p class="quote-deposit-context" id="quote-deposit-context"></p>
+        <div class="quote-deposit-summary">
+          <div><span>Sinal exigido</span><strong id="quote-deposit-required">R$ 0,00</strong></div>
+          <div><span>Já recebido</span><strong id="quote-deposit-paid">R$ 0,00</strong></div>
+          <div class="quote-deposit-remaining-box"><span>Falta</span><strong id="quote-deposit-remaining">R$ 0,00</strong></div>
+        </div>
+        <p class="field-hint">Registrar o sinal confirma o orçamento e lança o recebimento no Financeiro do evento. Dá para estornar depois, se precisar.</p>
+        <label for="quote-deposit-amount">Valor do sinal (R$)</label><input id="quote-deposit-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required />
+        <label for="quote-deposit-date">Data do pagamento</label><input id="quote-deposit-date" type="date" required />
+        <label for="quote-deposit-method">Forma de pagamento</label><select id="quote-deposit-method" class="movement-select"><option value="pix">Pix</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="transfer">Transferência</option><option value="other">Outra</option></select>
+        <label for="quote-deposit-notes">Observação</label><input id="quote-deposit-notes" type="text" placeholder="Ex.: entrada do sinal no contato" />
+        <div id="quote-deposit-history" class="quote-deposit-history"></div>
+        <p class="client-form-feedback" id="quote-deposit-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Registrar sinal</span><i data-lucide="hand-coins"></i></button>
+      </form>
+    </section>
+    <section class="client-form-panel" id="quote-reminder-panel" hidden aria-labelledby="quote-reminder-title">
+      <div class="client-form-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">COBRANÇA</p>
+            <h2 id="quote-reminder-title">Lembretes de sinal</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-quote-reminders aria-label="Fechar lembretes"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">Propostas enviadas com o sinal em aberto, vencendo ou já vencidas. A mensagem diz o prazo em que a proposta está e avisa que, sem o pagamento, o evento não pode ser confirmado. O WhatsApp abre a conversa com o cliente sem digitar nada: a mensagem fica à vista para conferir, copiar ou editar antes de enviar. Cada cartão tem o botão para escrever uma mensagem só para aquele cliente.</p>
+        <div class="quote-reminder-toolbar">
+          <button class="client-action-button quote-reminder-action" type="button" data-toggle-quote-template><i data-lucide="text-cursor-input"></i><span>Editar a mensagem padrão</span></button>
+        </div>
+        <div class="quote-template-editor" id="quote-template-editor" hidden>
+          <label for="quote-template-body">Mensagem padrão do lembrete</label>
+          <p class="field-hint">Escreva do seu jeito. Toque numa variável abaixo para inseri-la onde o cursor estiver. <strong>{prazo}</strong> já vem com o verbo — escreva "cujo prazo de validade {prazo}" e ele vira "cujo prazo de validade vence amanhã" ou "já venceu há 3 dias", conforme a situação. O que aparecer entre chaves e não for uma variável sai como você escreveu, então dá para chamar o cliente pelo nome.</p>
+          <div class="quote-template-tokens" id="quote-template-tokens"></div>
+          <textarea id="quote-template-body" rows="14" spellcheck="false"></textarea>
+          <p class="quote-template-preview-label">PRÉVIA COM UM ORÇAMENTO REAL</p>
+          <pre class="quote-reminder-preview" id="quote-template-preview"></pre>
+          <p class="client-form-feedback" id="quote-template-feedback" role="alert"></p>
+          <div class="quote-template-actions">
+            <button class="login-button" type="button" data-save-quote-template><span>Salvar mensagem</span><i data-lucide="check"></i></button>
+            <button class="client-action-button" type="button" data-restore-quote-template><i data-lucide="undo-2"></i><span>Restaurar padrão</span></button>
+          </div>
+        </div>
+        <p class="client-form-feedback" id="quote-reminder-feedback" role="alert"></p>
+        <div class="client-list" id="quote-reminder-list"></div>
+        <button class="login-button" type="button" data-close-quote-reminders><span>Voltar aos orçamentos</span><i data-lucide="check"></i></button>
+      </div>
+    </section>
+    <section class="client-form-panel" id="notice-panel" hidden aria-labelledby="notice-title">
+      <div class="client-form-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">CENTRAL</p>
+            <h2 id="notice-title">Avisos</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-notices aria-label="Fechar avisos"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">O que pede uma decisão agora. Tudo aqui sai da lista sozinho quando o assunto é resolvido — receber o sinal, repor o item, o convidado confirmar.</p>
+        <p class="client-form-feedback" id="notice-summary" role="status"></p>
+        <div class="notice-list" id="notice-list"></div>
+        <button class="login-button" type="button" data-close-notices><span>Voltar</span><i data-lucide="check"></i></button>
+      </div>
+    </section>
+    <section class="service-panel" id="event-panel" hidden aria-labelledby="events-title">
+      <div class="service-panel-card quote-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">PRODUÇÃO</p>
+            <h2 id="events-title">Eventos</h2>
+          </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-events aria-label="Fechar eventos"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+        <p class="field-hint" style="margin: 0 0 10px;">
+          Eventos nascem automaticamente ao confirmar um orçamento.
+        </p>
+        <div class="client-toolbar">
+          <label class="search-field" for="event-search">
+            <i data-lucide="search"></i>
+            <input id="event-search" type="search" placeholder="Buscar por evento, cliente ou local" />
+          </label>
+          <select class="catalog-filter" id="event-status-filter" aria-label="Filtrar por status">
+            <option value="">Todos os status</option>
+            <option value="planned">Planejados</option>
+            <option value="in_progress">Em andamento</option>
+            <option value="completed">Realizados</option>
+            <option value="cancelled">Cancelados</option>
+          </select>
+        </div>
+        <div class="event-filter-pills">
+          <button class="event-pill active" type="button" data-event-filter="all">Todos</button>
+          <button class="event-pill" type="button" data-event-filter="upcoming">Próximos</button>
+          <button class="event-pill" type="button" data-event-filter="today">Hoje</button>
+          <button class="event-pill" type="button" data-event-filter="completed">Realizados</button>
+        </div>
+        <p class="client-feedback" id="event-feedback" role="status"></p>
+        <div class="client-list event-list" id="event-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel" id="event-form-panel" hidden aria-labelledby="event-form-title">
+      <form class="client-form-card quote-form-card" id="event-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">PRODUÇÃO</p>
+            <h2 id="event-form-title">Editar evento</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-event-form aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="event-id" type="hidden" />
+        <input id="event-quote-id" type="hidden" />
+        <label for="event-name">Nome do evento</label>
+        <input id="event-name" type="text" placeholder="Ex.: Casamento Mariana e João" required />
+        <label for="event-client">Cliente</label>
+        <select id="event-client" class="movement-select" required>
+          <option value="">Selecione um cliente</option>
+        </select>
+        <label for="event-quote-select">Orçamento vinculado</label>
+        <select id="event-quote-select" class="movement-select">
+          <option value="">Manter o orçamento atual</option>
+        </select>
+        <span class="field-hint">O evento é criado automaticamente de confirmação do orçamento; aqui ele só pode ser editado.</span>
+        <div class="quote-event-fields">
+          <div>
+            <label for="event-date">Data do evento</label>
+            <input id="event-date" type="date" required />
+          </div>
+          <div>
+            <label for="event-time">Horário</label>
+            <input id="event-time" type="time" />
+          </div>
+        </div>
+        <label for="event-venue">Local</label>
+        <input id="event-venue" type="text" placeholder="Ex.: Espaço Jardim das Flores" />
+        <label for="event-status">Status do evento</label>
+        <select id="event-status" class="movement-select">
+          <option value="planned">Planejado</option>
+          <option value="in_progress">Em andamento</option>
+          <option value="completed">Realizado</option>
+          <option value="cancelled">Cancelado</option>
+        </select>
+        <label for="event-notes">Observações de produção</label>
+        <textarea id="event-notes" rows="3" placeholder="Detalhes da equipe, montagem, cerimônia e cronograma"></textarea>
+        <p class="client-form-feedback" id="event-form-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar evento</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+    <section class="service-panel" id="event-detail-panel" hidden aria-labelledby="event-detail-title">
+      <div class="service-panel-card event-detail-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow" id="event-detail-eyebrow">PRODUÇÃO & OPERAÇÃO</p>
+            <h2 id="event-detail-title">Gestão do Evento</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-event-detail aria-label="Fechar detalhes"><i data-lucide="x"></i></button>
+        </header>
+        <div id="event-detail-hero" class="event-detail-hero"></div>
+        <div class="event-detail-tabs" role="tablist">
+          <button class="event-tab-btn active" type="button" data-event-tab="overview"><i data-lucide="info"></i><span>Visão geral</span></button>
+          <button class="event-tab-btn" type="button" data-event-tab="timeline"><i data-lucide="clipboard-check"></i><span>Cerimonial</span></button>
+          <button class="event-tab-btn" type="button" data-event-tab="guests"><i data-lucide="users"></i><span>Convidados</span></button>
+        </div>
+        <div class="event-tab-content" id="event-tab-overview"></div>
+        <div class="event-tab-content" id="event-tab-timeline" hidden></div>
+        <div class="event-tab-content" id="event-tab-guests" hidden></div>
+      </div>
+    </section>
+    <section class="image-viewer" id="image-viewer" hidden aria-label="Visualização da imagem">
+      <button class="image-viewer-close" type="button" data-close-image-viewer aria-label="Fechar imagem"><i data-lucide="x"></i></button>
+      <img id="image-viewer-image" src="" alt="Imagem ampliada" />
+    </section>
+    <section class="detail-view" id="detail-view" hidden aria-labelledby="detail-view-title">
+      <div class="detail-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow" id="detail-view-eyebrow">DETALHES</p><h2 id="detail-view-title">Detalhes</h2></div>
+          <button class="icon-button" type="button" data-close-detail aria-label="Fechar detalhes"><i data-lucide="x"></i></button>
+        </header>
+        <div id="detail-view-content"></div>
+      </div>
+    </section>
+    <section class="service-panel" id="finance-panel" hidden aria-labelledby="finance-title">
+      <div class="service-panel-card finance-panel-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow">GESTÃO</p><h2 id="finance-title">Financeiro</h2></div>
+          <button class="icon-button" type="button" data-close-finance aria-label="Fechar financeiro"><i data-lucide="x"></i></button>
+        </header>
+        <div class="finance-toolbar">
+          <label for="finance-month">Mês do evento</label>
+          <input id="finance-month" type="month" />
+          <label class="finance-all-periods"><input id="finance-all-periods" type="checkbox" /> Todo o período</label>
+        </div>
+        <div class="finance-kpis">
+          <article><span>Receita recebida</span><strong id="finance-total-received">R$ 0,00</strong></article>
+          <article><span>Custos</span><strong id="finance-total-costs">R$ 0,00</strong></article>
+          <article><span>Dízimo</span><strong id="finance-total-tithe">R$ 0,00</strong></article>
+          <article><span>Repasses à equipe</span><strong id="finance-total-allocated">R$ 0,00</strong></article>
+          <article><span>Lucro líquido</span><strong id="finance-total-balance">R$ 0,00</strong></article>
+        </div>
+        <p class="finance-cost-note"><i data-lucide="info"></i> Lucro líquido = receita recebida menos custos, dízimo e repasses da equipe.</p>
+        <p class="client-feedback" id="finance-feedback" role="status"></p>
+        <div class="finance-event-list" id="finance-event-list"></div>
+      </div>
+    </section>
+    <section class="client-form-panel finance-event-panel" id="finance-event-panel" hidden aria-labelledby="finance-event-title">
+      <div class="client-form-card finance-event-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow">RATEIO DO EVENTO</p><h2 id="finance-event-title">Evento</h2><span class="field-hint" id="finance-event-subtitle"></span></div>
+          <button class="icon-button" type="button" data-close-finance-event aria-label="Fechar detalhes financeiros"><i data-lucide="x"></i></button>
+        </header>
+        <div class="finance-event-summary">
+          <div><span>Valor contratado</span><strong id="finance-event-contracted">R$ 0,00</strong></div>
+          <div><span>Recebido</span><strong id="finance-event-received">R$ 0,00</strong></div>
+          <div><span>Custos</span><strong id="finance-event-costs">R$ 0,00</strong></div>
+          <div><span>Resultado após custos</span><strong id="finance-event-operating-result">R$ 0,00</strong></div>
+          <div><span>Dízimo</span><strong id="finance-event-tithe">R$ 0,00</strong></div>
+          <div><span>Repasses</span><strong id="finance-event-allocated">R$ 0,00</strong></div>
+          <div><span>Lucro líquido</span><strong id="finance-event-balance">R$ 0,00</strong></div>
+        </div>
+        <form id="finance-allocation-form" class="finance-form">
+          <h3>Dízimo para a igreja</h3>
+          <div class="finance-form-fields">
+            <label class="finance-field-wide" for="finance-tithe-mode"><span>Forma de cálculo</span><select id="finance-tithe-mode" class="movement-select"><option value="percentage">Percentual da receita</option><option value="fixed">Valor direto</option></select></label>
+            <label for="finance-tithe-percent"><span>Percentual (%)</span><input id="finance-tithe-percent" type="number" min="0" max="100" step="0.01" value="10" /></label>
+            <label for="finance-tithe-fixed"><span>Valor do dízimo (R$)</span><input id="finance-tithe-fixed" type="number" min="0" step="0.01" value="0" /></label>
+          </div>
+          <div class="finance-section-heading"><h3>Divisão entre a equipe</h3><button class="add-client-button" type="button" data-add-finance-share><i data-lucide="user-plus"></i><span>Adicionar pessoa</span></button></div>
+          <p class="field-hint">Custos são descontados da receita; o dízimo é separado em seguida. Percentuais da equipe incidem sobre o saldo após custos e dízimo. Também é possível definir valor fixo.</p>
+          <div class="finance-share-list" id="finance-share-rows"></div>
+          <p class="client-form-feedback" id="finance-allocation-feedback" role="alert"></p>
+          <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="check"></i><span>Salvar divisão</span></button></div>
+        </form>
+        <section class="finance-form-section">
+          <div class="finance-section-heading"><h3>Recebimentos</h3><span id="finance-receipts-total" class="finance-form-total">R$ 0,00</span></div>
+          <div id="finance-receipts-list" class="finance-form-list"></div>
+          <form id="finance-receipt-form" class="finance-form">
+            <input id="finance-receipt-id" type="hidden" />
+            <div class="finance-form-fields">
+              <label for="finance-receipt-amount"><span>Valor do recebimento (R$)</span><input id="finance-receipt-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
+              <label for="finance-receipt-date"><span>Data do recebimento</span><input id="finance-receipt-date" type="date" required /></label>
+              <label class="finance-field-wide" for="finance-receipt-method"><span>Forma de pagamento</span><select id="finance-receipt-method" class="movement-select"><option value="pix">Pix</option><option value="cash">Dinheiro</option><option value="card">Cartão</option><option value="transfer">Transferência</option><option value="other">Outra</option></select></label>
+              <label class="finance-field-wide" for="finance-receipt-notes"><span>Observação</span><input id="finance-receipt-notes" type="text" placeholder="Ex.: sinal ou parcela final" /></label>
+            </div>
+            <p class="client-form-feedback" id="finance-receipt-feedback" role="alert"></p>
+            <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-receipt-submit-label">Registrar recebimento</span></button><button class="text-button" type="button" data-cancel-finance-receipt hidden>Cancelar edição</button></div>
+          </form>
+        </section>
+        <section class="finance-form-section">
+          <div class="finance-section-heading"><h3>Custos do evento</h3><span id="finance-costs-total" class="finance-form-total">R$ 0,00</span></div>
+          <div id="finance-costs-list" class="finance-form-list"></div>
+          <form id="finance-cost-form" class="finance-form">
+            <input id="finance-cost-id" type="hidden" />
+            <div class="finance-form-fields">
+              <label class="finance-field-wide" for="finance-cost-name"><span>Nome do custo</span><input id="finance-cost-name" type="text" placeholder="Ex.: aluguel do espaço" required /></label>
+              <label for="finance-cost-amount"><span>Valor (R$)</span><input id="finance-cost-amount" type="number" min="0.01" step="0.01" placeholder="0,00" required /></label>
+              <label for="finance-cost-date"><span>Data</span><input id="finance-cost-date" type="date" required /></label>
+              <label class="finance-field-wide" for="finance-cost-notes"><span>Observação</span><input id="finance-cost-notes" type="text" placeholder="Fornecedor ou comprovante" /></label>
+            </div>
+            <p class="client-form-feedback" id="finance-cost-feedback" role="alert"></p>
+            <div class="finance-form-actions"><button class="add-client-button" type="submit"><i data-lucide="plus"></i><span id="finance-cost-submit-label">Registrar custo</span></button><button class="text-button" type="button" data-cancel-finance-cost hidden>Cancelar edição</button></div>
+          </form>
+        </section>
+      </div>
+    </section>
+
+    <!-- ====================================================================== -->
+    <!-- MÓDULO DE CERIMONIAL & OPERAÇÃO                                        -->
+    <!-- ====================================================================== -->
+    <section class="service-panel" id="ceremonial-panel" hidden aria-labelledby="ceremonial-title">
+      <div class="service-panel-card ceremonial-panel-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">OPERAÇÃO & CERIMÔNIA</p>
+            <h2 id="ceremonial-title">Cerimonial</h2>
+          </div>
+          <div class="panel-header-tools">
+            <button class="icon-button" type="button" data-close-ceremonial aria-label="Fechar cerimonial"><i data-lucide="x"></i></button>
+          </div>
+        </header>
+
+        <!-- Seletor do Evento Ativo -->
+        <div class="ceremonial-event-selector-box">
+          <label for="ceremonial-event-select" class="ceremonial-selector-label">
+            <i data-lucide="calendar"></i>
+            <span>Evento ativo:</span>
+          </label>
+          <select id="ceremonial-event-select" class="movement-select ceremonial-select" aria-label="Selecionar Evento"></select>
+          <label class="ceremonial-filter-toggle" for="ceremonial-only-toggle">
+            <input id="ceremonial-only-toggle" type="checkbox" checked />
+            <span>Somente eventos com serviço de Cerimonial</span>
+          </label>
+          <p class="ceremonial-filter-hint" id="ceremonial-filter-hint" hidden></p>
+        </div>
+
+        <!-- Resumo Hero do Evento -->
+        <div id="ceremonial-event-hero" class="ceremonial-event-hero"></div>
+
+        <!-- Tabs de Navegação do Cerimonial -->
+        <div class="event-detail-tabs ceremonial-tabs" role="tablist">
+          <button class="event-tab-btn active" type="button" data-ceremonial-tab="timeline">
+            <i data-lucide="list-checks"></i>
+            <span>Roteiro</span>
+          </button>
+          <button class="event-tab-btn" type="button" data-ceremonial-tab="arrival">
+            <i data-lucide="user-check"></i>
+            <span>Recepção</span>
+          </button>
+          <button class="event-tab-btn" type="button" data-ceremonial-tab="staff">
+            <i data-lucide="users-round"></i>
+            <span>Equipe</span>
+          </button>
+          <button class="event-tab-btn" type="button" data-ceremonial-tab="tables">
+            <i data-lucide="utensils"></i>
+            <span>Mesas</span>
+          </button>
+          <button class="event-tab-btn" type="button" data-ceremonial-tab="live">
+            <i data-lucide="play"></i>
+            <span>Ao Vivo</span>
+          </button>
+        </div>
+
+        <!-- Feedback de status -->
+        <p class="client-feedback" id="ceremonial-feedback" role="status"></p>
+
+        <!-- Conteúdo das Tabs -->
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-timeline"></div>
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-arrival" hidden></div>
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-staff" hidden></div>
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-tables" hidden></div>
+        <div class="event-tab-content ceremonial-tab-pane" id="ceremonial-tab-live" hidden></div>
+      </div>
+    </section>
+
+    <!-- Modal: Adicionar/Editar Momento do Cerimonial -->
+    <section class="client-form-panel" id="ceremonial-activity-modal" hidden aria-labelledby="ceremonial-activity-modal-title">
+      <form class="client-form-card" id="ceremonial-activity-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ROTEIRO</p>
+            <h2 id="ceremonial-activity-modal-title">Momento do Cerimonial</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-activity-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="modal-act-id" type="hidden" />
+        <label for="modal-act-title">Nome / Título do momento</label>
+        <input id="modal-act-title" type="text" placeholder="Ex.: Entrada dos Noivos, Votos, Brinde" required />
+
+        <div class="quote-event-fields">
+          <div>
+            <label for="modal-act-time">Horário programado</label>
+            <input id="modal-act-time" type="time" />
+          </div>
+          <div>
+            <label for="modal-act-status">Status atual</label>
+            <select id="modal-act-status" class="movement-select">
+              <option value="pending">Pendente</option>
+              <option value="completed">Concluído</option>
+              <option value="skipped">Ignorado</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="modal-act-resp">Responsável / Executores</label>
+        <input id="modal-act-resp" type="text" placeholder="Ex.: Cerimonialista de Pista, DJ, Fotógrafo, Buffet" />
+
+        <label for="modal-act-desc">Orientações, Músicas & Detalhes</label>
+        <textarea id="modal-act-desc" rows="3" placeholder="Ex.: Música 03, cortejo com padrinhos alinhados, acender sparkles na saída..."></textarea>
+
+        <p class="client-form-feedback" id="ceremonial-activity-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar momento no roteiro</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
+    <!-- Modal: Modelos padrão de roteiro -->
+    <section class="client-form-panel" id="ceremonial-templates-modal" hidden aria-labelledby="ceremonial-templates-modal-title">
+      <div class="client-form-card templates-modal-card">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">ROTEIRO</p>
+            <h2 id="ceremonial-templates-modal-title">Modelos padrão</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-templates-modal aria-label="Fechar modelos padrão"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">Cadastre um roteiro uma vez e copie para qualquer evento novo, sem redigitar cada momento.</p>
+
+        <div class="templates-columns">
+          <div class="templates-list-col">
+            <label class="templates-subtitle" for="template-new-name">Novo modelo</label>
+            <form id="template-create-form" class="templates-create-form">
+              <input id="template-new-name" type="text" placeholder="Ex.: Modelo padrão 1" required />
+              <button class="add-client-button" type="submit"><i data-lucide="plus"></i><span>Criar</span></button>
+            </form>
+            <div class="templates-list" id="templates-list"></div>
+          </div>
+
+          <div class="templates-detail-col">
+            <p class="client-form-feedback" id="ceremonial-templates-feedback" role="alert"></p>
+            <div id="templates-detail"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Modal: Adicionar/Editar Convidado (Recepção) -->
+    <section class="client-form-panel" id="ceremonial-guest-modal" hidden aria-labelledby="ceremonial-guest-modal-title">
+      <form class="client-form-card" id="ceremonial-guest-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">RECEPÇÃO</p>
+            <h2 id="ceremonial-guest-modal-title">Convidado</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-guest-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="modal-guest-id" type="hidden" />
+        <label for="modal-guest-name">Nome do convidado</label>
+        <input id="modal-guest-name" type="text" placeholder="Ex.: Dr. Roberto Andrade" required />
+
+        <div class="quote-event-fields">
+          <div>
+            <label for="modal-guest-phone">WhatsApp</label>
+            <input id="modal-guest-phone" type="tel" placeholder="(00) 00000-0000" />
+          </div>
+          <div>
+            <label for="modal-guest-table">Mesa atribuída</label>
+            <select id="modal-guest-table" class="movement-select">
+              <option value="">Sem mesa definida</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="modal-guest-status">Status de confirmação (RSVP)</label>
+        <select id="modal-guest-status" class="movement-select">
+          <option value="confirmed">Confirmado</option>
+          <option value="pending">Pendente</option>
+          <option value="declined">Recusado</option>
+        </select>
+
+        <label class="service-active-field" for="modal-guest-arrived">
+          <input id="modal-guest-arrived" type="checkbox" />
+          <span>Marcar presença imediatamente (já chegou no evento)</span>
+        </label>
+
+        <label for="modal-guest-notes">Observações / Restrições</label>
+        <textarea id="modal-guest-notes" rows="2" placeholder="Ex.: Vegetariano, mesa próxima à pista, acompanhado de 1 bebê"></textarea>
+
+        <p class="client-form-feedback" id="ceremonial-guest-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar convidado</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
+    <!-- Modal: Adicionar/Editar Cerimonialista / Equipe -->
+    <section class="client-form-panel" id="ceremonial-staff-modal" hidden aria-labelledby="ceremonial-staff-modal-title">
+      <form class="client-form-card" id="ceremonial-staff-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">EQUIPE</p>
+            <h2 id="ceremonial-staff-modal-title">Profissional de Cerimonial</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-staff-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="modal-staff-id" type="hidden" />
+        <label for="modal-staff-name">Nome do profissional</label>
+        <input id="modal-staff-name" type="text" placeholder="Ex.: Juliana Martins" required />
+
+        <div class="quote-event-fields">
+          <div>
+            <label for="modal-staff-phone">WhatsApp</label>
+            <input id="modal-staff-phone" type="tel" placeholder="(00) 00000-0000" />
+          </div>
+          <div>
+            <label for="modal-staff-email">E-mail</label>
+            <input id="modal-staff-email" type="email" placeholder="staff@email.com" />
+          </div>
+        </div>
+
+        <label for="modal-staff-notes">Atribuições / Responsabilidades no evento</label>
+        <textarea id="modal-staff-notes" rows="2" placeholder="Ex.: Acompanhamento da noiva, cortejo da igreja, alinhamento com DJ"></textarea>
+
+        <p class="client-form-feedback" id="ceremonial-staff-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar profissional</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
+    <!-- Modal: Adicionar/Editar Mesa -->
+    <section class="client-form-panel" id="ceremonial-table-modal" hidden aria-labelledby="ceremonial-table-modal-title">
+      <form class="client-form-card" id="ceremonial-table-form">
+        <header class="client-panel-header">
+          <div>
+            <p class="eyebrow">LAYOUT DO SALÃO</p>
+            <h2 id="ceremonial-table-modal-title">Mesa / Setor</h2>
+          </div>
+          <button class="icon-button" type="button" data-close-table-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
+        </header>
+        <input id="modal-table-id" type="hidden" />
+        <label for="modal-table-number">Identificação da mesa</label>
+        <input id="modal-table-number" type="text" placeholder="Ex.: 01, Família da Noiva, Padrinhos" required />
+
+        <label for="modal-table-notes">Localização / Observações</label>
+        <textarea id="modal-table-notes" rows="2" placeholder="Ex.: Próxima à pista de dança, mesa reservada para idosos"></textarea>
+
+        <p class="client-form-feedback" id="ceremonial-table-feedback" role="alert"></p>
+        <button class="login-button" type="submit"><span>Salvar mesa</span><i data-lucide="check"></i></button>
+      </form>
+    </section>
+
+    <section class="client-form-panel quote-saved-panel" id="quote-saved-panel" hidden aria-labelledby="quote-saved-title">
+      <div class="client-form-card">
+        <header class="client-panel-header">
+          <div><p class="eyebrow">PROPOSTA</p><h2 id="quote-saved-title">Orçamento salvo</h2></div>
+          <button class="icon-button" type="button" data-close-quote-saved aria-label="Fechar"><i data-lucide="x"></i></button>
+        </header>
+        <p class="field-hint">O PDF é gerado na hora com os dados atualizados. Você pode conferir o resultado e enviar para o cliente.</p>
+        <div class="quote-saved-actions">
+          <button class="client-action-button quote-deposit-action" type="button" data-quote-deposit hidden><i data-lucide="hand-coins"></i><span>Registrar sinal</span></button>
+          <button class="client-action-button" type="button" data-quote-pdf><i data-lucide="file-text"></i><span>Ver PDF</span></button>
+          <button class="whatsapp-action-button" type="button" data-quote-whatsapp><i data-lucide="message-circle"></i><span>Enviar WhatsApp</span></button>
+          <button class="client-action-button" type="button" data-quote-share><i data-lucide="share-2"></i><span>Compartilhar</span></button>
+        </div>
+        <p class="client-form-feedback" id="quote-saved-feedback" role="alert"></p>
+        <button class="login-button" type="button" data-close-quote-saved><span>Concluir</span><i data-lucide="check"></i></button>
+      </div>
+    </section>
+
+    <section class="print-doc" id="quote-print" aria-hidden="true"></section>
+
+    <div class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="duplicate.js"></script>
+    <script src="navigation.js"></script>
+    <script src="realtime.js"></script>
+    <script src="permissions.js"></script>
+    <script src="alerts.js"></script>
+    <script src="app.js"></script>
+    <script src="events.js"></script>
+    <script src="ceremonial.js"></script>
+    <script src="financial.js"></script>
+  </body>
+</html>

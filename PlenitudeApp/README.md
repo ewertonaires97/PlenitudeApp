@@ -1,0 +1,402 @@
+# PlenitudeApp
+
+## Banco de dados
+
+O banco foi modelado para Supabase/PostgreSQL. A migração inicial está em [supabase/migrations/001_initial_schema.sql](supabase/migrations/001_initial_schema.sql).
+
+Ela inclui:
+
+- usuários internos e perfis;
+- clientes, serviços e materiais de estoque;
+- orçamentos com itens, subtotal, desconto e total automáticos;
+- criação automática de um evento quando o orçamento fica `confirmed`;
+- atividades do cerimonial, mesas, convidados e movimentações de estoque;
+- Row Level Security para usuários autenticados.
+
+O controle de acesso por permissões é uma migration separada, a [015](supabase/migrations/015_access_control.sql). Está nesta seção porque muda o que cada usuário enxerga, mas ela **reescreve** as políticas criadas aqui e precisa rodar depois da 001.
+
+### Como aplicar no Supabase
+
+1. Crie um projeto em [supabase.com](https://supabase.com).
+2. Abra o **SQL Editor**, cole o conteúdo da migração e execute uma única vez.
+3. Crie os usuários em **Authentication > Users**.
+4. Não publique a `service_role` key no frontend. A integração usará apenas a URL do projeto e a chave pública `anon`.
+
+O frontend já possui a conexão pública inicial em [supabase-config.js](supabase-config.js), usando a URL do projeto e a chave `publishable`. A autenticação e os módulos ainda serão implementados nas próximas etapas.
+
+### Deploy no Netlify
+
+O arquivo [netlify.toml](netlify.toml) configura a raiz do repositório como pasta publicada. No Netlify, use **Build command** vazio e **Publish directory** como `.`. Depois de enviar este arquivo ao GitHub, acione um novo deploy em **Deploys > Trigger deploy > Deploy site**.
+
+### Cardápios
+
+Para habilitar cardápios, execute também [supabase/migrations/002_menus.sql](supabase/migrations/002_menus.sql) no SQL Editor. Depois disso, o módulo Serviços permitirá cadastrar cardápios, vincular cada serviço a um ou mais cardápios e filtrar o catálogo. A coluna `quotes.menu_id` já está preparada para a próxima etapa de orçamentos.
+
+Para imagens e categorias, execute em seguida [supabase/migrations/003_menu_images_categories.sql](supabase/migrations/003_menu_images_categories.sql). Essa migração cria o bucket `menu-images`, aceita várias imagens por cardápio e cadastra categorias iniciais como Doces, Salgados, Bolos, Bebidas, Sobremesas e Frutas.
+
+### Cardápio por serviço
+
+Execute [supabase/migrations/010_menus_service_link.sql](supabase/migrations/010_menus_service_link.sql). Ela conclui a `002_menus.sql`, que criou `menus` e `menu_services` mas não chegou a alterar a tabela `quotes`. Sem ela o módulo de Orçamentos não carrega e o erro aparece como `column quotes.menu_id does not exist`.
+
+Execute depois [supabase/migrations/011_menu_services_nn.sql](supabase/migrations/011_menu_services_nn.sql). Ela transforma o vínculo cardápio ↔ serviço em muitos-para-muitos: um mesmo cardápio pode participar de vários serviços ao mesmo tempo. Os vínculos gravados em `menus.service_id` são copiados para a tabela `menu_services` e a coluna é removida, para não sobrar fonte duplicada.
+
+Depois de aplicada a `011`, a `010` já não é mais necessária para o vínculo de cardápios — basta a `011`, que sozinha também conclui a `002`. As duas podem ser executadas nesta ordem e mais de uma vez.
+
+No formulário de serviço, os cardápios marcados são os que aquele serviço inclui; desmarcar remove o vínculo **apenas daquele serviço**, mantendo o cardápio nos outros. No formulário de cardápio, os serviços marcados são os que incluem aquele cardápio.
+
+### Sinal e lembrete de vencimento
+
+O sinal do orçamento, a validade da proposta e o painel que os mostra estão em [supabase/migrations/020_quote_validity_deposit.sql](supabase/migrations/020_quote_validity_deposit.sql): `quotes.valid_until`, `quotes.deposit_percent`, `quotes.deposit_amount` (coluna gerada), `quote_deposits` e a expiração derivada (`expire_overdue_quotes`, chamada pelo app ao abrir a lista).
+
+Execute [supabase/migrations/021_quote_expiry_reminder.sql](supabase/migrations/021_quote_expiry_reminder.sql) depois da 020. Ela adiciona `quotes.expiry_reminder_sent_at` e a trigger que zera esse carimbo quando `valid_until` muda. Sem ela a coluna não existe e o módulo de Orçamentos não carrega, com o erro `column quotes.expiry_reminder_sent_at does not exist`.
+
+O **Lembrete de sinal** reúne cada proposta enviada que tem sinal em aberto e **vence hoje, vence amanhã ou já venceu**. A lista é derivada da data, como a expiração: o app a recalcula ao abrir, sem nada agendado no servidor. O que existe agendado é o **email** do [aviso por e-mail](#aviso-por-email-de-sinal-com-o-app-fechado), e é outra coisa: ele não monta a lista, só avisa que ela existe.
+
+O aviso aparece no botão **Lembretes** da tela de Orçamentos e numa faixa no início com o nome dos clientes. No sino do topo ele entra pela central de avisos, que junta sinal com o resto. Os orçamentos são carregados no login, e a lista é reconsultada quando o dia vira (`checkQuoteDeadlineRollover`) — é o que mantém o aviso certo com o app aberto de um dia para o outro. Sem isso, um orçamento que venciasse durante a noite sumiria sem ninguém ver.
+
+Na tela de lembretes os vencidos vêm num grupo separado dos que estão por vencer. Isso não é cosmético: o mesmo texto serve aos dois casos porque a variável `{prazo}` devolve a **frase inteira** — "vence amanhã", "venceu há 3 dias" — e não só o advérbio. Um `{prazo}` que devolvesse apenas "amanhã" faria o app escrever "termina amanhã" para uma proposta que já tinha vencido.
+
+Estender a validade zera o carimbo (a trigger da 021), então a cobrança volta. O envio continua sendo humano: o WhatsApp abre com o texto pronto, quem opera confirma, e só então o carimbo é gravado, para o mesmo orçamento não ser cobrado de novo a cada abertura da lista.
+
+A cobrança ao cliente continua sendo humana, e por isso não vai virar automática: o WhatsApp abre com o texto pronto, quem opera confere, e só então o carimbo é gravado. Cobrar alguém sem ninguém conferir o texto é como se perde o cliente. O que a [024](supabase/migrations/024_email.sql) acrescenta é o **aviso para quem opera** — o email que chega com o app fechado e diz que existe uma cobrança esperando, sem cobrar nada de ninguém.
+
+#### O texto da mensagem
+
+Execute [supabase/migrations/022_quote_reminder_template.sql](supabase/migrations/022_quote_reminder_template.sql) depois da 021. Ela cria `quote_message_templates` (o texto que vai ao cliente) e `quotes.reminder_message` (o texto de um orçamento só). **Sem ela o lembrete continua funcionando**, porque o texto padrão mora no app — o navegador registra um aviso no console e segue com a redação embutida. As colunas novas é que não existem, e aí o seletor da lista de orçamentos falha com `column quotes.reminder_message does not exist`.
+
+O botão **Editar a mensagem padrão** abre o editor dentro da própria tela de lembretes. O texto é salvo em `quote_message_templates.body` e vale para todos os lembretes que não tiverem texto próprio. Cada cartão também tem **Personalizar esta mensagem**, que grava em `quotes.reminder_message` e vale só para aquele orçamento — usado quando a renegociação é com um cliente específico.
+
+O corpo usa variáveis entre chaves, inseridas pelos botões da lista:
+
+| Variável | O que entra |
+| --- | --- |
+| `{cliente}` `{orcamento}` `{numero}` | identificação da proposta |
+| `{evento}` | data e local do evento |
+| `{sinal}` | valor que ainda falta |
+| `{sinal_total}` `{percentual}` `{valor_total}` | valores do sinal e do total |
+| `{sinal_detalhe}` | o parêntese do sinal, já montado |
+| `{prazo}` | a frase do prazo, já com o verbo |
+| `{vencimento}` | a data do prazo |
+| `{observacoes}` | as observações do orçamento, já com o rótulo |
+
+Uma variável escrita errado **fica como está** em vez de sumir, e linhas vazias demais são colapsadas automaticamente. O texto padrão continua no app (`QUOTE_REMINDER_DEFAULT_BODY`) e o botão **Restaurar padrão** apaga o que está no banco em vez de gravar uma cópia — assim o padrão nunca diverge do que está em produção.
+
+### Aviso por email de sinal, com o app fechado
+
+Até a 023 o aviso morria com a aba fechada: quem abria o app via o sino, quem via a lista de lembretes. Execute [supabase/migrations/024_email.sql](supabase/migrations/024_email.sql) depois da 021 — a 020 e a 015 precisam estar lá antes, porque ela usa `quotes.deposit_amount`/`deposited_amount` e `effective_permissions()`.
+
+**A cobrança não mudou.** O WhatsApp continua abrindo com o texto pronto, quem opera confirma, e o carimbo `expiry_reminder_sent_at` continua sendo gravado só por esse envio. O que a 024 acrescenta é um aviso **para quem opera o app**, uma vez por dia, por email, com o app fechado. Ele lista as propostas com sinal em aberto que vencem hoje, vencem amanhã ou já venceram, com número, cliente, prazo e quanto falta, e um link para abrir o app. Ele não cobra nada de ninguém.
+
+O email é interno e sai por **cópia oculta**: uma mensagem só, todo mundo que pode cobrar o sinal recebe uma cópia, e nenhum endereço aparece para o outro. Quem recebe é quem está ativo, tem email preenchido e tem a permissão `orcamentos` — a mesma regra que a RLS usa, então o email não mostra nada que a tela correspondente não mostraria. Quem tem email vazio na tela de **Usuários** simplesmente não recebe.
+
+#### O que a migration cria
+
+| Objeto | Para que serve |
+| --- | --- |
+| `quotes.expiry_notified_at` | carimbo de "o email de hoje já saiu". Separado do `expiry_reminder_sent_at` de propósito: um diz que alguém já cobrou no WhatsApp, o outro diz que o aviso saiu. A tarefa **não** acaba com o email — por isso a lista de lembretes só esvazia depois do envio manual |
+| `quote_expiry_notification_pending()` | o recorte de quem falta avisar, escrito em SQL. É a mesma regra do `upcomingQuoteReminders`/`overdueQuoteReminders` do [app.js](app.js), reescrita porque não existe fonte única entre SQL e JavaScript |
+| `dispatch_quote_expiry_notifications()` | carimba as linhas, monta o texto e chama o Resend pelo `pg_net`. Roda por `pg_cron`, uma vez por dia |
+| `quote_expiry_notification_log` | uma linha por execução: rodou? para quem? quantos orçamentos? Qual requisição saiu? Sem RLS, para leitura pelo SQL Editor |
+| `pg_cron` | agenda `0 11 * * *` — 11:00 UTC, que é 08:00 no horário de Brasília |
+| `pg_net` + `supabase_vault` | a chamada HTTP e o lugar onde mora a chave do Resend |
+
+A função de trigger da 021 é reescrita para zerar os dois carimbos quando a validade muda: estender o prazo é uma nova promessa, e o operador precisa ouvir de novo antes do novo vencimento.
+
+**O app não muda nada.** Nenhuma linha de JavaScript foi alterada, porque nenhuma é necessária: a lista de lembretes e a central de avisos continuam derivadas do `expiry_reminder_sent_at`, que é exatamente o que se quer — o email avisa, não resolve.
+
+#### O caminho de instalação
+
+São duas etapas, e só a primeira depende de uma conta de fora:
+
+1. **Conta no [Resend](https://resend.com)**, com um remetente válido e a chave de envio (`re_...`). O mais simples é o `onboarding@resend.dev`, que entrega só para o seu próprio email; para um endereço próprio é preciso adicionar o domínio no Resend e apontar os registros DNS que ele indicar. Sem remetente verificado o Resend recusa o envio com 422.
+2. **Um arquivo no SQL Editor.** `supabase/instalar-email.sql` é a migration 024 inteira mais os três segredos já preenchidos, o disparo de um email de teste, a desfazida da marcação e o relatório final. Cola e roda uma vez.
+
+Esse arquivo **não é versionado** — está no [.gitignore](.gitignore) porque carrega a chave do Resend em texto claro, e chave no histórico do Git vaza para qualquer pessoa que leia o repositório. Depois de executar, ele pode ser apagado do computador. A chave trocada significa rodar o arquivo de novo com o valor novo.
+
+A chave do Resend **nunca** entra no repositório. O [supabase-config.js](supabase-config.js) tem apenas a chave publicável do Supabase.
+
+O que o arquivo grava no **Vault**:
+
+```sql
+select vault.create_secret('re_sua_chave_aqui',                'quote_expiry_resend_api_key', 'Chave de envio do Resend');
+select vault.create_secret('Plenitude <aviso@seudominio.com>', 'quote_expiry_from',            'Remetente do aviso de sinal');
+select vault.create_secret('https://endereco-do-app',          'quote_expiry_app_url',         'Endereço do app');
+```
+
+Vale notar que `vault.create_secret()` não atualiza: rodar duas vezes com o mesmo nome dá erro de nome repetido. O arquivo de instalação resolve isso dentro de um `DO`, que atualiza o que já existe em vez de duplicar — por isso ele pode ser executado quantas vezes for preciso.
+
+Sem segredos, nada quebra: a função devolve 0 e grava no log o motivo (`não enviado: falta a chave do Resend ou o remetente no vault`). Vale conferir antes de confiar no silêncio.
+
+#### Conferir se está funcionando
+
+```sql
+-- quem vai receber (se vier vazio, o email está sem preencher em Configurações → Usuários)
+select p.email, p.role
+  from public.profiles p
+ where p.active and p.email is not null
+   and 'orcamentos' = any(public.effective_permissions(p.role, p.permissions, p.active));
+
+-- dispara agora e devolve quantos orçamentos entraram
+select public.dispatch_quote_expiry_notifications(current_date);
+
+-- o que rodou, para quem e com que assunto
+select sent_at, quote_count, overdue_count, upcoming_count, recipients, subject, resend_request_id
+  from public.quote_expiry_notification_log order by id desc limit 5;
+
+-- o que o Resend respondeu (some sozinho depois de 6 horas)
+select id, status_code, content, error_msg, created
+  from net._http_response order by created desc limit 5;
+
+-- o agendamento
+select jobname, schedule, command, active from cron.job where jobname = 'quote-expiry-notification';
+select jobid, run_status, start_time from cron.job_run_details order by start_time desc limit 5;
+```
+
+`status_code` 200 é o email entregue pelo Resend; 401 é chave errada e 422 é remetente não verificado — os dois aparecem em `content`. Quando o job falha, `run_status` na tabela de detalhes do cron é `failed`, e a causa aparece em **Logs** no painel do Supabase.
+
+**O disparo manual não é simulação.** É a mesma função que o cron chama: o email sai de verdade e as linhas ficam carimbadas, então elas não entram no disparo automático do dia. Para testar de novo, rearme antes:
+
+```sql
+update public.quotes set expiry_notified_at = null where expiry_notified_at is not null;
+```
+
+O mesmo vale para um email que se perdeu: se a linha do log tem `quote_count` maior que zero e a resposta foi 200, o email saiu. Se a resposta foi erro, ou se a requisição nem chegou ao Resend, o dia se perde sem novo aviso — o rearme acima é o caminho para repetir.
+
+#### Três pontos que dependem de manutenção futura
+
+- **O primeiro disparo é podado de propósito.** A migration marca como já notificado tudo que está vencido há mais de 30 dias, para não chegar um email com o histórico inteiro. Se quiser receber tudo de uma vez, apague esse bloco antes de rodar a migration; o prazo é o `30` na última atualização dela.
+- **O carimbo é gravado antes do envio, e o `pg_net` não devolve erro na chamada** — ele só enfileira. É por isso que o `resend_request_id` fica no log. Se o envio falhar depois, a linha continua carimbada e o orçamento só volta a entrar em email no dia seguinte, ou quando a validade mudar. A ordem é essa de propósito: ficar para trás do email é melhor do que mandar o mesmo aviso duas vezes.
+- **O disparo carimba `quotes`, e `quotes` está na publication de realtime.** Então, uma vez por dia, todo aparelho com o app aberto recarrega a lista de orçamentos e a central de avisos às 08:00. É inofensivo — e é justamente o que atualiza a lista quando o dia vira — mas vale saber que não foi o app que pediu.
+
+### Central de avisos
+
+O sino do topo não é mais um atalho para a tela de lembretes: ele abre a **Central de avisos**, em [alerts.js](alerts.js), que reúne tudo que pede uma decisão e joga cada item na tela onde ele se resolve. O que ele contava antes — proposta com sinal em aberto — virou um aviso entre outros.
+
+**Nada é gravado.** Cada aviso é derivado de uma coluna que já existe e some sozinho quando o assunto é resolvido: o sinal recebido tira a cobrança, o item reposto sai do aviso de estoque, o convidado confirmado sai da lista. Um "lido" guardado no banco seria pior — marcaria a leitura, não a resolução, e o contador passaria a avisar de um problema que ninguém mais tem.
+
+As fontes hoje:
+
+| Aviso | Vem de | Permissão | Some quando |
+|---|---|---|---|
+| Sinal em aberto, vencido ou vencendo | `app.js`, com o mesmo recorte de `upcomingQuoteReminders` e `overdueQuoteReminders` | `orcamentos` | o sinal entra ou o lembrete é enviado |
+| Itens abaixo do estoque mínimo | `alerts.js`, direto do banco | `estoque` | o item é reposto |
+| Convidados sem confirmar | `alerts.js`, direto do banco | `eventos` ou `cerimonial` | o convidado confirma |
+
+Três pontos que dependem de manutenção futura:
+
+- **Uma fonte nova se registra com `plenitudeAlerts.register({ id, permissions, collect })`** e nada mais precisa mudar. Quem registra é o módulo dono do dado, então cada um continua sendo o único que sabe a regra do seu recorte — a central não conhece orçamento, sinal nem convidado. `permissions` é uma lista de alternativas: convidados entram para quem tem Eventos **ou** Cerimonial, porque as duas telas mostram a mesma lista de gente.
+- **A permissão filtra fonte por fonte.** Quem não tem `estoque` não vê o item baixo nem a contagem dele, mesmo com o sino à vista. E o `collect` de cada fonte só roda depois do acesso resolvido, pelo mesmo motivo do `permitir()` que tranca a navegação: antes da resposta do banco, nada é decidido.
+- **Duas urgências só: "Agora" e "Em breve".** "Agora" é o que já quebrou alguma coisa — o prazo da proposta passou, o evento é hoje e ainda tem convidado sem responder. "Em breve" é o que dá para resolver com calma. Uma terceira faixa exigiria um terceiro tipo de ação, e o que existe no app resolve em duas. O ponto vermelho no sino marca só o "Agora": a contagem sozinha não diz se é para se apressar ou só olhar.
+
+O `collect` de estoque e o de convidados leem do banco em vez de usar os arrays em memória porque esses dados só existem enquanto a tela deles estiver aberta — quem nunca abriu Estoque não tem `inventoryItems`, e quem nunca abriu um evento não tem os convidados. As consultas são estreitas de propósito: só as colunas do recorte. As duas passam por um TTL de 10 segundos, e o `refresh({ force: true })` — que o [realtime.js](realtime.js) chama em cada tópico relevante e que a virada do dia dispara — invalida esse TTL junto. Sem isso, o force recolia a lista e as duas fontes devolviam o recorte velho, que é justamente o que a chamada veio corrigir.
+
+A tela não tem permissão própria no [permissions.js](permissions.js): quem só tem Eventos vê os avisos de convidado e quem só tem Estoque vê os de item baixo. É preciso entrar em `SCREENS` com a permissão `dashboard` porque o botão do sino vive no cabeçalho do Início.
+
+### Estoque
+
+Para habilitar as movimentações de estoque, execute [supabase/migrations/004_inventory_stock.sql](supabase/migrations/004_inventory_stock.sql). O módulo permite cadastrar itens, definir estoque mínimo e registrar entradas, saídas e ajustes com histórico no banco.
+
+Para categorias e imagens dos itens, execute [supabase/migrations/005_inventory_categories_images.sql](supabase/migrations/005_inventory_categories_images.sql). As imagens ficam no bucket `inventory-images`, podem ser múltiplas e abrem em tela cheia ao toque. O mesmo visualizador é usado nas imagens dos cardápios.
+
+Execute [supabase/migrations/023_service_materials_rentals.sql](supabase/migrations/023_service_materials_rentals.sql) **depois da `015`** para ligar **serviço → item de estoque** (ela usa `public.has_permission`). Ela não cria tabela: `service_materials` já existia desde a `001` e nunca foi usada por nenhuma tela. O que a migration faz é (a) criar os índices das duas direções dessa consulta e (b) abrir **leitura** de `quote_items`, `quotes` e `events` para quem tem a permissão `estoque` — o caminho inverso do que a `015` já fez ao abrir o estoque para quem cadastra serviço. São políticas de `SELECT` only: as de escrita continuam sendo as da `015`, porque as políticas do Postgres se somam por operação.
+
+O serviço ganha uma caixa **Itens de estoque deste serviço**: os itens aparecem por categoria, com a quantidade que o serviço usa de cada um e o aviso de "também em ..." para os outros serviços que usam o mesmo item. A ficha do serviço mostra a mesma lista, com a etiqueta abrindo a ficha do item.
+
+O item de estoque, por sua vez, passa a avisar quando está **confirmado para um evento**. O item está reservado quando algum serviço que o utiliza está em um orçamento confirmado **e** o evento criado por esse orçamento ainda vai acontecer (`planned` ou `in_progress` — um evento realizado ou cancelado não segura item). Nada disso é gravado: trocar o serviço, cancelar o orçamento ou o evento libera o aviso sozinho. É a mesma regra que cria o evento na `001`, lida do outro lado.
+
+### Cerimonial
+
+Execute [supabase/migrations/013_ceremonial_templates_reorder.sql](supabase/migrations/013_ceremonial_templates_reorder.sql) no SQL Editor. Ela é idempotente e faz quatro coisas:
+
+**1. `services.is_ceremonial`** — coluna booleana que marca quais serviços o módulo de Cerimonial atende. A marcação aparece como uma caixa no cadastro de serviço. A migração já preenche automaticamente os serviços existentes cujo nome ou categoria contenham a palavra "cerimonial" ("Cerimonial Completo", "Recepção / Cerimonial", "CERIMONIAL PREMIUM"); "Cerimônia" não entra, por ser outra palavra. O seletor de evento do Cerimonial só lista eventos cujo orçamento tenha algum item apontando para um serviço marcado. A caixa *"Somente eventos com serviço de Cerimonial"* liga e desliga esse filtro, e se nenhum serviço estiver marcado o filtro é ignorado para o módulo não ficar inutilizável.
+
+**2. Modelos padrão** — tabelas `ceremonial_templates` e `ceremonial_template_activities`. Em Roteiro, o botão **Modelo padrão** abre o cadastro: crie tantos modelos quiser, monte o roteiro de cada um e depois **Copiar para o evento**. A cópia pode *anexar* ao roteiro existente (padrão) ou *substituir* tudo, com confirmação.
+
+No detalhe do modelo, os momentos têm lápis (edição) e lixeira (remoção, sempre com confirmação). O formulário de cima cria e edita: o lápis carrega o momento nele, o botão vira **Salvar** e aparece um **Cancelar**. O botão de cópia duplica o modelo inteiro — o modelo novo já vem com os momentos, e o nome sugerido é "Nome (cópia)".
+
+Duas coisas dividem o mesmo lugar na linha dos momentos, por isso o botão **Reordenar**: desligado, a linha mostra a caixa de seleção; ligado, a caixa some e entra o punho `⠿` de arraste. Com o modo reordenar desligado dá para marcar vários momentos e apagá-los de uma vez em **Excluir selecionados** — a barra mostra quantos estão marcados e uma única confirmação avisa a quantidade.
+
+**3. Reordenação** — a coluna `unique (event_id, position)` de `ceremonial_activities` impedia a reordenação: trocar duas atividades de lugar exige dois `UPDATE`s e o primeiro esbarra na posição que a segunda ainda ocupa. Como o `supabase-js` resolve com `{ error }` em vez de lançar exceção, o botão de seta recarregava a lista sem mudar nada. As funções `reorder_ceremonial_activities` e `pack_ceremonial_activities` resolvem dentro do banco, em duas fases e de forma atômica.
+
+**4. `copy_ceremonial_template`** — copia as atividades de um modelo para um evento numa transação só, respeitando o `append` ou o `replace`.
+
+Execute [supabase/migrations/014_reorder_ceremonial_template_activities.sql](supabase/migrations/014_reorder_ceremonial_template_activities.sql) no SQL Editor. Ela cria a função `reorder_ceremonial_template_activities`, que faz o mesmo pelos momentos de um modelo padrão. Sem ela, arrastar os momentos do modelo falha: a coluna `unique (template_id, position)` não deixa gravar a nova ordem em `UPDATE`s avulsos, e o movimento funciona com a reordenação do roteiro e não com a do modelo.
+
+O roteiro se reordena arrastando pelo punho `⠿`. O arraste usa Pointer Events, então funciona com dedo no celular e com mouse, já que a API nativa de drag-and-drop não funciona em touchscreen. Funciona tanto no roteiro do evento quanto nos momentos de cada modelo padrão — no modelo, o punho só existe depois de ligar o botão **Reordenar**, para não arrastar por engano dentro de um modal.
+
+### Sincronização em tempo real
+
+Execute [supabase/migrations/012_realtime_publication.sql](supabase/migrations/012_realtime_publication.sql) no SQL Editor. **Sem ela nada sincroniza**, mesmo com o frontend correto: a publication `supabase_realtime` do Supabase é criada vazia e cada tabela precisa ser adicionada a ela explicitamente. As subscriptions do navegador respondem `SUBSCRIBED` mesmo quando a tabela não está publicada, então o sintoma é o app "parecer" sincronizado e nunca receber nada. A migração é idempotenta e emite um `NOTICE` com o resultado da verificação ao final.
+
+A partir daí, [realtime.js](realtime.js) mantém um único canal que escuta as 20 tabelas do app. Quando qualquer usuário altera um registro, só as telas **visíveis naquele momento** são recarregadas, com 400 ms de debounce — salvar um orçamento dispara `UPDATE quotes` + `DELETE quote_items` + N `INSERT quote_items` e mesmo assim causa uma única recarga. Uploads de imagem sincronizam pelo mesmo caminho, porque cada imagem é uma linha em `menu_images` / `inventory_images`.
+
+Dois pontos que dependem de manutenção futura:
+
+- `app.js` não exportava nada. As funções que o `realtime.js` chama foram expostas em `window.plenitudeApp`. Ao adicionar uma tela nova, inclua o respective loader nessa lista, senão ela não sincroniza. A lista também leva as telas que a [central de avisos](#central-de-avisos) precisa abrir — um aviso cujo botão não chega na tela dele é um aviso que só ocupa espaço.
+- A tabela `profiles` é lida pelo `permissions.js` e tem um tópico (`acesso`) em `realtime.js`, para que uma mudança de permissão chegue a quem está com o app aberto. Ao adicionar um módulo que depende de `profiles`, inclua o loader dele nesse mesmo tópico.
+
+### Navegação entre telas
+
+O app não tem router: cada tela é uma `<section>` fixa que aparece e some pelo atributo `hidden`. A pilha dessas telas mora em [navigation.js](navigation.js), que observa esse atributo por `MutationObserver` em vez de ser avisado por cada abertura. Nenhum módulo precisa chamar nada para participar: basta a tela existir e ter o botão que a fecha.
+
+Todo cabeçalho de tela recebe dois botões à esquerda do título — **voltar** (fecha a última tela e devolve para a anterior) e **início** (fecha tudo de uma vez) — e o visualizador de imagem recebe os dois no canto, para não ser um beco sem saída.
+
+O botão físico de voltar do Android e do iPhone funciona porque a pilha é espelhada no `history` do navegador. Abrir uma tela empurra uma entrada; fechar uma consome a entrada. Quando o app fecha uma tela sozinho (o X, o envio de um formulário, o fim de uma etapa), a entrada sai junto: sem isso o aparelho teria uma entrada sem tela nenhuma para fechar e o primeiro toque não faria nada.
+
+Dois pontos que dependem de manutenção futura:
+
+- **Tela nova precisa entrar em `SCREENS`** no [navigation.js](navigation.js), com o seletor do painel e o atributo do botão que a fecha. Uma tela fora dessa lista aparece, mas não entra na pilha: não tem botão de voltar e o do aparelho não age nela. O nome do atributo segue o padrão `data-close-*`.
+- **A brand do topo apontava para `#inicio`**, o que empurrava uma entrada de histórico a cada toque e desalinhava o botão do aparelho. Ela agora passa pelo mesmo caminho do botão de início, sem mexer no histórico.
+
+`window.plenitudeNav` expõe `back()`, `home()`, `stack()` e `cover(panel)`. O `cover()` é para quando uma tela abre **por cima** de outra em vez de por baixo: a de baixo continua na pilha e volta a aparecer quando a de cima fecha. É o que faz Configurações devolver em vez de sumir quando se volta de Usuários, Cardápios ou Categorias.
+
+### Uma tela por cima de si mesma
+
+O `cover()` serve para uma tela que sai de cena enquanto a outra está à vista. A ficha de detalhes de [app.js](app.js) é o outro caso: ela abre **por cima de si mesma**, porque o cardápio do serviço e o cardápio do item do orçamento aparecem dentro da ficha que os listou. Uma segunda tela não resolveria, porque as duas fichas são o mesmo painel com o mesmo botão de fechar.
+
+Nesses casos a tela se registra uma vez com `setLayerCloser(panel, close, closeAll)` e avisa cada camada que abre:
+
+- **`close(panel)`** — a ficha que está embaixo continua na tela e ganha uma entrada a mais na pilha, com `layer(panel)`. O X, o clique no fundo e o Esc fecham uma camada por vez e tiram a entrada com `unlayer(panel)`; o botão de voltar e o do aparelho fecham a mesma camada, mas quem tirou a entrada da pilha foi o próprio botão;
+- **`closeAll(panel)`** — a tela inteira fecha, e é o que o botão de início usa, que não desce camada por camada;
+- **`unlayerAll(panel)`** — a tela fecha com camadas abertas. As entradas das camadas saem da pilha junto com a da tela, e quem tira é o observador do `hidden`, de uma vez só.
+
+A ficha guarda o par `{ type, id }` de cada camada, e não o HTML pronto: fechar o cardápio redesenha a ficha de baixo a partir dos dados do momento, em vez de mostrar uma cópia do que estava na tela antes.
+
+Uma consequência que vale para qualquer tela com camadas: `history.go(-n)` de *n* entradas responde com *n* `popstate`. Só o último é o balanço da operação, e é por isso que o "histórico em movimento" do [navigation.js](navigation.js) é um contador. Com um ligado/desligado, o segundo `popstate` de um lote que fechou mais de uma tela seria lido como pedido do usuário e fecharia uma tela a mais.
+
+### Instalar como PWA
+
+O app agora possui [manifest.webmanifest](manifest.webmanifest), [sw.js](sw.js) e ícones em [icons](icons). Depois do deploy no Netlify:
+
+1. Abra o endereço HTTPS do app no Google Chrome do celular.
+2. Abra o menu de três pontos.
+3. Toque em **Instalar app** ou **Adicionar à tela inicial**.
+
+O service worker mantém o shell visual disponível quando a rede falha. Login, Supabase e uploads continuam dependendo de internet.
+
+### Usuários, níveis e permissões
+
+Execute [supabase/migrations/015_access_control.sql](supabase/migrations/015_access_control.sql) no SQL Editor. Ela é idempotente e pode ser executada quantas vezes for necessário. **Rode-a depois da 001**, porque reescreve as políticas de acesso que a 001 criou.
+
+Para o **login com Google** e para as **contas fechadas por padrão**, execute também a [016](supabase/migrations/016_login_google_closed_accounts.sql), depois da 015.
+
+Até aqui qualquer conta autenticada enxergava e alterava tudo: as 22 políticas da 001 eram todas `using (true)` e a coluna `profiles.role` (`admin`/`staff`) não era lida nem pelo banco nem pelo app. A 015 transforma a permissão em regra do banco.
+
+O que ela acrescenta:
+
+- **`app_permissions`** — as 11 telas que existem no app, com a mesma chave do atributo `data-permission` do [index.html](index.html);
+- **`app_roles`** — os níveis: `owner` (Proprietário), `admin` (Administrador), `gestor` (Gestor), `operador` (Operador) e `consulta` (Consulta);
+- **`app_role_permissions`** — quais telas cada nível abre por padrão;
+- **`profiles`** — ganha `email`, `whatsapp`, `permissions` e `active`. `permissions` é a lista de telas da pessoa: **nulo** significa "herda do padrão do nível", lista vazia significa "nenhuma tela".
+
+A permissão efetiva é resolvida por `has_permission()`, nesta ordem: `owner`/`admin` passam direto (é o que impede que um erro de configuração tranque o app inteiro), senão vale a lista da pessoa, senão o padrão do nível.
+
+**Quem entra vê o quê é regra do RLS**, não do JavaScript. Cada tabela exige a permissão da tela que a alimenta. Um módulo também lê o que ele precisa: quem tem Cerimonial lê eventos, clientes e orçamentos, porque o módulo monta a operação a partir deles — mas não pode escrever neles.
+
+#### Cadastrar uma pessoa
+
+A conta de login é criada por você em **Authentication > Users** no painel do Supabase. Isso é deliberado: o frontend só tem a chave pública, e a `service_role` jamais pode ir para o navegador. Quando a conta é criada lá, a trigger `handle_new_user` já gera a linha em `profiles` sozinha.
+
+Depois disso, tudo o mais é na tela **Usuários** do app: nome, WhatsApp, nível e as telas. O e-mail informado precisa bater com o da conta criada no painel; se não existir, o banco avisa exatamente isso.
+
+O caminho inverso também existe: `link_profile_by_email()` acha a conta em `auth.users` pelo e-mail e cria o perfil. Isso cobre quem foi criado no painel antes da trigger existir.
+
+#### Se a tela de Usuários não aparecer
+
+Ela fica em **Configurações → Usuários e acessos** (último item) e também como card na tela inicial.
+
+Se nenhum dos dois estiver lá, a migration 015 ainda não foi aplicada. Nesse caso o app mostra um aviso em vermelho logo abaixo da saudação, e a tela de Usuários fica indisponível de propósito: sem as colunas e as políticas, ela não teria o que salvar. Aplique a 015 e o aviso some sozinho.
+
+#### Entrar com Google
+
+Execute [supabase/migrations/016_login_google_closed_accounts.sql](supabase/migrations/016_login_google_closed_accounts.sql) depois da 015. Ela faz duas coisas: cria o perfil com a conta **inativa** e dá ao cadastro a opção de ligar a conta.
+
+O login em si é configurado fora do código, em dois lugares:
+
+1. **Google Cloud Console** → *Credenciais* → *Criar credenciais* → **ID do cliente OAuth**, do tipo **Aplicativo da Web**. Em *URIs de redirecionamento autorizados*:
+   ```
+   https://evhyshjxqnfbabraxafs.supabase.co/auth/v1/callback
+   ```
+2. **Supabase** → *Authentication > Providers > Google*: liga o provedor e cola o Client ID e a Client Secret.
+3. **Supabase** → [*Authentication → URL Configuration*](https://supabase.com/dashboard/project/_/auth/url-configuration). Tem dois campos:
+
+   | Campo | O que colocar |
+   |---|---|
+   | **Site URL** | `https://seu-site.netlify.app` |
+   | **Redirect URLs** | `https://seu-site.netlify.app/**` |
+
+   O **Site URL** vem por padrão como `http://localhost:3000` e precisa mudar: é ele que define para onde o usuário volta quando o app não manda um `redirectTo`, e é o endereço usado nos e-mails de confirmação e de recuperação de senha. Deixando como `localhost`, um e-mail do Supabase levaria a pessoa para a máquina do desenvolvedor.
+
+No Google Cloud, além das *URIs de redirecionamento autorizadas*, vale preencher também **Origens JavaScript autorizadas** com `https://seu-site.netlify.app`. O fluxo implícito do Supabase funciona sem isso, mas o Google usa essa lista em validações e para proteger contra o uso do seu Client ID em outro site.
+
+O endereço do site está no Netlify em **Deploys**, no deploy mais recente, ou em *Site configuration → Domain management*.
+
+A Client Secret do Google **nada disso entra no app**: o Supabase troca o token no servidor. O [supabase-config.js](supabase-config.js) não muda.
+
+Com isso, a pessoa clica em **Entrar com Google** na tela de login e nunca vê senha. Quando o Supabase reconhece o e-mail, ela entra **na mesma conta que já estava cadastrada**, e as permissões são as que você definiu.
+
+Se o endereço estiver errado, o Google volta o erro na URL e o app mostra *"O endereço deste app ainda não foi liberado no painel do Supabase"* em vez de voltar pro login sem explicação. Foi por isso que existe o tratamento de erro em `mostrarErroDoOAuth()`.
+
+> Se a pessoa aparecer duplicada na tela de Usuários depois do primeiro login, é sinal de que o Google não fez o vínculo por e-mail. Aí não é problema de permissão: é a conta no Supabase que precisa ter o mesmo e-mail da que você cadastrou.
+
+#### Contas fechadas por padrão
+
+Publicar o app OAuth no Google significa que **qualquer conta Google que descobrir o endereço do aplicativo consegue entrar**. Sem a 016, essa pessoa receberia um perfil com o nível `consulta` e passaria a ler a agenda, os convidados e o WhatsApp de cada convidado.
+
+Com a 016, a conta nasce **inativa**. Quem entra sozinho pelo Google vê:
+
+> Esta conta está desativada. Fale com um administrador para reativá-la.
+
+Para liberar, você vai na tela de **Usuários** e cadastra a pessoa — e é o próprio cadastro que ativa a conta, com o nível e as telas que você escolher. Nada de conceito novo: é a mesma tela e o mesmo botão de ativar que já existem para suspender alguém.
+
+Se quiser que a pessoa entre cadastrada e **sem** conseguir entrar, desmarque **Conta ativa** no cadastro.
+
+### Financeiro
+
+Execute [supabase/migrations/017_finance_module.sql](supabase/migrations/017_finance_module.sql) no SQL Editor depois das migrations `009_ceremonial_schema.sql` e `015_access_control.sql`, e em seguida [018_finance_costs.sql](supabase/migrations/018_finance_costs.sql) e [019_finance_receipts_crud.sql](supabase/migrations/019_finance_receipts_crud.sql). A migration 018 adiciona o cadastro de custos e atualiza o cálculo/validação do rateio; a 019 cria `save_event_finance_receipt` e `delete_event_finance_receipt`. O módulo é restrito a Proprietário, Administrador e Gestor também pela RLS; a permissão `financeiro` é incluída no padrão de Gestor.
+
+Os custos escrevem direto na tabela, mas os recebimentos passam obrigatoriamente pelas functions da 019: ela revoga o `insert` em `event_finance_receipts` e centraliza em `assert_event_finance_receipt_balance` a conferência de que a nova receita não deixa dízimo ou repasses acima do saldo. Sem a 019 aplicada, nenhum recebimento é registrado, editado ou excluído.
+
+O sinal do orçamento e a tela de rateio são o mesmo dinheiro visto de dois lugares. A 020 liga as pontas com `event_finance_receipts.quote_deposit_id`: o depósito vira um recebimento no instante em que o evento existe. Por isso um recebimento que veio do sinal aparece marcado como *Sinal do orçamento* e **não tem lápis nem lixeira** — só o botão de estorno. Quem muda o valor do sinal é a tela *Registrar sinal*, e o estorno do rateio sai por `void_quote_deposit`, que desfaz o depósito e o recebimento juntos. Editar ou apagar um dos lados só deixaria as duas telas discordando do mesmo valor.
+
+O valor contratado vem do orçamento confirmado. Para representar dinheiro efetivamente recebido, registre cada recebimento no evento. Os recebimentos podem ser editados, estornados e excluídos no detalhe de cada evento, assim como os custos; a diferença é que o estorno preserva o registro no histórico. O filtro mensal agrupa pela data do evento. O cálculo é: receita recebida menos custos; do resultado, separa-se o dízimo; o saldo é dividido entre os cerimonialistas vinculados ao evento, por percentual ou valor fixo. O lucro líquido mostrado é o que resta após esses itens e pode ser negativo se os custos superarem as receitas.
+
+A conta do administrador do app é a exceção: a seção 11 da 015 promove `ewertonaires97@gmail.com` a proprietário **e reativa a conta**, porque sem isso a própria mudança bloquearia a única pessoa capaz de destravar o app.
+
+Se a conta do administrador ainda não existir quando você rodar a 015, o `WARNING` avisa. Rode a 015 de novo depois de criar a conta no Supabase: as duas se corrigem sozinhas.
+
+#### Níveis
+
+| Nível | Telas por padrão |
+|---|---|
+| Proprietário | todas |
+| Administrador | todas |
+| Gestor | todas menos Usuários |
+| Operador | Início, Clientes, Orçamentos, Eventos, Cardápios, Cerimonial |
+| Consulta | Início, Eventos |
+
+O padrão de cada nível se edita na própria tela de Usuários. `owner` e `admin` não são editáveis porque as funções os tratam como acesso total antes de olhar qualquer lista.
+
+Uma pessoa pode ter telas marcadas no cadastro, e aí o padrão do nível é ignorado para ela. Desmarcar "Usar o padrão do nível" volta para a herança.
+
+#### O que o banco recusa
+
+Estas regras valem mesmo que alguém ignore a interface e chame a API direto:
+
+- **Promover-se.** O `UPDATE` em `profiles` é limitado por coluna a `full_name` e `whatsapp`. Nível, telas e situação só mudam pelas funções, que exigem a permissão `usuarios`.
+- **Rebaixar ou desativar a si mesmo.** Não há como ficar sem ninguém capaz de devolver o acesso.
+- **Rebaixar o último proprietário ativo.** É o caminho de volta quando todo mundo já perdeu acesso por engano.
+- **Desligar o dono.** Desligar o acesso de alguém é uma ação legítima e continua permitido. A trava aqui é só para o caso de não sobrar nenhuma conta capaz de abrir a tela de Usuários — que, com o bloqueio de auto-desativação, já não é alcançável pela API e existe como rede de proteção.
+- **Apagar alguém.** Não existe: apagar a linha deixaria a conta do Supabase órfã, sem caminho para dentro do app. Desativar é o caminho reversível.
+- **Apagar ou editar o padrão de `owner`/`admin`.**
+
+A resolução da permissão está em uma função só, `effective_permissions()`, chamada por `has_permission()`, por `my_permissions()` e pela trava do último administrador. Três cópias da mesma condição divergindo é o que deixaria alguém com acesso a mais do que o dono cadastrou sem nenhum erro aparecer.
+
+Uma conta desativada continua conseguindo ler o próprio perfil — é o que permite o app explicar o motivo — mas `has_permission()` responde `false` para tudo, e nenhuma política libera nada.
+
+#### Manutenção
+
+- `profiles` agora é lida pelo [permissions.js](permissions.js) e escutada pelo [realtime.js](realtime.js). Ao mexer em permissões de alguém, a tela da pessoa atualiza sozinha, e as telas que ela perdeu fecham sozinhas.
+- `my_access()` é a única fonte da permissão do usuário logado. Se algum dia a lista que o navegador mostra divergir da que o banco aplica, é porque o `permissions.js` drifted, e não porque a pessoa tem outra regra.
+- A limpeza de políticas da 015 apaga **toda** política permissiva (`using (true)`) das tabelas listadas, e não só as conhecidas pelo nome. Foi preciso porque este banco criou a mesma política com nomes diferentes: `authenticated users can manage ceremonialistas` (espaços, 006/008) e `authenticated_users_can_manage_ceremonialistas` (sublinhados, 009), além de outras na 013. Um `DROP POLICY` pelo nome deixaria três delas valendo.
+- A trigger `handle_new_user` e a função `assert_access_change()` são substituídas pela 015. Se um dia mudar `profiles.role` ou `permissions`, atualize as duas.
