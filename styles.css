@@ -886,7 +886,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 
 .activity-actions-col { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 4px; flex: 0 0 auto; max-width: 100px; }
 .activity-mini-actions { display: flex; gap: 2px; }
-.activity-mini-actions .client-action { width: 24px; height: 24px; }
+.activity-mini-actions .client-action { width: 16px; height: 16px; }
 .activity-mini-actions .client-action svg { width: 13px; height: 13px; }
 
 /* Recepção & Controle de Chegada */
@@ -1350,7 +1350,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 
   .activity-actions-col { max-width: none; flex: 0 0 auto; }
   .activity-mini-actions { gap: 2px; }
-  .activity-mini-actions .client-action { width: 44px; height: 44px; touch-action: manipulation; }
+  .activity-mini-actions .client-action { width: 20px; height: 20px; touch-action: manipulation; }
   .activity-mini-actions .client-action svg { width: 20px; height: 20px; }
 
   /* Demais cartões do módulo: equipe, mesas e momentos do modelo padrão */
