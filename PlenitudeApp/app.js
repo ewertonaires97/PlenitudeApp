@@ -2667,7 +2667,7 @@ function renderQuotes() {
       // aqui mostraria um número diferente do do PDF e do Financeiro, e é a
       // diferença entre duas telas do mesmo dinheiro que gera dúvida na hora
       // de fechar a proposta.
-      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-quote-whatsapp-row="${quote.id}" aria-label="Enviar ${escapeHTML(quote.name)} por WhatsApp" title="Enviar WhatsApp"><i data-lucide="message-circle"></i></button>${reminderButton}<button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="quote" data-duplicate-id="${quote.id}" aria-label="Duplicar ${escapeHTML(quote.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
+      html += `<article class="client-row quote-card detail-trigger" data-detail-type="quote" data-detail-id="${quote.id}"><span class="client-initial"><i data-lucide="notebook-tabs"></i></span><div class="client-details"><strong>${escapeHTML(quote.name)}</strong><span>${escapeHTML(quote.venue || 'Local não informado')}</span><span>${quote.event_date || 'Sem data'} ${quote.event_time ? `· ${quote.event_time}` : ''}</span>${validity}</div><div class="client-actions"><span class="quote-total">${formatCurrency(quote.total)}</span><span class="quote-status ${quote.status}">${quoteStatusLabel(quote.status)}</span><button class="client-action" type="button" data-quote-pdf-row="${quote.id}" aria-label="Ver PDF de ${escapeHTML(quote.name)}" title="Ver PDF"><i data-lucide="file-text"></i></button><button class="client-action" type="button" data-edit-quote="${quote.id}" aria-label="Editar ${escapeHTML(quote.name)}" title="Editar"><i data-lucide="pencil"></i></button><button class="client-action" type="button" data-duplicate="quote" data-duplicate-id="${quote.id}" aria-label="Duplicar ${escapeHTML(quote.name)}" title="Duplicar"><i data-lucide="copy"></i></button><button class="client-action" type="button" data-delete-quote="${quote.id}" aria-label="Excluir ${escapeHTML(quote.name)}" title="Excluir"><i data-lucide="trash-2"></i></button></div></article>`;
     }
   }
   quoteList.innerHTML = html;
@@ -2889,7 +2889,8 @@ async function sendQuoteOnWhatsapp(quoteId) {
       setQuoteOutputFeedback('Cadastre o WhatsApp do cliente para enviar.', true);
       return;
     }
-    window.open(`https://wa.me/${number}`, '_blank', 'noopener,noreferrer');
+    const text = encodeURIComponent(quoteWhatsappText(payload));
+    window.open(`https://wa.me/${number}?text=${text}`, '_blank', 'noopener,noreferrer');
     await markQuoteAsSent(quoteId);
   } catch (error) {
     setQuoteOutputFeedback(`Não foi possível preparar o envio: ${error.message}`, true);
@@ -3457,7 +3458,8 @@ async function sendQuoteExpiryReminder(quoteId) {
       setQuoteReminderFeedback('Cadastre o WhatsApp do cliente para enviar o lembrete.');
       return;
     }
-    window.open(`https://wa.me/${number}`, '_blank', 'noopener,noreferrer');
+    const text = encodeURIComponent(quoteExpiryReminderText(quote));
+    window.open(`https://wa.me/${number}?text=${text}`, '_blank', 'noopener,noreferrer');
     // O carimbo vem depois de abrir o WhatsApp, nunca antes: se a gravação
     // falhar, o lembrete continua na lista e é possível tentar de novo, o que é
     // melhor do que perdê-lo sem que ele tenha saído.

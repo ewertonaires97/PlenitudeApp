@@ -194,7 +194,7 @@ h1 span { color: var(--gold); }
 /* "Ao Vivo"). Antes os dois grupos disputavam a mesma linha do título, que */
 /* ficava sem espaço e os botões cobriam o texto. */
 /* O .catalog-filter é o select de filtro reaproveitado por todas as telas. */
-.panel-header-tools { grid-area: tools; justify-self: end; display: flex; align-items: center; gap: 5px; }.panel-header-actions { grid-area: actions; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }.panel-header-actions .add-client-button { min-height: 40px; }.catalog-filter { max-width: 132px; min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.service-menus { color: var(--moss) !important; font-size: 12px !important; }/* fieldset tem min-inline-size: min-content por padrao, o que estouraba a
+.panel-header-tools { grid-area: tools; justify-self: end; display: flex; align-items: center; gap: 5px; }.panel-header-actions { grid-area: actions; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }.panel-header-actions .add-client-button { min-height: 40px; }.catalog-filter { min-height: 40px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; outline: none; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }.service-menus { color: var(--moss) !important; font-size: 12px !important; }/* fieldset tem min-inline-size: min-content por padrao, o que estouraba a
    largura do cartao quando um item tinha um texto longo sem quebra. */
 .menu-checkboxes { min-width: 0; max-width: 100%; margin: 15px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 4px; }.menu-checkboxes legend { padding: 0 5px; color: var(--ink); font-size: 12px; font-weight: 700; }.menu-option { display: flex; align-items: center; gap: 7px; margin: 8px 0; color: var(--ink); font-size: 11px; }.menu-option input { accent-color: var(--moss); }.field-hint { color: var(--muted); font-size: 12px; }
 /* ==========================================================================
@@ -214,7 +214,7 @@ h1 span { color: var(--gold); }
    BLOCO 16 — FILTRO DA TELA DE CARDÁPIOS (.menu-filter-row)
    ========================================================================== */
 /* Alinhado à direita, logo abaixo do cabeçalho do painel. */
-.menu-filter-row { display: flex; justify-content: flex-end; margin: -7px 0 12px; }.menu-filter-row .catalog-filter { max-width: 180px; width: 100%; }
+.menu-filter-row { display: flex; justify-content: flex-end; margin: -7px 0 12px; }.menu-filter-row .catalog-filter { width: 100%; }
 /* ==========================================================================
    BLOCO 17 — ESTOQUE E MOVIMENTAÇÕES (.inventory-*)
    ========================================================================== */
