@@ -2656,12 +2656,6 @@ function renderQuotes() {
       const hasValidityNote = quoteRequiresSignal(quote) || quoteAwaitingClient(quote) || quote.status === 'confirmed';
       const tone = quoteValidityTone(quote);
       const validity = hasValidityNote ? `<span class="quote-validity-tag ${tone}"><i data-lucide="${tone === 'done' ? 'circle-check' : tone === 'late' ? 'triangle-alert' : 'clock'}"></i>${escapeHTML(quoteValidityNote(quote))}</span>` : '';
-      // O botão do lembrete aparece só quando a cobrança serve a algo: sinal em
-      // aberto, prazo vencido ou a vencer, e ninguém cobrou ainda. Fora disso
-      // ele seria um botão sem ação útil, só um sino a mais na linha.
-      const reminderButton = quoteReminderEligible(quote) && daysUntilLocalDate(quote.valid_until) !== null
-        ? `<button class="client-action quote-reminder-action" type="button" data-quote-reminder-row="${quote.id}" aria-label="Enviar lembrete de sinal de ${escapeHTML(quote.name)}" title="Lembrete de sinal"><i data-lucide="bell-ring"></i></button>`
-        : '';
       // O total ao lado do nome vem do banco, já recalculado pela trigger
       // recalculate_quote_totals a cada linha de quote_items. Somar as linhas
       // aqui mostraria um número diferente do do PDF e do Financeiro, e é a
@@ -2688,7 +2682,14 @@ async function loadQuotes() {
   setQuoteFeedback('Carregando orçamentos...');
   // A expiração é derivada da data de corte, então é resolvida aqui em vez de
   // depender de um job no servidor: quem abrir a lista já vê o estado real.
-  await supabaseClient.rpc('expire_overdue_quotes');
+  // Se a migration 020 ainda não foi aplicada, a função não existe no banco:
+  // falhar aqui não pode impedir que os orçamentos sejam carregados, então o
+  // erro só é avisado no console e a lista segue sendo lida normalmente.
+  try {
+    await supabaseClient.rpc('expire_overdue_quotes');
+  } catch (error) {
+    console.warn('[Orçamentos] Função expire_overdue_quotes não disponível:', error.message);
+  }
   // O WhatsApp entra na lista porque o lembrete de sinal é decidido aqui, na
   // tela de orçamentos: sem o contato no mesmo lugar que mostra quem está
   // vencendo amanhã, a cobrança dependeria de abrir o orçamento um por um.
@@ -3805,6 +3806,7 @@ quoteForm.addEventListener('submit', async (event) => {
   const payload = { name: document.querySelector('#quote-name').value.trim(), client_id: quoteClientSelect.value, venue: document.querySelector('#quote-venue').value.trim() || null, event_date: document.querySelector('#quote-date').value || null, event_time: document.querySelector('#quote-time').value || null, status: document.querySelector('#quote-status').value, notes: document.querySelector('#quote-notes').value.trim() || null, discount: Number(document.querySelector('#quote-discount').value || 0), additional_fee: Number(document.querySelector('#quote-fee').value || 0), valid_until: depositPercent > 0 ? (quoteValidUntilInput?.value || null) : null, deposit_percent: depositPercent };
   const items = getQuoteItemsFromForm();
   if (!items.length) { quoteFormFeedback.textContent = 'Selecione pelo menos um serviço.'; return; }
+  if (depositPercent > 0 && !payload.event_date) { quoteFormFeedback.textContent = 'Informe a data do evento antes de salvar com sinal.'; return; }
   if (depositPercent > 0 && payload.status === 'sent' && !payload.valid_until) { quoteFormFeedback.textContent = 'Defina a data de validade do orçamento ou use 0% de sinal.'; return; }
   saveButton.disabled = true;
   saveButton.querySelector('span').textContent = 'Salvando...';
@@ -3835,16 +3837,12 @@ quoteForm.addEventListener('submit', async (event) => {
 });
 
 // Um listener para a lista inteira, que é re-renderizada a cada
-// loadQuotes(). Os botões de PDF, WhatsApp e lembrete vêm antes dos de editar e
-// excluir porque têm prefixo próprio e não poderiam ser confundidos com o
-// `detail-trigger` da linha.
+// loadQuotes(). O botão de PDF vem antes dos de editar e excluir porque
+// tem prefixo próprio e não poderia ser confundido com o `detail-trigger`
+// da linha.
 quoteList.addEventListener('click', async (event) => {
   const pdfButton = event.target.closest('[data-quote-pdf-row]');
-  const whatsappButton = event.target.closest('[data-quote-whatsapp-row]');
-  const reminderButton = event.target.closest('[data-quote-reminder-row]');
   if (pdfButton) { await printQuotePdf(pdfButton.dataset.quotePdfRow); return; }
-  if (whatsappButton) { await sendQuoteOnWhatsapp(whatsappButton.dataset.quoteWhatsappRow); return; }
-  if (reminderButton) { await sendQuoteExpiryReminder(reminderButton.dataset.quoteReminderRow); return; }
   const editButton = event.target.closest('[data-edit-quote]');
   const deleteButton = event.target.closest('[data-delete-quote]');
   if (editButton) { openQuoteForm(quotes.find((quote) => quote.id === editButton.dataset.editQuote)); return; }
