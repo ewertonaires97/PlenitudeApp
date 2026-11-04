@@ -45,24 +45,62 @@ Depois de aplicada a `011`, a `010` já não é mais necessária para o vínculo
 No formulário de serviço, os cardápios marcados são os que aquele serviço inclui; desmarcar remove o vínculo **apenas daquele serviço**, mantendo o cardápio nos outros. No formulário de cardápio, os serviços marcados são os que incluem aquele cardápio.
 
 ### Sinal e lembrete de vencimento
-
-O sinal do orçamento, a validade da proposta e o painel que os mostra estão em [supabase/migrations/020_quote_validity_deposit.sql](supabase/migrations/020_quote_validity_deposit.sql): `quotes.valid_until`, `quotes.deposit_percent`, `quotes.deposit_amount` (coluna gerada), `quote_deposits` e a expiração derivada (`expire_overdue_quotes`, chamada pelo app ao abrir a lista).
-
-Execute [supabase/migrations/021_quote_expiry_reminder.sql](supabase/migrations/021_quote_expiry_reminder.sql) depois da 020. Ela adiciona `quotes.expiry_reminder_sent_at` e a trigger que zera esse carimbo quando `valid_until` muda. Sem ela a coluna não existe e o módulo de Orçamentos não carrega, com o erro `column quotes.expiry_reminder_sent_at does not exist`.
-
-O **Lembrete de sinal** reúne cada proposta enviada que tem sinal em aberto e **vence hoje, vence amanhã ou já venceu**. A cobrança é derivada da data, como a expiração: não há job no servidor e nada é agendado.
-
-O aviso aparece no botão **Lembretes** da tela de Orçamentos e numa faixa no início com o nome dos clientes. No sino do topo ele entra pela central de avisos, que junta sinal com o resto. Os orçamentos são carregados no login, e a lista é reconsultada quando o dia vira (`checkQuoteDeadlineRollover`) — é o que mantém o aviso certo com o app aberto de um dia para o outro. Sem isso, um orçamento que venciasse durante a noite sumiria sem ninguém ver.
-
-Na tela de lembretes os vencidos vêm num grupo separado dos que estão por vencer. Isso não é cosmético: o mesmo texto serve aos dois casos porque a variável `{prazo}` devolve a **frase inteira** — "vence amanhã", "venceu há 3 dias" — e não só o advérbio. Um `{prazo}` que devolvesse apenas "amanhã" faria o app escrever "termina amanhã" para uma proposta que já tinha vencido.
-
-Estender a validade zera o carimbo (a trigger da 021), então a cobrança volta. O envio continua sendo humano: o WhatsApp abre com o texto pronto, quem opera confirma, e só então o carimbo é gravado, para o mesmo orçamento não ser cobrado de novo a cada abertura da lista.
-
-O envio automático não existe e não cabe nesta arquitetura: o app é um PWA estático, sem servidor nem credencial de disparo. Cobrar alguém sem ninguém conferir o texto é como se perde o cliente. Pelo mesmo motivo **não existe notificação com o app fechado** — Web Push exigiria VAPID e um servidor de disparo, que este projeto não tem. O aviso vale enquanto o app está aberto.
-
-#### O texto da mensagem
-
-Execute [supabase/migrations/022_quote_reminder_template.sql](supabase/migrations/022_quote_reminder_template.sql) depois da 021. Ela cria `quote_message_templates` (o texto que vai ao cliente) e `quotes.reminder_message` (o texto de um orçamento só). **Sem ela o lembrete continua funcionando**, porque o texto padrão mora no app — o navegador registra um aviso no console e segue com a redação embutida. As colunas novas é que não existem, e aí o seletor da lista de orçamentos falha com `column quotes.reminder_message does not exist`.
+ 
+ O sinal do orçamento, a validade da proposta e o painel que os mostra estão em [supabase/migrations/020_quote_validity_deposit.sql](supabase/migrations/020_quote_validity_deposit.sql): `quotes.valid_until`, `quotes.deposit_percent`, `quotes.deposit_amount` (coluna gerada), `quote_deposits` e a expiração derivada (`expire_overdue_quotes`, chamada pelo app ao abrir a lista).
+ 
+ Execute [supabase/migrations/021_quote_expiry_reminder.sql](supabase/migrations/021_quote_expiry_reminder.sql) depois da 020. Ela adiciona `quotes.expiry_reminder_sent_at` e a trigger que zera esse carimbo quando `valid_until` muda. Sem ela a coluna não existe e o módulo de Orçamentos não carrega, com o erro `column quotes.expiry_reminder_sent_at does not exist`.
+ 
+ O **Lembrete de sinal** reúne cada proposta enviada que tem sinal em aberto e **vence hoje, vence amanhã ou já venceu**. A cobrança é derivada da data, como a expiração: não há job no servidor e nada é agendado.
+ 
+ O aviso aparece no botão **Lembretes** da tela de Orçamentos e numa faixa no início com o nome dos clientes. No sino do topo ele entra pela central de avisos, que junta sinal com o resto. Os orçamentos são carregados no login, e a lista é reconsultada quando o dia vira (`checkQuoteDeadlineRollover`) — é o que mantém o aviso certo com o app aberto de um dia para o outro. Sem isso, um orçamento que venciasse durante a noite sumiria sem ninguém ver.
+ 
+ Na tela de lembretes os vencidos vêm num grupo separado dos que estão por vencer. Isso não é cosmético: o mesmo texto serve aos dois casos porque a variável `{prazo}` devolve a **frase inteira** — "vence amanhã", "venceu há 3 dias" — e não só o advérbio. Um `{prazo}` que devolvesse apenas "amanhã" faria o app escrever "termina amanhã" para uma proposta que já tinha vencido.
+ 
+ Estender a validade zera o carimbo (a trigger da 021), então a cobrança volta. O envio continua sendo humano: o WhatsApp abre com o texto pronto, quem opera confirma, e só então o carimbo é gravado, para o mesmo orçamento não ser cobrado de novo a cada abertura da lista.
+ 
+ #### Aviso por email com o app fechado (migration 024)
+ 
+ Execute [supabase/migrations/024_quote_expiry_notification.sql](supabase/migrations/024_quote_expiry_notification.sql) depois da 022. Ela adiciona:
+ 
+ - Coluna `quotes.expiry_notified_at` (separada de `expiry_reminder_sent_at`: o email avisa, o WhatsApp cobra — **notificar não é resolver**).
+ - Índice `quotes_expiry_notify_idx` no mesmo recorte da tela.
+ - Trigger atualizada `reset_quote_expiry_reminder()` que zera **as duas** colunas quando `valid_until` muda.
+ - Função `dispatch_quote_expiry_notifications()` que roda via `pg_cron` todo dia às 08:00 BRT (11:00 UTC):
+   1. Seleciona propostas com sinal em aberto vencendo hoje/amanhã ou já vencidas, sem `expiry_notified_at`.
+   2. Carimba `expiry_notified_at` atomicamente com `SELECT ... FOR UPDATE SKIP LOCKED` — **duas execuções simultâneas não duplicam o email**.
+   3. Envia um **único email em cópia oculta** para todos os usuários ativos com permissão `orcamentos` e email cadastrado (resolvidos pela mesma `effective_permissions` que a RLS usa).
+   4. Registra a execução em `quote_expiry_notification_log` com o `resend_request_id` para auditoria.
+ 
+ **Configuração obrigatória no Supabase Dashboard (SQL Editor):**
+ 
+ 1. Habilite as extensões (uma vez):
+    ```sql
+    create extension if not exists pg_net with schema extensions;
+    create extension if not exists supabase_vault with schema vault;
+    create extension if not exists pg_cron;
+    ```
+ 2. Crie os segredos no Vault (substitua pelos seus valores reais):
+    ```sql
+    select vault.create_secret('re_sua_chave_resend', 'quote_expiry_resend_api_key');
+    select vault.create_secret('Plenitude <avisos@seudominio.com>', 'quote_expiry_from');
+    select vault.create_secret('https://seu-app.netlify.app', 'quote_expiry_app_url');
+    ```
+    - A chave do Resend (`re_...`) vem do painel do [Resend](https://resend.com) — plano grátis permite 100 emails/dia.
+    - O remetente precisa ser um domínio verificado no Resend.
+    - A URL do app é o link que vai no botão "Abrir os lembretes de sinal" do email.
+ 
+ 3. Aplique a migration 024 — ela já agenda o `pg_cron` job.
+ 
+ **Teste manual:**
+ ```sql
+ select public.dispatch_quote_expiry_notifications(current_date);
+ ```
+ 
+ O email **não cobra o cliente**: ele avisa quem opera o app que há cobranças esperando. O texto do email lista número, nome, cliente, prazo ("vence amanhã", "vencido há 3 dias"), valor do sinal e do total, com link para abrir a tela de lembretes. A cobrança real continua sendo o WhatsApp manual.
+ 
+ #### O texto da mensagem
+ 
+ Execute [supabase/migrations/022_quote_reminder_template.sql](supabase/migrations/022_quote_reminder_template.sql) depois da 021. Ela cria `quote_message_templates` (o texto que vai ao cliente) e `quotes.reminder_message` (o texto de um orçamento só). **Sem ela o lembrete continua funcionando**, porque o texto padrão mora no app — o navegador registra um aviso no console e segue com a redação embutida. As colunas novas é que não existem, e aí o seletor da lista de orçamentos falha com `column quotes.reminder_message does not exist`.
 
 O botão **Editar a mensagem padrão** abre o editor dentro da própria tela de lembretes. O texto é salvo em `quote_message_templates.body` e vale para todos os lembretes que não tiverem texto próprio. Cada cartão também tem **Personalizar esta mensagem**, que grava em `quotes.reminder_message` e vale só para aquele orçamento — usado quando a renegociação é com um cliente específico.
 

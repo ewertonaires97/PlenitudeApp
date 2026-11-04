@@ -742,6 +742,22 @@ span.guest-status-select { cursor: default; }
 .ceremonial-section-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px; }
 .ceremonial-section-header h4 { margin: 0; font: 600 15px "Playfair Display", serif; color: var(--ink); }
 .section-subtitle { margin: 3px 0 0; font-size: 14px; color: var(--muted); }
+.timeline-header-actions { display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 4px 6px; }
+.timeline-header-actions > .template-launch-button { width: 100%; justify-content: center; padding: 7px 12px; }
+.timeline-header-secondary-actions { display: flex; flex-wrap: wrap; gap: 7px; padding: 2px 0 4px; }
+.timeline-header-secondary-actions > .add-client-button { flex: 1 1 auto; justify-content: center; min-height: 34px; padding: 0 12px; }
+.timeline-header-secondary-actions > .add-client-button:disabled { opacity: .55; cursor: default; }
+.activity-selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px; }
+.activity-selection-bar label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer; }
+.activity-select-check, .activity-selection-bar label input { accent-color: var(--moss); cursor: pointer; }
+.activity-select-check:focus-visible, .activity-selection-bar label input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.activity-select-check { flex: 0 0 18px; width: 18px; height: 18px; margin: 0 2px; }
+.activity-selection-bar label input { width: 16px; height: 16px; }
+.activity-selection-count { color: var(--muted); font-size: 10.5px; }
+.timeline-undo-button { position: fixed; z-index: 1100; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 42px; padding: 0 14px; border: 1px solid var(--gold); border-radius: 5px; color: #fff; background: var(--moss-deep); box-shadow: 0 5px 18px rgba(37, 49, 41, .24); font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.timeline-undo-button:hover { background: var(--moss); }
+.timeline-undo-button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.timeline-undo-button svg { width: 16px; height: 16px; flex: 0 0 auto; }
 
 /* ==========================================================================
    BLOCO 40 — CERIMONIAL: ROTEIRO DO DIA (LINHA DO TEMPO)
@@ -788,6 +804,9 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .drag-toggle-btn.active:hover { background: var(--sage); }
 
 /* Modelos padrão de roteiro */
+.template-launch-button { min-height: 40px; padding: 0 12px; border: 1px solid var(--gold); color: var(--moss-deep); background: var(--cream); box-shadow: inset 3px 0 0 var(--gold); }
+.template-launch-button:hover { border-color: var(--moss); background: var(--sage-light); }
+.template-launch-button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .templates-modal-card { width: min(100%, 760px); }
 .templates-columns { display: grid; grid-template-columns: 240px 1fr; gap: 14px; margin-top: 12px; }
 .templates-list-col, .templates-detail-col { min-width: 0; }
@@ -1054,6 +1073,9 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
    .ceremonial-section-header h4 { font-size: 14px; }
    .section-subtitle { font-size: 14px; }
    .add-client-button { font-size: 12px; padding: 0 9px; }
+   .timeline-header-actions { width: 100%; padding: 4px 0; }
+   .timeline-header-secondary-actions { width: 100%; padding: 4px 6px 6px; }
+   .timeline-header-secondary-actions > .add-client-button { flex: 1 1 0; min-width: 0; min-height: 38px; gap: 4px; padding: 0 7px; }
 
   /* Lista de Atividades – colunas compactas */
   .timeline-activity-card { max-width: 100%; box-sizing: border-box; flex-wrap: nowrap; padding: 9px 7px; gap: 7px; }
@@ -1318,9 +1340,9 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
      alvo de toque encolhe. */
   .timeline-activity-card { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 9px; padding: 12px 11px; }
 
-  /* O botão de concluir divide a linha com o título, e a alça de arraste fica
-     espremida entre os dois. */
-  .activity-check-col { order: 1; flex: 0 0 44px; min-width: 44px; max-width: 44px; }
+  /* Mantém os controles do card no tamanho compacto padrão também em telas
+     pequenas, em vez de ampliar para o alvo de toque de 44px. */
+  .activity-check-col { order: 1; flex: 0 0 24px; min-width: 24px; max-width: 24px; }
   .activity-main-col { order: 2; flex: 1 1 130px; }
 
   /* O cluster da alça precisa de display: flex aqui. A regra base é um grid
@@ -1331,27 +1353,32 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .activity-drag-order { order: 3; display: flex; flex: 0 1 auto; flex-direction: row; align-items: center; gap: 4px; min-width: 0; max-width: none; margin-bottom: 0; }
   .activity-actions-col { order: 4; flex: 0 0 auto; max-width: none; margin-left: auto; justify-content: flex-end; }
 
-  /* Nenhum alvo encolhe: abaixo de 44px eles deixam de ser tocáveis. */
+  /* Os controles dos momentos seguem o tamanho compacto padrão. */
   .activity-grip, .order-btn, .activity-pos-badge, .activity-checkbox-btn,
   .activity-mini-actions .client-action { flex-shrink: 0; }
   .order-btn { width: 44px; height: 44px; touch-action: manipulation; }
   .order-btn svg { width: 20px; height: 20px; }
   .order-btn:active:not(:disabled) { background: var(--cream); }
 
-  .activity-grip { width: 44px; height: 44px; }
-  .activity-grip svg { width: 22px; height: 22px; }
+  .activity-grip { width: 24px; height: 24px; }
+  .activity-grip svg { width: 15px; height: 15px; }
   .activity-grip:active { background: var(--cream); }
 
   .activity-pos-badge { width: 24px; height: 24px; font-size: 11px; }
 
-  .activity-check-col { flex: 0 0 44px; min-width: 44px; max-width: 44px; }
-  .activity-checkbox-btn { width: 44px; height: 44px; border-width: 2px; }
-  .activity-checkbox-btn svg { width: 20px; height: 20px; }
+  .activity-check-col { flex: 0 0 24px; min-width: 24px; max-width: 24px; }
+  .activity-checkbox-btn { width: 24px; height: 24px; }
+  .activity-checkbox-btn svg { width: 13px; height: 13px; }
 
   .activity-actions-col { max-width: none; flex: 0 0 auto; }
   .activity-mini-actions { gap: 2px; }
-  .activity-mini-actions .client-action { width: 44px; height: 44px; touch-action: manipulation; }
-  .activity-mini-actions .client-action svg { width: 20px; height: 20px; }
+  /* Ações de edição do roteiro principal seguem o tamanho compacto padrão
+     dos ícones do app; os controles de conclusão e arraste continuam grandes. */
+  .timeline-activity-card .activity-mini-actions .client-action { width: 24px; height: 24px; touch-action: manipulation; }
+  .timeline-activity-card .activity-mini-actions .client-action svg { width: 13px; height: 13px; }
+  .activity-select-check { flex-basis: 18px; width: 18px; height: 18px; }
+  .activity-selection-bar label input { width: 20px; height: 20px; }
+  .activity-selection-bar label { font-size: 12px; }
 
   /* Demais cartões do módulo: equipe, mesas e momentos do modelo padrão */
   .staff-card-actions { top: 8px; right: 8px; gap: 4px; }

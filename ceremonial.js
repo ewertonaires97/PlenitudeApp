@@ -77,6 +77,8 @@
     // DOM: marcar uma caixa não redesenha a lista, e o estado precisa
     // sobreviver aos renders vindos de outras ações.
     templateSelection: new Set(),
+    // Seleção dos momentos do roteiro principal para exclusão em bloco.
+    activitySelection: new Set(),
     // Reordenar os momentos é opt-in: com o modo desligado a linha mostra a
     // caixa de seleção e não existe punho de arraste, o que evita arrastar sem
     // querer em uma lista dentro de um modal.
@@ -87,7 +89,11 @@
     // roteiro porque a lista alvo é outra e o commit é outro.
     templateDrag: { activityId: null, beforeId: null, started: false, row: null, pointerY: 0 },
     // Habilita drag-and-drop do roteiro (padrão desligado para evitar arrastes acidentais)
-    dragEnabled: false
+    dragEnabled: false,
+    activityOrderUndo: null,
+    activityOrderUndoTimer: null,
+    activityOrderUndoVersion: 0,
+    activityOrderBusy: false
   };
 
   // ==========================================================================
@@ -108,6 +114,14 @@
     notify._timer = setTimeout(() => {
       toast.classList.remove('show');
     }, duration);
+  }
+
+  function clearActivityOrderUndo() {
+    clearTimeout(state.activityOrderUndoTimer);
+    state.activityOrderUndoTimer = null;
+    state.activityOrderUndo = null;
+    state.activityOrderUndoVersion += 1;
+    document.querySelector('.timeline-undo-button')?.remove();
   }
 
   // Todo HTML gerado aqui é escrito com <i data-lucide="...">, que o Lucide
@@ -484,6 +498,8 @@
       // casos a seleção é refeita a partir da lista visível.
       const visible = visibleEvents();
       if (state.selectedEventId && !visible.some(e => e.id === state.selectedEventId)) {
+        clearActivityOrderUndo();
+        state.activitySelection.clear();
         state.selectedEventId = null;
         state.selectedEvent = null;
       }
@@ -673,6 +689,10 @@
   async function selectEvent(eventId) {
     if (!eventId) return;
 
+    if (state.selectedEventId !== eventId) {
+      state.activitySelection.clear();
+      clearActivityOrderUndo();
+    }
     state.selectedEventId = eventId;
     state.selectedEvent = state.events.find(e => e.id === eventId) || null;
 
@@ -720,6 +740,16 @@
 
       if (actErr) console.warn('Aviso ao buscar atividades do cerimonial:', actErr);
       state.activities = activities || [];
+      state.activitySelection = new Set(
+        state.activities.filter(activity => state.activitySelection.has(activity.id)).map(activity => activity.id)
+      );
+      if (state.activityOrderUndo?.eventId === eventId) {
+        const orderStillMatches = state.activities.length === state.activityOrderUndo.afterIds.length &&
+          state.activities.every((activity, index) => activity.id === state.activityOrderUndo.afterIds[index]);
+        const contentStillMatches = JSON.stringify(activityContentSnapshot(state.activities)) ===
+          JSON.stringify(state.activityOrderUndo.afterContent);
+        if (!orderStillMatches || !contentStillMatches) clearActivityOrderUndo();
+      }
 
       // 3. Equipe de cerimonialistas
       let staffList = [];
@@ -987,18 +1017,20 @@
           <h4>Cronograma & Roteiro da Cerimônia</h4>
           <p class="section-subtitle">${completed} de ${total} momentos concluídos</p>
         </div>
-        <div class="section-actions-right" style="flex-direction: column;">
+        <div class="section-actions-right timeline-header-actions">
           ${locked ? '' : `
-            <button class="add-client-button" type="button" data-open-templates-modal style="font-size: 15px;">
+            <button class="add-client-button template-launch-button" type="button" data-open-templates-modal>
               <i data-lucide="copy-check"></i><span>Modelo padrão</span>
             </button>
-            <button class="add-client-button" type="button" data-open-activity-modal >
-              <i data-lucide="plus"></i><span>Novo momento</span>
-            </button>
-            <button class="add-client-button ${state.dragEnabled ? 'active' : ''}" type="button" data-toggle-drag-enabled>
-              <i data-lucide="${state.dragEnabled ? 'grip-vertical' : 'lock'}"></i>
-              <span>Reordenar</span>
-            </button>
+            <div class="timeline-header-secondary-actions">
+              <button class="add-client-button" type="button" data-open-activity-modal>
+                <i data-lucide="plus"></i><span>Novo momento</span>
+              </button>
+              <button class="add-client-button ${state.dragEnabled ? 'active' : ''}" type="button" data-toggle-drag-enabled aria-pressed="${state.dragEnabled ? 'true' : 'false'}" ${state.activityOrderBusy ? 'disabled' : ''}>
+                <i data-lucide="${state.dragEnabled ? 'grip-vertical' : 'lock'}"></i>
+                <span>Reordenar</span>
+              </button>
+            </div>
           `}
         </div>
       </div>
@@ -1012,8 +1044,26 @@
         <button class="event-pill ${state.timelineFilter === 'completed' ? 'active' : ''}" type="button" data-timeline-filter="completed">Concluídos (${completed})</button>
       </div>
 
+      ${locked || state.dragEnabled || total === 0 ? '' : `
+        <div class="activity-selection-bar" id="activity-selection-bar">
+          <label>
+            <input id="activity-select-all" type="checkbox" aria-label="Selecionar todos os momentos exibidos" />
+            <span>Selecionar todos os exibidos</span>
+          </label>
+          <span class="activity-selection-count" id="activity-selection-count"></span>
+          <button class="templates-bulk-delete" type="button" data-activity-delete-selected ${state.activitySelection.size ? '' : 'disabled'}>
+            <i data-lucide="trash-2"></i><span>Excluir selecionados</span>
+          </button>
+        </div>
+      `}
+
       <!-- Lista de Atividades do Cronograma -->
       <div class="ceremonial-timeline-list" id="timeline-activities-list">
+        ${state.activityOrderUndo && !state.activityOrderBusy && state.activityOrderUndo.eventId === state.selectedEventId ? `
+          <button class="timeline-undo-button" type="button" data-undo-activity-order>
+            <i data-lucide="undo-2"></i><span>Desfazer reordenação</span>
+          </button>
+        ` : ''}
         ${filtered.length === 0 ? `
           <div class="empty-clients" style="padding: 24px;">
             <p>Nenhum momento cadastrado no roteiro com o filtro selecionado.</p>
@@ -1026,15 +1076,18 @@
         ` : filtered.map((act, index) => {
           const isDone = act.status === 'completed';
           const isSkipped = act.status === 'skipped';
-          const timeFmt = act.scheduled_time ? act.scheduled_time.slice(0, 5) : '';
 
           return `
             <article class="timeline-activity-card ${act.status}" data-activity-id="${act.id}">
               <div class="activity-drag-order" style="${locked ? 'display:flex;flex-direction:column;align-items:center;gap:2px;' : ''}">
-                ${(locked || !state.dragEnabled) ? '' : `
+                ${locked ? '' : state.dragEnabled ? `
                   <button class="activity-grip" type="button" data-drag-grip="${act.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
                     <i data-lucide="grip-vertical"></i>
                   </button>
+                ` : `
+                  <input class="activity-select-check" type="checkbox" data-activity-select="${act.id}"
+                    aria-label="Selecionar momento ${sanitizeHtml(act.title)}" title="Selecionar para excluir em bloco"
+                    ${state.activitySelection.has(act.id) ? 'checked' : ''} />
                 `}
                 <!-- O número vem do banco (position), com o índice da lista
                      como reserva para atividades antigas sem position gravado. -->
@@ -1050,7 +1103,6 @@
               <div class="activity-main-col">
                 <div class="activity-title-row">
                   <h5 class="activity-title ${isDone ? 'strike' : ''}">${sanitizeHtml(act.title)}</h5>
-                  ${timeFmt ? `<span class="activity-time-tag"><i data-lucide="clock"></i> ${timeFmt}</span>` : ''}
                 </div>
 
                 ${act.description ? `
@@ -1093,7 +1145,7 @@
           <h5>+ Adicionar momento rápido</h5>
           <form id="inline-activity-form">
             <div class="client-form-card">
-              <input type="time" id="inline-act-time" placeholder="Horário" />
+              <input type="hidden" id="inline-act-time" />
               <input type="text" id="inline-act-title" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required />
             </div>
             <div class="inline-form-row-3">
@@ -1109,6 +1161,7 @@
     `;
 
     refreshIcons();
+    updateActivitySelectionBar();
   }
 
   // ==========================================================================
@@ -1547,12 +1600,6 @@
             <span class="live-step-label">MOMENTO ATUAL (${currentIndex + 1} de ${totalCount})</span>
             <h3 class="live-current-title">${sanitizeHtml(currentActivity.title)}</h3>
 
-            ${currentActivity.scheduled_time ? `
-              <div class="live-time-badge">
-                <i data-lucide="clock"></i> Horário previsto: <strong>${currentActivity.scheduled_time.slice(0, 5)}</strong>
-              </div>
-            ` : ''}
-
             ${currentActivity.responsible ? `
               <div class="live-responsible-badge">
                 <i data-lucide="user"></i> Responsável: <strong>${sanitizeHtml(currentActivity.responsible)}</strong>
@@ -1586,7 +1633,6 @@
             <div class="live-next-card">
               <span class="live-next-label"><i data-lucide="arrow-right"></i> A SEGUIR:</span>
               <strong class="live-next-title">${sanitizeHtml(nextActivity.title)}</strong>
-              ${nextActivity.scheduled_time ? `<span>${nextActivity.scheduled_time.slice(0, 5)}</span>` : ''}
             </div>
           ` : `
             <div class="live-next-card end">
@@ -1698,6 +1744,12 @@
     return state.activities.map(a => a.id);
   }
 
+  function activityContentSnapshot(activities) {
+    return activities.map(({ id, title, description, responsible, scheduled_time }) => ({
+      id, title, description, responsible, scheduled_time
+    }));
+  }
+
   // nextPosition precisa ser max(position) + 1, e não activities.length + 1.
   // Excluir um momento do meio deixa um buraco na sequência (1, 2, 4): o
   // length daria 3 e o INSERT colidiria com a posição 4 já ocupada, falhando
@@ -1706,31 +1758,151 @@
     return state.activities.reduce((max, a) => Math.max(max, a.position || 0), 0) + 1;
   }
 
-  async function persistActivityOrder(orderedIds) {
+  async function persistActivityOrder(orderedIds, allowUndo = true) {
     if (blockIfLocked()) return;
     const sb = getSupabase();
-    if (!sb || !state.selectedEventId) return;
+    if (!sb || !state.selectedEventId || state.activityOrderBusy) return;
+
+    const eventId = state.selectedEventId;
+    const previousIds = orderedActivityIds();
+    if (orderedIds.length !== previousIds.length || orderedIds.every((id, index) => id === previousIds[index])) return;
+
+    clearActivityOrderUndo();
+    const undoVersion = state.activityOrderUndoVersion;
+    state.activityOrderBusy = true;
+    let persisted = false;
 
     // Vai para o banco como um array de ids na ordem desejada, e não como
     // vários UPDATEs: `unique (event_id, position)` impede gravar a ordem nova
     // linha a linha, porque a primeira esbarraria na posição que o vizinho ainda
     // ocupa. A RPC faz as duas fases dentro de uma transação.
-    const { error } = await sb.rpc('reorder_ceremonial_activities', {
-      target_event_id: state.selectedEventId,
-      ordered_ids: orderedIds
-    });
+    try {
+      const { error } = await sb.rpc('reorder_ceremonial_activities', {
+        target_event_id: eventId,
+        ordered_ids: orderedIds
+      });
 
-    // Nos dois desfechos a lista é recarregada: no erro, para desfazer o
-    // arrasto que o usuário acabou de ver; no acerto, porque quem manda na
-    // ordem é o banco.
-    if (error) {
+      if (error) throw error;
+      persisted = true;
+
+      // Recarrega a ordem canônica antes de oferecer Undo. Assim a ação
+      // persiste a mesma sequência no banco, não apenas uma cópia no DOM.
+      if (state.selectedEventId === eventId) {
+        await loadSelectedEventDetails(eventId);
+        const reloadedIds = orderedActivityIds();
+        const committedOrderMatches = reloadedIds.length === orderedIds.length &&
+          reloadedIds.every((id, index) => id === orderedIds[index]);
+        if (allowUndo && committedOrderMatches && state.activityOrderUndoVersion === undoVersion) {
+          state.activityOrderUndo = {
+            eventId,
+            beforeIds: previousIds,
+            afterIds: [...orderedIds],
+            afterContent: activityContentSnapshot(state.activities),
+            version: undoVersion
+          };
+          state.activityOrderUndoTimer = setTimeout(() => {
+            if (state.activityOrderUndo?.version !== undoVersion) return;
+            state.activityOrderUndo = null;
+            state.activityOrderUndoTimer = null;
+            if (state.selectedEventId === eventId && state.currentTab === 'timeline') {
+              renderTimelineTab(document.getElementById('ceremonial-tab-timeline'));
+            }
+          }, 8000);
+          if (state.currentTab === 'timeline') renderTimelineTab(document.getElementById('ceremonial-tab-timeline'));
+        }
+      }
+    } catch (error) {
       console.error('Erro ao reordenar o roteiro:', error);
       notify('Não foi possível reordenar o roteiro.');
-      await loadSelectedEventDetails(state.selectedEventId);
+      if (state.selectedEventId === eventId) await loadSelectedEventDetails(eventId);
+    } finally {
+      state.activityOrderBusy = false;
+      if (state.selectedEventId === eventId && state.currentTab === 'timeline') {
+        renderTimelineTab(document.getElementById('ceremonial-tab-timeline'));
+      }
+    }
+    return persisted;
+  }
+
+  function updateActivitySelectionBar() {
+    const bar = document.getElementById('activity-selection-bar');
+    if (!bar) return;
+
+    const visibleIds = Array.from(document.querySelectorAll('#timeline-activities-list [data-activity-select]'))
+      .map(input => input.dataset.activitySelect);
+    const selectedVisible = visibleIds.filter(id => state.activitySelection.has(id)).length;
+    const count = document.getElementById('activity-selection-count');
+    if (count) {
+      const totalSelected = state.activities.filter(activity => state.activitySelection.has(activity.id)).length;
+      count.textContent = `${totalSelected} selecionado${totalSelected === 1 ? '' : 's'}`;
+    }
+
+    const allBox = document.getElementById('activity-select-all');
+    if (allBox) {
+      allBox.checked = visibleIds.length > 0 && selectedVisible === visibleIds.length;
+      allBox.indeterminate = selectedVisible > 0 && selectedVisible < visibleIds.length;
+    }
+
+    const deleteButton = bar.querySelector('[data-activity-delete-selected]');
+    if (deleteButton) deleteButton.disabled = state.activityOrderBusy || state.activitySelection.size === 0;
+  }
+
+  function toggleAllVisibleActivities(checked) {
+    const visibleIds = Array.from(document.querySelectorAll('#timeline-activities-list [data-activity-select]'))
+      .map(input => input.dataset.activitySelect);
+    visibleIds.forEach(id => {
+      if (checked) state.activitySelection.add(id);
+      else state.activitySelection.delete(id);
+    });
+    renderTimelineTab(document.getElementById('ceremonial-tab-timeline'));
+  }
+
+  async function deleteSelectedActivities() {
+    if (blockIfLocked() || state.activityOrderBusy) return;
+    const sb = getSupabase();
+    const ids = state.activities.filter(activity => state.activitySelection.has(activity.id)).map(activity => activity.id);
+    const eventId = state.selectedEventId;
+    if (!sb || !eventId || !ids.length) return;
+
+    const label = ids.length === 1 ? 'o momento selecionado' : `os ${ids.length} momentos selecionados`;
+    if (!confirm(`Excluir ${label} do roteiro?`)) return;
+
+    clearActivityOrderUndo();
+    try {
+      const { error } = await sb.from('ceremonial_activities').delete().eq('event_id', eventId).in('id', ids);
+      if (error) throw error;
+      const { error: packError } = await sb.rpc('pack_ceremonial_activities', { target_event_id: eventId });
+      if (packError) throw packError;
+
+      state.activitySelection.clear();
+      notify(`${ids.length} ${ids.length === 1 ? 'momento excluído' : 'momentos excluídos'} do roteiro.`);
+      if (state.selectedEventId === eventId) await loadSelectedEventDetails(eventId);
+    } catch (error) {
+      console.error('Erro ao excluir momentos selecionados:', error);
+      alert('Não foi possível excluir os momentos selecionados: ' + error.message);
+      if (state.selectedEventId === eventId) await loadSelectedEventDetails(eventId);
+    }
+  }
+
+  async function undoActivityOrder() {
+    const undo = state.activityOrderUndo;
+    if (!undo || state.activityOrderBusy || state.selectedEventId !== undo.eventId) return;
+
+    const currentIds = orderedActivityIds();
+    const sameOrder = currentIds.length === undo.afterIds.length &&
+      currentIds.every((id, index) => id === undo.afterIds[index]);
+    const sameContent = JSON.stringify(activityContentSnapshot(state.activities)) === JSON.stringify(undo.afterContent);
+    if (!sameOrder || !sameContent) {
+      clearActivityOrderUndo();
+      notify('A ordem mudou desde a reordenação; não foi possível desfazer.');
       return;
     }
 
-    await loadSelectedEventDetails(state.selectedEventId);
+    clearTimeout(state.activityOrderUndoTimer);
+    state.activityOrderUndoTimer = null;
+    state.activityOrderUndo = null;
+    const persisted = await persistActivityOrder(undo.beforeIds, false);
+    if (persisted) notify('Reordenação desfeita.');
   }
 
   // Reordena movendo actId para a posição de beforeId na ordem atual.
@@ -1817,7 +1989,11 @@
     document.body.classList.remove('is-dragging-activity');
 
     state.drag = emptyDragState();
-    if (commit && started) moveActivityTo(activityId, beforeId);
+    if (commit && started) {
+      state.dragEnabled = false;
+      renderTimelineTab(document.getElementById('ceremonial-tab-timeline'));
+      moveActivityTo(activityId, beforeId);
+    }
   }
 
   function emptyDragState() {
@@ -1825,6 +2001,7 @@
   }
 
   function onGripPointerDown(event) {
+    if (state.activityOrderBusy) return;
     // Só o botão principal; o clique direito não deve iniciar arraste.
     if (event.button !== undefined && event.button !== 0) return;
 
@@ -2039,7 +2216,7 @@
 
       <form id="template-activity-form" class="templates-create-form ${editing ? 'editing' : ''}" style="flex-wrap: wrap;">
         <input id="template-act-id" type="hidden" value="${editing ? editing.id : ''}" />
-        <input class="inline-form-box" id="template-act-time" type="time" value="${editing && editing.scheduled_time ? sanitizeHtml(editing.scheduled_time.slice(0, 5)) : ''}" />
+        <input id="template-act-time" type="hidden" value="${editing && editing.scheduled_time ? sanitizeHtml(editing.scheduled_time.slice(0, 5)) : ''}" />
         <input class="inline-form-box" id="template-act-title" type="text" value="${editing ? sanitizeHtml(editing.title) : ''}" placeholder="Nome do momento (ex.: Entrada dos Noivos)" required />
         <input class="inline-form-box" id="template-act-resp" type="text" value="${editing ? sanitizeHtml(editing.responsible) : ''}" placeholder="Responsável" />
         <button class="add-client-button" type="submit"><i data-lucide="${editing ? 'check' : 'plus'}"></i><span>${editing ? 'Salvar' : 'Adicionar'}</span></button>
@@ -2080,7 +2257,7 @@
                 <span class="templates-activity-index">${index + 1}</span>
                 <div class="templates-activity-body">
                   <strong>${sanitizeHtml(item.title)}</strong>
-                  <span>${item.scheduled_time ? sanitizeHtml(item.scheduled_time.slice(0, 5)) + ' · ' : ''}${item.responsible ? sanitizeHtml(item.responsible) : ''}</span>
+                  <span>${item.responsible ? sanitizeHtml(item.responsible) : ''}</span>
                 </div>
                 <div class="activity-mini-actions">
                   <button class="client-action" type="button" data-edit-template-act="${item.id}" title="Editar momento" aria-label="Editar momento ${sanitizeHtml(item.title)}"><i data-lucide="pencil"></i></button>
@@ -2562,7 +2739,11 @@
     document.body.classList.remove('is-dragging-activity');
 
     state.templateDrag = emptyTemplateDragState();
-    if (commit && started) moveTemplateActivityTo(activityId, beforeId);
+    if (commit && started) {
+      state.templateReorderEnabled = false;
+      renderTemplatesModal();
+      moveTemplateActivityTo(activityId, beforeId);
+    }
   }
 
   function onTemplateGripPointerDown(event) {
@@ -2626,6 +2807,7 @@
   // marcada troca o roteiro inteiro; sem ela, acrescenta os momentos ao fim.
   // Toda a cópia roda numa RPC transacional no banco.
   async function applyTemplateToEvent(templateId) {
+    if (state.activityOrderBusy) return;
     const sb = getSupabase();
     const template = state.templates.find(t => t.id === templateId);
     if (!sb || !template || !state.selectedEventId) return;
@@ -2644,6 +2826,8 @@
       return;
     }
 
+    clearActivityOrderUndo();
+    state.activitySelection.clear();
     setTemplatesFeedback('');
     // A cópia inteira acontece dentro da RPC: ler o modelo, apagar o roteiro
     // antigo (se for substituir) e renumerar as posições são passos que não
@@ -2677,12 +2861,14 @@
   // junto com o botão de desfazer que o app não tem.
 
   async function deleteActivity(actId) {
-    if (blockIfLocked()) return;
+    if (blockIfLocked() || state.activityOrderBusy) return;
     const act = state.activities.find(a => a.id === actId);
     const title = act ? `"${act.title}"` : 'este momento';
 
     if (!confirm(`Deseja remover ${title} do roteiro?`)) return;
 
+    clearActivityOrderUndo();
+    state.activitySelection.delete(actId);
     const sb = getSupabase();
     if (!sb) return;
 
@@ -2809,6 +2995,12 @@
 
   // 1. Modal de Atividade
   function openActivityModal(actData = null) {
+    if (state.activityOrderBusy) return;
+    clearActivityOrderUndo();
+    if (actData?.id) {
+      state.activitySelection.clear();
+      if (state.currentTab === 'timeline') renderTimelineTab(document.getElementById('ceremonial-tab-timeline'));
+    }
     const panel = document.getElementById('ceremonial-activity-modal');
     const form = document.getElementById('ceremonial-activity-form');
     const titleEl = document.getElementById('ceremonial-activity-modal-title');
@@ -2961,7 +3153,7 @@
   // automaticamente (ensureResponsibleInTeam).
   async function handleActivitySubmit(e) {
     e.preventDefault();
-    if (blockIfLocked()) return;
+    if (blockIfLocked() || state.activityOrderBusy) return;
     const sb = getSupabase();
     if (!sb || !state.selectedEventId) return;
 
@@ -2978,6 +3170,7 @@
       return;
     }
 
+    clearActivityOrderUndo();
     try {
       const payload = {
         event_id: state.selectedEventId,
@@ -3016,7 +3209,7 @@
   // lançar vários itens seguidos durante a montagem do cronograma.
   async function handleInlineActivitySubmit(e) {
     e.preventDefault();
-    if (blockIfLocked()) return;
+    if (blockIfLocked() || state.activityOrderBusy) return;
     const sb = getSupabase();
     if (!sb || !state.selectedEventId) return;
 
@@ -3027,6 +3220,7 @@
 
     if (!title) return;
 
+    clearActivityOrderUndo();
     try {
       const { error } = await sb.from('ceremonial_activities').insert({
         event_id: state.selectedEventId,
@@ -3320,6 +3514,18 @@
         return;
       }
 
+      if (target.hasAttribute('data-activity-delete-selected')) {
+        e.preventDefault();
+        deleteSelectedActivities();
+        return;
+      }
+
+      if (target.hasAttribute('data-undo-activity-order')) {
+        e.preventDefault();
+        undoActivityOrder();
+        return;
+      }
+
       // Ações dos modelos padrão
       if (target.closest('[data-open-templates-modal]')) {
         e.preventDefault();
@@ -3522,7 +3728,9 @@
       const toggle = e.target.closest('[data-toggle-drag-enabled]');
       if (toggle) {
         e.preventDefault();
+        if (state.activityOrderBusy) return;
         state.dragEnabled = !state.dragEnabled;
+        if (state.dragEnabled) state.activitySelection.clear();
         renderTimelineTab(document.getElementById('ceremonial-tab-timeline'));
         notify(state.dragEnabled ? 'Modo reordenar ativado. Arraste pelos punhos.' : 'Modo reordenar desativado.');
       }
@@ -3553,6 +3761,18 @@
       // porque o clique também é o inicio do arraste do card de seleção.
       if (e.target.hasAttribute('data-template-act-select')) {
         toggleTemplateActivitySelection(e.target.dataset.templateActSelect, e.target.checked);
+        return;
+      }
+
+      if (e.target.hasAttribute('data-activity-select')) {
+        if (e.target.checked) state.activitySelection.add(e.target.dataset.activitySelect);
+        else state.activitySelection.delete(e.target.dataset.activitySelect);
+        updateActivitySelectionBar();
+        return;
+      }
+
+      if (e.target.id === 'activity-select-all') {
+        toggleAllVisibleActivities(e.target.checked);
         return;
       }
 

@@ -653,12 +653,14 @@ duas — foi mantido de propósito: os dois formulários são lidos lado a lado.
 | Lembretes | `#quote-reminder-panel` (639) | BLOCO 56 (1534), 57 (1541), 58 (1561) | `openQuoteReminders()` `app.js:2539` | `renderQuoteReminders()` `app.js:2434` |
 | Central de avisos | `#notice-panel` (670) | BLOCO 56 (1534) | `open()` `alerts.js:358` | `render()` `alerts.js:314` |
 | Sino do topo | `.icon-button` em `.topbar` | BLOCO 56 / 52 | — | `renderBell()` `alerts.js:263` |
-
-O **alerts.js** é um sistema de "fontes" (estoque baixo, convidado pendente,
-sinal vencido). Cada fonte se cadastra com
-`window.plenitudeAlerts.register(...)` e devolve uma lista de avisos.
-
-### 7.10 Eventos (`events.js`)
+ 
+ O **alerts.js** é um sistema de "fontes" (estoque baixo, convidado pendente,
+ sinal vencido). Cada fonte se cadastra com
+ `window.plenitudeAlerts.register(...)` e devolve uma lista de avisos.
+ 
+ **Nova na 024: aviso por email com o app fechado.** A migration `024_quote_expiry_notification.sql` adiciona um `pg_cron` job que roda todo dia às 08:00 BRT e envia um email (via Resend) para todos os usuários com permissão `orcamentos`. O email **não substitui** a cobrança manual — ele avisa quem opera que há cobranças esperando. O recorte é o mesmo do sino (vencendo hoje/amanhã ou vencidos), mas a coluna de carimbo é separada (`expiry_notified_at` vs `expiry_reminder_sent_at`): notificar não é resolver. Veja a seção "Sinal e lembrete de vencimento" no README para a configuração completa (Vault, Resend, pg_cron).
+ 
+ ### 7.10 Eventos (`events.js`)
 
 | | |
 |---|---|

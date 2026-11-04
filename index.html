@@ -976,23 +976,16 @@
           <button class="icon-button" type="button" data-close-activity-modal aria-label="Fechar formulário"><i data-lucide="x"></i></button>
         </header>
         <input id="modal-act-id" type="hidden" />
+        <input id="modal-act-time" type="hidden" />
         <label for="modal-act-title">Nome / Título do momento</label>
         <input id="modal-act-title" type="text" placeholder="Ex.: Entrada dos Noivos, Votos, Brinde" required />
 
-        <div class="quote-event-fields">
-          <div>
-            <label for="modal-act-time">Horário programado</label>
-            <input id="modal-act-time" type="time" />
-          </div>
-          <div>
-            <label for="modal-act-status">Status atual</label>
-            <select id="modal-act-status" class="movement-select">
-              <option value="pending">Pendente</option>
-              <option value="completed">Concluído</option>
-              <option value="skipped">Ignorado</option>
-            </select>
-          </div>
-        </div>
+        <label for="modal-act-status">Status atual</label>
+        <select id="modal-act-status" class="movement-select">
+          <option value="pending">Pendente</option>
+          <option value="completed">Concluído</option>
+          <option value="skipped">Ignorado</option>
+        </select>
 
         <label for="modal-act-resp">Responsável / Executores</label>
         <input id="modal-act-resp" type="text" placeholder="Ex.: Cerimonialista de Pista, DJ, Fotógrafo, Buffet" />
@@ -1062,12 +1055,14 @@
           </div>
         </div>
 
-        <label for="modal-guest-status">Status de confirmação (RSVP)</label>
-        <select id="modal-guest-status" class="movement-select">
-          <option value="confirmed">Confirmado</option>
-          <option value="pending">Pendente</option>
-          <option value="declined">Recusado</option>
-        </select>
+        <div hidden>
+          <label for="modal-guest-status">Status de confirmação (RSVP)</label>
+          <select id="modal-guest-status" class="movement-select">
+            <option value="confirmed">Confirmado</option>
+            <option value="pending">Pendente</option>
+            <option value="declined">Recusado</option>
+          </select>
+        </div>
 
         <label class="service-active-field" for="modal-guest-arrived">
           <input id="modal-guest-arrived" type="checkbox" />
