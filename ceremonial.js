@@ -361,6 +361,29 @@
       .replace(/'/g, '&#039;');
   }
 
+  // O nome confiável da pessoa autenticada vem do perfil carregado pelo
+  // módulo de permissões. Responsáveis são texto livre e podem listar várias
+  // pessoas; comparar cada item inteiro evita destacar nomes apenas contidos
+  // em outro nome (por exemplo, "Ana" e "Ana Clara").
+  function isResponsibleForCurrentUser(responsible) {
+    const profile = window.plenitudePermissions?.profile?.();
+    const currentName = normalizePersonName(profile?.full_name);
+    if (!currentName || typeof responsible !== 'string') return false;
+
+    return responsible
+      .split(/[,;]+/)
+      .some(name => normalizePersonName(name) === currentName);
+  }
+
+  function normalizePersonName(name) {
+    return String(name ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  }
+
   // O wa.me só aceita dígitos com DDI. Quem salva o telefone com parênteses,
   // espaço ou sem o 55 quebraria o link, então o prefixo é garantido aqui: um
   // número que já vem com 55 não o recebe de novo.
@@ -1076,9 +1099,10 @@
         ` : filtered.map((act, index) => {
           const isDone = act.status === 'completed';
           const isSkipped = act.status === 'skipped';
+          const isCurrentUserResponsible = isResponsibleForCurrentUser(act.responsible);
 
           return `
-            <article class="timeline-activity-card ${act.status}" data-activity-id="${act.id}">
+            <article class="timeline-activity-card ${act.status}${isCurrentUserResponsible ? ' is-current-user-responsible' : ''}" data-activity-id="${act.id}">
               <div class="activity-drag-order" style="${locked ? 'display:flex;flex-direction:column;align-items:center;gap:2px;' : ''}">
                 ${locked ? '' : state.dragEnabled ? `
                   <button class="activity-grip" type="button" data-drag-grip="${act.id}" aria-label="Arrastar para reordenar" title="Arraste para reordenar">
@@ -1113,8 +1137,9 @@
 
                 <div class="activity-footer-meta">
                   ${act.responsible ? `
-                    <span class="activity-responsible-tag">
-                      <i data-lucide="user-check"></i> <strong>Resp.:</strong> ${sanitizeHtml(act.responsible)}
+                    <span class="activity-responsible-tag${isCurrentUserResponsible ? ' is-self' : ''}">
+                      <i data-lucide="user-check" aria-hidden="true"></i> <strong>Resp.:</strong> ${sanitizeHtml(act.responsible)}
+                      ${isCurrentUserResponsible ? '<span class="activity-self-responsible">Sua responsabilidade</span>' : ''}
                     </span>
                   ` : ''}
                   <span class="activity-status-tag ${act.status}">${activityStatusLabel(act.status)}</span>

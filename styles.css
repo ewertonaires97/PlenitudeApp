@@ -772,6 +772,8 @@ span.guest-status-select { cursor: default; }
 .timeline-activity-card.in_progress { border-left: 3px solid var(--gold); background: #fdfbf7; }
 .timeline-activity-card.skipped { opacity: .6; background: #f8f8f8; }
 .timeline-activity-card.pending { border-left: 3px solid var(--gold); background: #fdfbf7; }
+.timeline-activity-card.is-current-user-responsible { border-color: var(--gold); }
+.timeline-activity-card.is-current-user-responsible:hover { border-color: var(--moss); }
 
 /* A coluna da esquerda é a que dita a altura do card. Antes de o drag and drop
    existir, ela empilhava alça, número e as duas setas e deixava o card com
@@ -897,7 +899,9 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .activity-time-tag svg { width: 9px; height: 9px; }
 .activity-description { margin: 3px 0 5px; color: var(--muted); font-size: 12px; line-height: 1.35; }
 .activity-footer-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; }
-.activity-responsible-tag { display: inline-flex; align-items: center; gap: 4px; color: var(--moss); background: var(--sage-light); padding: 2px 6px; border-radius: 3px; font-weight: 500; }
+.activity-responsible-tag { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0; overflow-wrap: anywhere; color: #8b6e28; background: #fdf5e2; padding: 2px 6px; border-radius: 3px; font-weight: 500; }
+.activity-responsible-tag.is-self { color: var(--moss); background: var(--sage-light); outline: 1px solid var(--moss); }
+.activity-self-responsible { margin-left: 3px; padding-left: 7px; border-left: 1px solid var(--gold); color: var(--moss); font-weight: 700; }
 .activity-responsible-tag svg { width: 12px; height: 12px; }
 .activity-status-tag { padding: 2px 5px; border-radius: 2px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
 .activity-status-tag.pending { color: #8b6e28; background: #fdf5e2; }
