@@ -1095,8 +1095,10 @@
               </div>
 
               <div class="activity-check-col">
-                <button class="activity-checkbox-btn ${isDone ? 'checked' : ''}" type="button" data-toggle-activity-check="${act.id}" title="${isDone ? 'Desmarcar' : 'Concluir momento'}" ${locked ? 'disabled' : ''}>
-                  ${isDone ? '<i data-lucide="check"></i>' : ''}
+                <button class="activity-complete-btn ${isDone ? 'completed' : ''}" type="button" data-toggle-activity-check="${act.id}"
+                  title="${isDone ? 'Desmarcar conclusão' : 'Concluir momento'}"
+                  aria-label="${isDone ? 'Reabrir momento' : 'Concluir momento'}" aria-pressed="${isDone}" ${locked ? 'disabled' : ''}>
+                  <i data-lucide="${isDone ? 'circle-check' : 'circle'}" aria-hidden="true"></i>
                 </button>
               </div>
 

@@ -882,10 +882,12 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 /* Cada coluna do card de atividade isolada: concluir, conteúdo, */
 /* ações. Vale para desktop e para as media queries do fim. */
 .activity-check-col { display: flex; align-items: center; justify-content: center; flex: 0 0 24px; min-width: 24px; max-width: 24px; }
-.activity-checkbox-btn { display: grid; place-items: center; width: 24px; height: 24px; border: 1.5px solid var(--sage); border-radius: 4px; background: #fff; color: white; cursor: pointer; transition: all .15s; }
-.activity-checkbox-btn:hover { border-color: var(--moss); }
-.activity-checkbox-btn.checked { background: var(--moss); border-color: var(--moss); }
-.activity-checkbox-btn svg { width: 13px; height: 13px; stroke-width: 3; }
+.activity-complete-btn { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px; padding: 0; border: 0; border-radius: 50%; color: var(--sage); background: transparent; cursor: pointer; transition: color .15s, background .15s; }
+.activity-complete-btn:hover:not(:disabled) { color: var(--moss); background: var(--sage-light); }
+.activity-complete-btn.completed { color: var(--moss); }
+.activity-complete-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.activity-complete-btn:disabled { opacity: .55; cursor: not-allowed; }
+.activity-complete-btn svg { width: 18px; height: 18px; stroke-width: 1.8; }
 
 .activity-main-col { flex: 1; min-width: 0; max-width: 100%; }
 .activity-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; flex-wrap: wrap; }
@@ -1084,8 +1086,8 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .order-btn { width: 13px; height: 12px; }
   .order-btn svg { width: 8px; height: 8px; }
   .activity-check-col { display: flex; align-items: center; justify-content: center; flex: 0 0 22px; min-width: 22px; max-width: 22px; }
-  .activity-checkbox-btn { width: 18px; height: 18px; }
-  .activity-checkbox-btn svg { width: 11px; height: 11px; }
+  .activity-complete-btn { width: 18px; height: 18px; flex-basis: 18px; }
+  .activity-complete-btn svg { width: 15px; height: 15px; }
 .activity-main-col { flex: 1; min-width: 0; max-width: 100%; }
    .activity-title { font-size: 14px; }
    .activity-time-tag { font-size: 12px; padding: 1px 4px; white-space: nowrap; }
@@ -1223,7 +1225,8 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 
    .timeline-activity-card { padding: 7px 6px; gap: 6px; }
    .activity-pos-badge { width: 16px; height: 16px; font-size: 12px; }
-   .activity-checkbox-btn { width: 18px; height: 18px; }
+   .activity-complete-btn { width: 18px; height: 18px; flex-basis: 18px; }
+   .activity-complete-btn svg { width: 15px; height: 15px; }
    .activity-title { font-size: 13px; }
    .activity-description { }
 
@@ -1354,7 +1357,7 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .activity-actions-col { order: 4; flex: 0 0 auto; max-width: none; margin-left: auto; justify-content: flex-end; }
 
   /* Os controles dos momentos seguem o tamanho compacto padrão. */
-  .activity-grip, .order-btn, .activity-pos-badge, .activity-checkbox-btn,
+  .activity-grip, .order-btn, .activity-pos-badge, .activity-complete-btn,
   .activity-mini-actions .client-action { flex-shrink: 0; }
   .order-btn { width: 44px; height: 44px; touch-action: manipulation; }
   .order-btn svg { width: 20px; height: 20px; }
@@ -1367,13 +1370,12 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
   .activity-pos-badge { width: 24px; height: 24px; font-size: 11px; }
 
   .activity-check-col { flex: 0 0 24px; min-width: 24px; max-width: 24px; }
-  .activity-checkbox-btn { width: 24px; height: 24px; }
-  .activity-checkbox-btn svg { width: 13px; height: 13px; }
+  .activity-complete-btn { width: 24px; height: 24px; flex-basis: 24px; }
+  .activity-complete-btn svg { width: 18px; height: 18px; }
 
   .activity-actions-col { max-width: none; flex: 0 0 auto; }
   .activity-mini-actions { gap: 2px; }
-  /* Ações de edição do roteiro principal seguem o tamanho compacto padrão
-     dos ícones do app; os controles de conclusão e arraste continuam grandes. */
+  /* Ações do roteiro seguem o tamanho compacto padrão dos ícones do app. */
   .timeline-activity-card .activity-mini-actions .client-action { width: 24px; height: 24px; touch-action: manipulation; }
   .timeline-activity-card .activity-mini-actions .client-action svg { width: 13px; height: 13px; }
   .activity-select-check { flex-basis: 18px; width: 18px; height: 18px; }
