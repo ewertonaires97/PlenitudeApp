@@ -1223,12 +1223,13 @@
       // A mesa entra na busca porque é assim que a recepção funciona: a pessoa
       // chega perguntando por onde sentou, não pelo nome do convidado.
       if (state.arrivalSearch) {
-        const q = state.arrivalSearch.toLowerCase().trim();
-        const nameMatch = (g.name || '').toLowerCase().includes(q);
-        const phoneMatch = (g.whatsapp || '').includes(q);
-        const tableNum = g.event_tables ? String(g.event_tables.table_number).toLowerCase() : '';
+        const q = normalizePersonName(state.arrivalSearch);
+        const phoneQuery = state.arrivalSearch.toLowerCase().trim();
+        const nameMatch = normalizePersonName(g.name).includes(q);
+        const phoneMatch = (g.whatsapp || '').includes(phoneQuery);
+        const tableNum = g.event_tables ? normalizePersonName(g.event_tables.table_number) : '';
         const tableMatch = tableNum.includes(q);
-        const notesMatch = (g.notes || '').toLowerCase().includes(q);
+        const notesMatch = normalizePersonName(g.notes).includes(q);
         return nameMatch || phoneMatch || tableMatch || notesMatch;
       }
 
@@ -1310,8 +1311,12 @@
               <div class="guest-details-col">
                 <div class="guest-name-row">
                   <strong class="guest-name-text">${sanitizeHtml(g.name)}</strong>
-                  ${tableName ? `<span class="guest-table-badge"><i data-lucide="utensils"></i> ${sanitizeHtml(tableName)}</span>` : ''}
                 </div>
+                ${tableName ? `
+                  <div class="guest-table-row">
+                    <span class="guest-table-badge"><i data-lucide="utensils"></i> ${sanitizeHtml(tableName)}</span>
+                  </div>
+                ` : ''}
 
                 <div class="guest-sub-meta">
                   ${hasArrived ? `
@@ -1537,19 +1542,6 @@
                     <i data-lucide="user-check"></i> ${arrivedInTable} presentes
                   </span>
                 </div>
-                <div class="table-actions">
-                  ${locked ? '' : `
-                    <button class="client-action" type="button" data-edit-table="${tbl.id}" title="Editar mesa">
-                      <i data-lucide="pencil"></i>
-                    </button>
-                    <button class="client-action" type="button" data-duplicate="table" data-duplicate-id="${tbl.id}" title="Duplicar mesa">
-                      <i data-lucide="copy"></i>
-                    </button>
-                    <button class="client-action" type="button" data-delete-table="${tbl.id}" title="Excluir mesa">
-                      <i data-lucide="trash-2"></i>
-                    </button>
-                  `}
-                </div>
               </div>
 
               ${tbl.notes ? `<p class="table-notes">${sanitizeHtml(tbl.notes)}</p>` : ''}
@@ -1564,6 +1556,19 @@
                   </span>
                 `).join('')}
               </div>
+              ${locked ? '' : `
+                <div class="table-actions">
+                  <button class="client-action" type="button" data-edit-table="${tbl.id}" title="Editar mesa">
+                    <i data-lucide="pencil"></i>
+                  </button>
+                  <button class="client-action" type="button" data-duplicate="table" data-duplicate-id="${tbl.id}" title="Duplicar mesa">
+                    <i data-lucide="copy"></i>
+                  </button>
+                  <button class="client-action" type="button" data-delete-table="${tbl.id}" title="Excluir mesa">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                </div>
+              `}
             </article>
           `;
         }).join('')}

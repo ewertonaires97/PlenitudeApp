@@ -922,25 +922,27 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 .arrival-divider { width: 1px; height: 28px; background: var(--line); }
 
 .arrival-guest-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; margin-bottom: 16px; }
-.arrival-guest-row { display: flex; align-items: center; gap: 12px; padding: 12px 12px; border: 1px solid var(--line); border-radius: 4px; background: #fff; transition: all .15s; }
+.arrival-guest-row { display: grid; grid-template-columns: 8px minmax(0, 1fr); align-items: start; gap: 8px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 4px; background: #fff; transition: all .15s; }
 .arrival-guest-row.arrived { background: #f7faf7; border-color: #c9dec9; }
 .arrival-status-indicator { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.arrival-guest-row > .arrival-status-indicator { grid-column: 1; grid-row: 1 / span 2; margin-top: 5px; }
 .arrival-status-indicator.arrived { background: #38a169; box-shadow: 0 0 0 3px rgba(56, 161, 105, .2); }
 .arrival-status-indicator.pending { background: #d69e2e; }
 
-.guest-details-col { flex: 1; min-width: 0; }
-.guest-name-row { display: flex; align-items: center; gap: 6px; }
-.guest-name-text { font-size: 12px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guest-details-col { grid-column: 2; min-width: 0; }
+.guest-name-row { display: block; min-width: 0; }
+.guest-name-text { display: block; min-width: 0; font-size: 12px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.guest-table-row { margin-top: 5px; padding: 4px 6px; border-radius: 3px; background: var(--cream); }
 .guest-table-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 5px; border-radius: 3px; color: var(--moss); background: var(--sage-light); font-size: 12px; font-weight: 700; }
 .guest-table-badge svg { width: 12px; height: 12px; }
-.guest-sub-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.guest-sub-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; margin-top: 5px; font-size: 12px; color: var(--muted); }
 .arrived-time-badge { display: inline-flex; align-items: center; gap: 3px; color: #2d693c; font-weight: 600; }
 .arrived-time-badge svg { width: 11px; height: 11px; }
 .waiting-badge { display: inline-flex; align-items: center; gap: 3px; color: #8b6e28; }
 .waiting-badge svg { width: 11px; height: 11px; }
 .guest-notes-tag { color: var(--ink); background: var(--cream); padding: 1px 5px; border-radius: 2px; font-size: 12px; }
 
-.arrival-actions-col { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.arrival-actions-col { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
 .arrival-check-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
 .arrival-check-btn.not-arrived { border: 1px solid var(--moss); color: var(--moss); background: transparent; }
 .arrival-check-btn.not-arrived:hover { background: var(--sage-light); }
@@ -967,17 +969,17 @@ body.is-dragging-activity { cursor: grabbing; user-select: none; -webkit-user-se
 /* Mesas do Salão */
 .ceremonial-tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .table-card { padding: 12px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
-.table-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.table-number-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 44px; padding: 5px 6px; border-radius: 4px; color: var(--moss-deep); background: var(--sage-light); text-align: center; }
+.table-card-top { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 7px; margin-bottom: 0; }
+.table-number-box { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; width: 100%; min-width: 0; padding: 6px 8px; border-radius: 4px; color: var(--moss-deep); background: var(--sage-light); text-align: left; }
 .table-label { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .08em; }
-.table-num { font: 700 14px "Playfair Display", serif; color: var(--moss-deep); }
-.table-header-meta { flex: 1; min-width: 0; }
+.table-num { font: 700 14px "Playfair Display", serif; color: var(--moss-deep); overflow-wrap: anywhere; }
+.table-header-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; padding: 6px 8px; border-radius: 4px; background: var(--cream); }
 .table-occupancy-badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 12px; font-weight: 700; }
 .table-occupancy-badge.avail { color: #2d693c; background: #d5ead6; }
 .table-occupancy-badge.full { color: #8b6e28; background: #fdf3d8; }
-.table-arrived-count { display: flex; align-items: center; gap: 3px; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.table-arrived-count { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); }
 .table-arrived-count svg { width: 12px; height: 12px; color: #2d693c; }
-.table-actions { display: flex; gap: 2px; }
+.table-actions { display: flex; justify-content: flex-end; gap: 2px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .table-actions .client-action { width: 24px; height: 24px; }
 .table-notes { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
 .table-guests-chips { display: flex; flex-wrap: wrap; gap: 4px; }
